@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 // The wooden shelf (inventory-1, sections 1.6, 2.7, 5.6): books standing (spine), facing out (cover) or lying in piles.
 
@@ -83,18 +84,23 @@ struct ShelfView: View {
     let books: [Book]
     let ns: Namespace.ID
     @ObservedObject private var lib = Library.shared
+    @ObservedObject private var editor = ShelfEditor.shared
     @Environment(\.look) private var L
 
     var body: some View {
         GeometryReader { g in
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text(Words.cnt(Double(books.count), Words.books)).font(JFont.body(14)).foregroundStyle(Color(L.ink2))
-                        Spacer()
-                        Button("تعديل الرف") { Flows.shelfStyle() }.font(JFont.body(14.5, .medium)).foregroundStyle(Color(L.primary))
+                    if editor.editing {
+                        ShelfEditBar()
+                    } else {
+                        HStack {
+                            Text(Words.cnt(Double(books.count), Words.books)).font(JFont.body(14)).foregroundStyle(Color(L.ink2))
+                            Spacer()
+                            Button("تعديل الرف") { editor.begin(width: g.size.width) }.font(JFont.body(14.5, .medium)).foregroundStyle(Color(L.primary))
+                        }
                     }
-                    ShelfBoard(books: books, ns: ns, width: g.size.width - 32)
+                    ShelfBoard(books: editor.editing ? lib.state.books : books, ns: ns, width: g.size.width - 32)
                 }
                 .padding(.horizontal, 16).padding(.bottom, 30)
             }
@@ -110,6 +116,8 @@ struct ShelfBoard: View {
     let ns: Namespace.ID
     let width: CGFloat
     @ObservedObject private var lib = Library.shared
+    @ObservedObject private var editor = ShelfEditor.shared
+    @Environment(\.look) private var L
 
     private var theme: (wall: [Color], top: Color, front: [Color], gold: Color?) {
         if lib.state.settings.shelfTheme == "library" {
@@ -120,34 +128,49 @@ struct ShelfBoard: View {
 
     var body: some View {
         let visible = Set(books.map(\.id))
-        let rows = ShelfStore.rows().map { $0.filter { visible.contains($0.id) } }.filter { !$0.isEmpty }
+        let editing = editor.editing
+        let rows = editing ? editor.draft : ShelfStore.rows().map { $0.filter { visible.contains($0.id) } }.filter { !$0.isEmpty }
         let lights = lib.state.settings.lights
         VStack(spacing: 0) {
             if lights {
                 LinearGradient(colors: [Color(hex: "#ffe2a8"), Color(hex: "#ffc46e").opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 14)
             }
-            if rows.isEmpty {
+            if rows.isEmpty && !editing {
                 Text("ما فيه كتب تطابق التصفية").font(JFont.body(14)).foregroundStyle(.white.opacity(0.7)).frame(maxWidth: .infinity).padding(30)
             }
             ForEach(rows.indices, id: \.self) { r in
-                row(rows[r], lights: lights)
+                row(rows[r], r: r, lights: lights)
+                    .onDrop(of: [UTType.text], delegate: ShelfRowDrop(row: r, width: width, editor: editor))
             }
+            if editing { newRow }
         }
         .padding(.top, 10)
         .background(LinearGradient(colors: theme.wall, startPoint: .top, endPoint: .bottom))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .environment(\.layoutDirection, .rightToLeft)
+        .sheet(item: Binding(get: { editor.picked.map { IDBox(id: $0) } }, set: { editor.picked = $0?.id })) { x in
+            ShelfItemSheet(bookID: x.id).presentationDetents([.medium]).environment(\.look, L).environment(\.layoutDirection, .rightToLeft)
+        }
     }
 
-    private func row(_ items: [ShelfItem], lights: Bool) -> some View {
+    private func row(_ items: [ShelfItem], r: Int, lights: Bool) -> some View {
         VStack(spacing: 0) {
             HStack(alignment: .bottom, spacing: 2) {
-                ForEach(groups(items), id: \.self) { g in
+                if items.isEmpty && editor.editing {
+                    Text("صف فارغ، اسحب كتابًا هنا").font(JFont.body(13)).foregroundStyle(.white.opacity(0.6)).frame(maxWidth: .infinity, minHeight: 90)
+                }
+                ForEach(Array(groups(items).enumerated()), id: \.offset) { _, g in
+                    if let h = editor.hint, h.row == r, let at = h.index, at == indexOf(g.first?.id, in: items) {
+                        Capsule().fill(Color(L.accent)).frame(width: 4, height: 120)
+                    }
                     if g.count > 1 || g.first?.pose == "flat" {
                         pile(g)
                     } else if let it = g.first, let b = lib.state.book(it.id) {
                         standing(b, it)
                     }
+                }
+                if let h = editor.hint, h.row == r, h.index == nil {
+                    Capsule().fill(Color(L.accent)).frame(width: 4, height: 120).padding(.leading, CGFloat(h.gap ?? 0) * ShelfSize.K)
                 }
                 Spacer(minLength: 0)
             }
@@ -165,6 +188,31 @@ struct ShelfBoard: View {
         }
     }
 
+    private func indexOf(_ id: String?, in items: [ShelfItem]) -> Int? { id.flatMap { i in items.firstIndex { $0.id == i } } }
+
+    /// «اسحب كتابًا هنا لصف جديد», and a button for an empty row.
+    private var newRow: some View {
+        HStack {
+            Text("اسحب كتابًا هنا لصف جديد").font(JFont.body(13.5)).foregroundStyle(.white.opacity(0.75))
+            Spacer()
+            Button { editor.addRow() } label: {
+                Image(systemName: "plus").foregroundStyle(.white).frame(width: 36, height: 36).background(Circle().fill(Color.white.opacity(0.15)))
+            }
+            .buttonStyle(.plain).accessibilityLabel("إضافة صف فارغ")
+        }
+        .padding(14)
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])).foregroundStyle(.white.opacity(0.35)))
+        .padding(12)
+        .onDrop(of: [UTType.text], isTargeted: nil) { providers in
+            guard let p = providers.first else { return false }
+            p.loadObject(ofClass: NSString.self) { obj, _ in
+                guard let s = obj as? String else { return }
+                Task { @MainActor in ShelfEditor.shared.move(s.split(separator: ",").map(String.init), toRow: ShelfEditor.shared.draft.count, index: nil, gap: nil) }
+            }
+            return true
+        }
+    }
+
     /// Consecutive flat books form one pile.
     private func groups(_ items: [ShelfItem]) -> [[ShelfItem]] {
         var out: [[ShelfItem]] = []
@@ -176,7 +224,7 @@ struct ShelfBoard: View {
 
     private func standing(_ b: Book, _ it: ShelfItem) -> some View {
         let d = ShelfSize.dims(b)
-        return Button { OpenBook.open(b) } label: {
+        return Button { if editor.editing { editor.picked = b.id } else { OpenBook.open(b) } } label: {
             Group {
                 if it.pose == "face" {
                     BookCover(book: b, radius: 3, marks: false).frame(width: CGFloat(d.w) * ShelfSize.K, height: CGFloat(d.h) * ShelfSize.K)
@@ -188,6 +236,7 @@ struct ShelfBoard: View {
             .zoomSource(b.id, ns)
         }
         .buttonStyle(.plain)
+        .onDrag { NSItemProvider(object: b.id as NSString) }
         .padding(.leading, CGFloat(it.gap) * ShelfSize.K)
         .accessibilityLabel(b.title)
     }
@@ -197,12 +246,22 @@ struct ShelfBoard: View {
             ForEach(g, id: \.self) { it in
                 if let b = lib.state.book(it.id) {
                     let d = ShelfSize.dims(b)
-                    Button { OpenBook.open(b) } label: {
+                    Button { if editor.editing { editor.picked = b.id } else { OpenBook.open(b) } } label: {
                         FlatSpine(book: b, width: CGFloat(d.h) * ShelfSize.K, height: max(12, CGFloat(d.t) * ShelfSize.K))
                     }
                     .buttonStyle(.plain)
+                    .onDrag { NSItemProvider(object: b.id as NSString) }
                     .accessibilityLabel(b.title)
                 }
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if editor.editing && g.count > 1 {
+                // the grip moves the whole pile
+                Image(systemName: "arrow.up.and.down.and.arrow.left.and.right").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    .frame(width: 26, height: 26).background(Circle().fill(Color(L.accent))).offset(x: -8, y: -12)
+                    .onDrag { NSItemProvider(object: g.map(\.id).joined(separator: ",") as NSString) }
+                    .accessibilityLabel("نقل المجموعة")
             }
         }
         .padding(.leading, CGFloat(g.first?.gap ?? 0) * ShelfSize.K)

@@ -155,29 +155,22 @@ struct CarouselView: View {
     private func stage(W: CGFloat, coverH: CGFloat) -> some View {
         let R = flow ? 4.9 : 3.05
         let tilt = flow ? min(12, max(-12, -car.vel * 4)) : 0
+        // every card is placed first, then drawn in depth order (the middle one last, on top)
+        let cards: [(i: Int, b: Book, p: Place, show: Bool)] = books.enumerated().map { i, b in
+            let o = car.offset(i)
+            let cw = coverH * b.coverAspect
+            let p = flow ? flowPlace(o, W: W, tilt: tilt) : stackPlace(o, cw: cw, W: W)
+            return (i, b, p, abs(o) <= R)
+        }.sorted { $0.p.z < $1.p.z }
         return ZStack {
-            ForEach(Array(books.enumerated()), id: \.element.id) { i, b in
-                let o = car.offset(i)
-                if abs(o) <= R {
-                    let cw = coverH * b.coverAspect
-                    let p = flow ? flowPlace(o, W: W, tilt: tilt) : stackPlace(o, cw: cw, W: W)
-                    BookCover(book: b, radius: 11)
-                        .frame(width: cw, height: coverH)
-                        .overlay(Color.black.opacity(p.dim).clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous)))
-                        .zoomSource(b.id, ns)
-                        .shadow(color: .black.opacity(0.55), radius: 14, y: 12)
-                        .rotation3DEffect(.degrees(p.rot), axis: (x: 0, y: 1, z: 0), perspective: 0.45)
-                        .scaleEffect(p.scale)
-                        .offset(x: p.x)
-                        .opacity(p.op)
-                        .zIndex(p.z)
-                        .onTapGesture {
-                            if abs(o) < 0.5 { OpenBook.open(b) } else { car.go(index: i) }
-                        }
-                        .accessibilityElement()
-                        .accessibilityLabel(b.title)
-                        .accessibilityAddTraits(abs(o) < 0.5 ? [.isButton, .isSelected] : .isButton)
-                }
+            ForEach(cards, id: \.b.id) { c in
+                CarouselCard(book: c.b, height: coverH, place: c.p, ns: ns)
+                    .opacity(c.show ? c.p.op : 0)
+                    .allowsHitTesting(c.show)
+                    .onTapGesture {
+                        if abs(car.offset(c.i)) < 0.5 { OpenBook.open(c.b) } else { car.go(index: c.i) }
+                    }
+                    .accessibilityHidden(!c.show)
             }
         }
         .environment(\.layoutDirection, .leftToRight)
@@ -188,7 +181,6 @@ struct CarouselView: View {
         .accessibilityLabel("مكتبتك: اسحب يمين ويسار للتنقل، واسحب للأعلى للتفاصيل")
     }
 
-    private struct Place { var x: CGFloat; var scale: CGFloat; var rot: Double; var z: Double; var dim: Double; var op: Double }
 
     /// side books behind the middle one, smaller and darker (02-library.js stackL)
     private func stackPlace(_ o: Double, cw: CGFloat, W: CGFloat) -> Place {
@@ -296,6 +288,31 @@ struct CarouselView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+    }
+}
+
+/// Where a card sits: across, its size, its turn, its depth, its shade, its fade.
+struct Place { var x: CGFloat; var scale: CGFloat; var rot: Double; var z: Double; var dim: Double; var op: Double }
+
+/// One cover of the carousel.
+struct CarouselCard: View {
+    let book: Book
+    let height: CGFloat
+    let place: Place
+    let ns: Namespace.ID
+
+    var body: some View {
+        BookCover(book: book, radius: 11)
+            .frame(width: height * book.coverAspect, height: height)
+            .overlay(Color.black.opacity(place.dim).clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous)))
+            .zoomSource(book.id, ns)
+            .shadow(color: .black.opacity(0.55), radius: 14, y: 12)
+            .rotation3DEffect(.degrees(place.rot), axis: (x: 0, y: 1, z: 0), perspective: 0.45)
+            .scaleEffect(place.scale)
+            .offset(x: place.x)
+            .accessibilityElement()
+            .accessibilityLabel(book.title)
+            .accessibilityAddTraits(.isButton)
     }
 }
 

@@ -50,9 +50,19 @@ enum DebugRoute {
                     DB.shared.set("updates.checked", String(Date().timeIntervalSince1970))
                 }
                 Router.shared.select(t)
+            } else if route == "shelfedit" {
+                Library.shared.change { $0.settings.view = "shelf" }
+                Router.shared.select(.library)
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                ShelfEditor.shared.begin(width: UIScreen.main.bounds.width)
+                if let first = ShelfEditor.shared.draft.first?.first { ShelfEditor.shared.setPose(first.id, "face") }
             } else if route.hasPrefix("lib-") {
                 // the library in one of its views: carousel, grid, shelf
-                Library.shared.change { $0.settings.view = String(route.dropFirst(4)) }
+                let v = String(route.dropFirst(4))
+                Library.shared.change { st in
+                    st.settings.view = v == "flow" ? "carousel" : v
+                    st.settings.carStyle = v == "flow" ? "flow" : "stack"
+                }
                 Router.shared.select(.library)
             } else if route.hasPrefix("book") {
                 // a book's page: the one read last, or the n-th book (book-3)

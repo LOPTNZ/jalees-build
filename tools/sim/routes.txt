@@ -3,6 +3,7 @@ carousel 10 -JaleesRoute lib-carousel
 flow 10 -JaleesRoute lib-flow
 grid 10 -JaleesRoute lib-grid
 shelf 10 -JaleesRoute lib-shelf
+shelfedit 12 -JaleesRoute shelfedit
 book 12 -JaleesRoute book
 book-series 12 -JaleesRoute book-1
 book-done 12 -JaleesRoute book-4

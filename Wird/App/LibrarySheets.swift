@@ -101,6 +101,7 @@ struct ViewMenu: View {
 
     var body: some View {
         let s = lib.state.settings
+        NavigationStack {
         JSheet(title: "طريقة العرض") {
             VStack(spacing: 0) {
                 ForEach([("carousel", "دائري", "rectangle.stack"), ("shelf", "رفوف", "books.vertical"), ("grid", "شبكة", "square.grid.3x3")], id: \.0) { v in
@@ -117,9 +118,11 @@ struct ViewMenu: View {
                 JLabel(text: "عدد الأعمدة")
                 JSeg(options: [(2, "2"), (3, "3"), (4, "4")], value: Binding(get: { s.cols }, set: { v in lib.change { $0.settings.cols = v } }))
             } else {
-                Button { dismiss(); Flows.shelfStyle() } label: { Label("شكل الرف", systemImage: "paintpalette").frame(maxWidth: .infinity) }
+                NavigationLink { ShelfStyleSheet().toolbar(.hidden, for: .navigationBar) } label: { Label("شكل الرف", systemImage: "paintpalette").frame(maxWidth: .infinity) }
                     .buttonStyle(JButtonStyle(look: L))
             }
+        }
+        .toolbar(.hidden, for: .navigationBar)
         }
     }
 }

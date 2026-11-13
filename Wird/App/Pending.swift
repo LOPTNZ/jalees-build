@@ -47,5 +47,4 @@ enum Flows {
     static func note(_ id: String, kind: String) { later("الدفتر") }
     static func bookCard(_ id: String) { later("بطاقة الكتاب") }
     static func pdf(_ id: String) { later("ملخص PDF") }
-    static func shelfStyle() { later("شكل الرف") }
 }
