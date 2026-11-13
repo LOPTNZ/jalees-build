@@ -78,6 +78,8 @@ enum Toaster {
     static func show(_ text: String) {
         guard let w = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first,
               let root = w.rootViewController else { return }
-        Toast.show(text, in: NovelBridge.top(root).view, bottom: 110)
+        let top = NovelBridge.top(root)
+        // over the reader (or another full screen): its own message; otherwise Jalees's toast above the tab bar
+        if top !== root { Toast.show(text, in: top.view, bottom: 110) } else { ToastCenter.shared.show(text) }
     }
 }

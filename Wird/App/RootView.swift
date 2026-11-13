@@ -41,6 +41,7 @@ struct RootView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { TabBar() }
+        .overlay(alignment: .bottom) { ToastView().padding(.bottom, 92) }
         .environment(\.look, L)
         .environment(\.layoutDirection, .rightToLeft)
         .environment(\.locale, Locale(identifier: "ar@numbers=latn"))
@@ -61,14 +62,18 @@ private struct TabRoot: View {
     let visit: Int
     @ObservedObject private var router = Router.shared
     @Environment(\.look) private var L
+    /// the library's covers and the pages that grow from them
+    @Namespace private var zoom
 
     var body: some View {
         NavigationStack(path: router.path(tab)) {
             first
                 .navigationDestination(for: Router.Page.self) { page in
                     switch page {
-                    case .novel(let id, let book): NovelPageScreen(novelID: id, bookID: book)
-                    case .book(let id): BookPlaceholder(id: id)
+                    case .novel(let id, let book):
+                        if tab == .library { NovelPageScreen(novelID: id, bookID: book).zoomDestination(book, zoom) } else { NovelPageScreen(novelID: id, bookID: book) }
+                    case .book(let id):
+                        if tab == .library { BookPage(bookID: id).zoomDestination(id, zoom) } else { BookPage(bookID: id) }
                     }
                 }
         }
@@ -80,6 +85,7 @@ private struct TabRoot: View {
         case .updates: UpdatesTab(look: L).id(visit)
         case .downloads: DownloadsTab(look: L).id(visit)
         case .history: HistoryTab(look: L).id(visit)
+        case .library: LibraryView(ns: zoom)
         default: TabPlaceholder(tab: tab)
         }
     }
@@ -163,16 +169,6 @@ private struct TabPlaceholder: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(L.bg).ignoresSafeArea())
         .navigationTitle(tab.title)
-    }
-}
-
-private struct BookPlaceholder: View {
-    let id: String
-    @Environment(\.look) private var L
-    var body: some View {
-        Text(Library.shared.state.book(id)?.title ?? "").font(JFont.display(24)).foregroundStyle(Color(L.ink))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(L.bg).ignoresSafeArea())
     }
 }
 

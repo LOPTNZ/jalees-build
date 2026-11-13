@@ -50,6 +50,17 @@ enum DebugRoute {
                     DB.shared.set("updates.checked", String(Date().timeIntervalSince1970))
                 }
                 Router.shared.select(t)
+            } else if route.hasPrefix("lib-") {
+                // the library in one of its views: carousel, grid, shelf
+                Library.shared.change { $0.settings.view = String(route.dropFirst(4)) }
+                Router.shared.select(.library)
+            } else if route.hasPrefix("book") {
+                // a book's page: the one read last, or the n-th book (book-3)
+                Router.shared.select(.library)
+                let st = Library.shared.state
+                let n = Int(route.split(separator: "-").last ?? "") ?? -1
+                let id = n >= 0 && n < st.books.count ? st.books[n].id : (st.lastBookId() ?? "")
+                if let b = st.book(id) { try? await Task.sleep(nanoseconds: 600_000_000); OpenBook.open(b) }
             } else if route == "page" {
                 Router.shared.select(.browse)
                 NovelBridge.showPage(novel: sample.id, book: book, openIndex: nil)
