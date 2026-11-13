@@ -14,10 +14,14 @@ final class Library: ObservableObject {
     private var saveWork: DispatchWorkItem?
 
     private init() {
+        // the web app's library, untouched, from before the first save of this version
+        Store.shared.keepCopy(as: "state.before-swift.json")
         if let d = Store.shared.loadStateData(), let o = JSONValue.parse(d)?.object, o["books"]?.array != nil {
             state = AppState(Library.upgrade(o))
             firstRun = false
         } else {
+            // a file that is there but can't be read is kept aside before anything new is written
+            if Store.shared.loadStateData() != nil { Store.shared.keepCopy(as: "state.unreadable-\(Int(Date().timeIntervalSince1970)).json") }
             firstRun = true
             state = AppState(Library.upgrade(Library.edition == "demo" ? Library.seed() : Library.empty()))
             scheduleSave()

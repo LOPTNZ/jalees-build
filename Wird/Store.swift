@@ -24,6 +24,16 @@ final class Store {
         queue.sync { try? Data(contentsOf: stateURL) }
     }
 
+    /// A copy of the library file under another name, made only if that name doesn't exist yet: never overwritten,
+    /// so the library as it was before the Swift version (or a file it couldn't read) can always be brought back.
+    func keepCopy(as name: String) {
+        queue.sync {
+            let dst = root.appendingPathComponent(name)
+            guard fm.fileExists(atPath: stateURL.path), !fm.fileExists(atPath: dst.path) else { return }
+            try? fm.copyItem(at: stateURL, to: dst)
+        }
+    }
+
     func saveState(_ json: String) {
         guard let data = json.data(using: .utf8), !data.isEmpty else { return }
         queue.async {
