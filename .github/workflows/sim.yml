@@ -1,0 +1,45 @@
+name: Simulator check
+# Builds the app for the iOS Simulator, opens the screens listed in tools/sim/routes.txt and keeps a picture of each.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sim-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  sim:
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runner
+        run: |
+          sw_vers | tr '\n' ' '; echo
+          xcodebuild -version | tr '\n' ' '; echo
+          ls /Applications | grep -i xcode | tr '\n' ' '; echo
+          xcrun simctl list runtimes | grep -i ios || true
+      - name: Tools
+        run: which xcodegen || brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Build for the simulator
+        run: |
+          set -o pipefail
+          xcodebuild -project Wird.xcodeproj -scheme Wird -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM="" \
+            build 2>&1 | tee build.log | grep -E "error:|error |BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/Build/Products/Debug-iphonesimulator/Wird.app
+      - name: Open the screens and take pictures
+        run: bash tools/sim/shots.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sim
+          retention-days: 5
+          path: |
+            out-sim/
+            build.log

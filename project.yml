@@ -1,0 +1,122 @@
+name: Wird
+options:
+  bundleIdPrefix: com.abdullah.wird
+  deploymentTarget:
+    iOS: "16.1"
+  developmentLanguage: ar
+settings:
+  base:
+    MARKETING_VERSION: "1.9.0"
+    CURRENT_PROJECT_VERSION: "18"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.1"
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGN_IDENTITY: ""
+    DEVELOPMENT_TEAM: ""
+    GENERATE_INFOPLIST_FILE: "NO"
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+targets:
+  Wird:
+    type: application
+    platform: iOS
+    sources:
+      - path: Wird
+        excludes:
+          - "www/**"
+          - "Sounds/**"
+      - path: Wird/www
+        type: folder
+        buildPhase: resources
+      - path: Wird/Sounds
+        buildPhase: resources
+      - path: Shared
+    info:
+      path: Wird/Info.plist
+      properties:
+        CFBundleDisplayName: Jalees
+        CFBundleName: Jalees
+        WirdEdition: demo
+        CFBundleDevelopmentRegion: ar
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen:
+          UIColorName: LaunchBG
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIRequiresFullScreen: true
+        UIViewControllerBasedStatusBarAppearance: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate
+        UIBackgroundModes:
+          - audio
+        NSSupportsLiveActivities: true
+        NSCameraUsageDescription: "لتصوير أغلفة الكتب، ومسح الباركود، وقراءة النص من الصفحات"
+        NSPhotoLibraryUsageDescription: "لاختيار صور الأغلفة والشخصيات"
+        NSPhotoLibraryAddUsageDescription: "لحفظ بطاقات الكتب والاقتباسات في صورك"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.abdullah.wird.reader
+            CFBundleURLSchemes:
+              - wird
+        ITSAppUsesNonExemptEncryption: false
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: EPUB
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - org.idpf.epub-container
+    entitlements:
+      path: Wird/Wird.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.abdullah.wird.reader
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.abdullah.wird.reader
+        PRODUCT_NAME: Wird
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    dependencies:
+      - target: WirdWidget
+  WirdWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: WirdWidget
+      - path: Shared
+    info:
+      path: WirdWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Jalees Widget
+        CFBundleName: WirdWidget
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: WirdWidget/WirdWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.abdullah.wird.reader
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.abdullah.wird.reader.widget
+        PRODUCT_NAME: WirdWidget
+        SKIP_INSTALL: "YES"
+schemes:
+  Wird:
+    build:
+      targets:
+        Wird: all
+    archive:
+      config: Release

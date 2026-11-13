@@ -1,0 +1,110 @@
+/* The reading surface. Native code owns every control; this file only lays out the chapter text.
+   All look-and-feel values arrive from the app as CSS variables (see JR.setPrefs in reader.js). */
+@font-face{font-family:"Thmanyah Serif Text";src:url("../fonts/thmanyahseriftext-Regular.woff2") format("woff2");font-weight:400;font-display:block}
+@font-face{font-family:"Thmanyah Serif Text";src:url("../fonts/thmanyahseriftext-Medium.woff2") format("woff2");font-weight:500;font-display:block}
+@font-face{font-family:"Thmanyah Serif Text";src:url("../fonts/thmanyahseriftext-Bold.woff2") format("woff2");font-weight:700;font-display:block}
+@font-face{font-family:"Thmanyah Serif Display";src:url("../fonts/thmanyahserifdisplay-Bold.woff2") format("woff2");font-weight:700;font-display:block}
+@font-face{font-family:"Thmanyah Sans";src:url("../fonts/thmanyahsans-Regular.woff2") format("woff2");font-weight:400;font-display:block}
+@font-face{font-family:"Thmanyah Sans";src:url("../fonts/thmanyahsans-Medium.woff2") format("woff2");font-weight:500;font-display:block}
+@font-face{font-family:"Thmanyah Sans";src:url("../fonts/thmanyahsans-Bold.woff2") format("woff2");font-weight:700;font-display:block}
+@font-face{font-family:"Amiri";src:url("../fonts/amiri-arabic-400-normal.woff2") format("woff2");font-weight:400;font-display:block}
+@font-face{font-family:"Amiri";src:url("../fonts/amiri-arabic-700-normal.woff2") format("woff2");font-weight:700;font-display:block}
+@font-face{font-family:"IBM Plex Sans Arabic";src:url("../fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2") format("woff2");font-weight:400;font-display:block}
+@font-face{font-family:"IBM Plex Sans Arabic";src:url("../fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2") format("woff2");font-weight:700;font-display:block}
+
+:root{
+  --bg:#000; --fg:#fff; --soft:rgba(255,255,255,.5); --line:rgba(255,255,255,.16); --tint:rgba(255,255,255,.06);
+  --font:"Thmanyah Serif Text"; --head:"Thmanyah Serif Display"; --latin:"Thmanyah Serif Text";
+  --size:22px; --weight:400; --lh:1.3; --ls:0em; --ws:0em; --side:15px; --align:start; --gap:1.1em;
+  --top:64px; --bottom:56px;
+}
+*{-webkit-tap-highlight-color:transparent}
+html{background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:var(--font),var(--latin),"Amiri",-apple-system,"SF Arabic",serif;font-size:var(--size);font-weight:var(--weight);
+  line-height:var(--lh);letter-spacing:var(--ls);word-spacing:var(--ws);text-align:var(--align);
+  -webkit-font-smoothing:antialiased;overflow-wrap:break-word;font-kerning:normal;text-rendering:optimizeLegibility}
+#page{box-sizing:border-box;min-height:100vh;max-width:780px;margin:0 auto;
+  padding:calc(env(safe-area-inset-top,0px) + var(--top)) calc(var(--side) + env(safe-area-inset-left,0px)) calc(env(safe-area-inset-bottom,0px) + var(--bottom)) calc(var(--side) + env(safe-area-inset-right,0px))}
+header.ch{text-align:center;margin:7vh 0 2.4em;letter-spacing:0;word-spacing:0}
+header.ch .n{font-family:var(--head),var(--font),serif;font-weight:700;font-size:1.95em;line-height:1.3}
+header.ch .t{font-family:var(--head),var(--font),serif;font-weight:700;font-size:1.02em;line-height:1.5;margin-top:.5em}
+#body p{margin:0 0 var(--gap)}
+#body p.sys{border:1px solid var(--line);background:var(--tint);border-radius:14px;padding:.55em .85em;text-align:start}
+#body p.sep{text-align:center;color:var(--soft);letter-spacing:.3em;margin:1.4em 0}
+footer.end{margin:2.6em 0 1.2em;text-align:center;letter-spacing:0;word-spacing:0;font-family:"Thmanyah Sans",-apple-system,sans-serif;line-height:1.5}
+footer.end .rule{height:1px;background:var(--line);margin:0 12% 1.5em}
+footer.end .meta{color:var(--soft);font-size:15px}
+footer.end .clean{color:var(--soft);font-size:12.5px;margin-top:1.2em;opacity:.8}
+button.go{appearance:none;-webkit-appearance:none;display:block;width:100%;box-sizing:border-box;margin:1.3em 0 0;padding:15px 18px;border-radius:18px;border:1px solid var(--line);
+  background:var(--tint);color:var(--fg);font:inherit;text-align:center;cursor:pointer}
+button.go .k{display:block;font-size:13px;color:var(--soft);font-weight:500}
+button.go .v{display:block;font-size:17px;font-weight:700;margin-top:3px}
+button.go:active{opacity:.6}
+button.go.prev{background:transparent;border-color:transparent;margin:.6em 0 0;padding:9px 14px}
+button.go.prev .v{font-size:14.5px;font-weight:500;margin:0;color:var(--soft)}
+.state{min-height:70vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;color:var(--soft);
+  font-family:"Thmanyah Sans",-apple-system,sans-serif;font-size:16px;letter-spacing:0;word-spacing:0;line-height:1.6}
+.state b{color:var(--fg);font-size:18px}
+.spin{width:26px;height:26px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--fg);animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+::selection{background:rgba(10,132,255,.38)}
+
+/* ---------- reader v2 ---------- */
+:root{--latin:"Thmanyah Serif Text";--cols:1}
+#page .body p.lt{font-family:var(--latin),var(--font),serif}
+html.kashida #page .body p.ar{letter-spacing:0}
+section.chap+section.chap{margin-top:.6em}
+.ch-gap{height:calc(var(--top) * .4)}
+footer.end .joint{display:flex;align-items:center;gap:12px;margin:2.2em 0 .6em;color:var(--soft);font-size:14px}
+footer.end .joint::before,footer.end .joint::after{content:"";flex:1;height:1px;background:var(--line)}
+footer.end .meta.last{margin-top:1.2em}
+/* highlights: soft colour behind the text, or a line under it */
+mark.hl{color:inherit;border-radius:3px;padding:.04em 0;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+mark.hl.c-yellow{background:rgba(245,200,76,.38)}mark.hl.c-green{background:rgba(111,207,124,.36)}mark.hl.c-blue{background:rgba(90,169,240,.38)}
+mark.hl.c-pink{background:rgba(240,127,180,.38)}mark.hl.c-purple{background:rgba(169,139,240,.40)}mark.hl.c-orange{background:rgba(242,153,74,.40)}
+mark.hl.c-red{background:rgba(235,87,87,.38)}mark.hl.c-gray{background:rgba(167,167,167,.34)}
+mark.hl.ul{background:none;border-radius:0;text-decoration:underline;text-decoration-thickness:2.5px;text-underline-offset:.28em}
+mark.hl.ul.c-yellow{text-decoration-color:#f5c84c}mark.hl.ul.c-green{text-decoration-color:#6fcf7c}mark.hl.ul.c-blue{text-decoration-color:#5aa9f0}mark.hl.ul.c-pink{text-decoration-color:#f07fb4}
+mark.hl.ul.c-purple{text-decoration-color:#a98bf0}mark.hl.ul.c-orange{text-decoration-color:#f2994a}mark.hl.ul.c-red{text-decoration-color:#eb5757}mark.hl.ul.c-gray{text-decoration-color:#a7a7a7}
+#page .body p{position:relative}
+.nt{position:absolute;inset-inline-start:calc(-1 * var(--side) + 2px);margin-top:.42em;width:9px;height:9px;border:1.6px solid currentColor;border-radius:2px;opacity:.7}
+.nt::after{content:"";position:absolute;inset:-12px}
+mark.fd{background:rgba(10,132,255,.35);color:inherit;border-radius:3px}mark.fd.on{background:rgba(10,132,255,.6)}
+/* comments */
+.cms{display:grid;gap:10px;margin-top:10px;text-align:start;font-family:"Thmanyah Sans",-apple-system,sans-serif}
+.cm{border:1px solid var(--line);background:var(--tint);border-radius:14px;padding:10px 12px;font-size:15px;line-height:1.6}
+.cm-h{display:flex;justify-content:space-between;gap:8px;color:var(--soft);font-size:12.5px;margin-bottom:4px}.cm-h b{color:var(--fg);font-weight:600}
+.cm p{margin:0}.cm-r{display:grid;gap:8px;margin-top:8px;padding-inline-start:12px;border-inline-start:2px solid var(--line)}
+.cm.spoil p{filter:blur(5px);transition:filter .2s}.cm.spoil:active p{filter:none}
+.cm-wait,.cm-none{color:var(--soft);font-size:14px;display:flex;gap:10px;align-items:center;justify-content:center;padding:10px}
+.spin.sm{width:16px;height:16px;border-width:2px}
+/* pages: the chapter flows into screen-wide columns that turn sideways */
+html.paged{height:100%;overflow-y:hidden}html.paged body{height:100%}
+html.paged #page{height:100vh;max-width:none;margin:0;padding:calc(env(safe-area-inset-top,0px) + var(--top)) 0 calc(env(safe-area-inset-bottom,0px) + var(--bottom));
+  column-width:100vw;column-gap:0;column-fill:auto;box-sizing:border-box}
+html.paged #page>section.chap>*{margin-inline:calc(var(--side) + env(safe-area-inset-left,0px))}
+html.paged header.ch{margin-top:12vh}
+html.paged .body p{break-inside:auto;orphans:2;widows:2}
+@media (orientation:landscape){html:not(.paged) #page{column-count:var(--cols);column-gap:48px;max-width:none}}
+/* line guide: the page dims except one line, with soft edges (Apple Books' Line Guide) */
+#guide{position:fixed;inset:0;z-index:20;pointer-events:none;--dim:.72;--y:40vh;--h:32px;--soft:14px;
+  background:linear-gradient(to bottom,rgba(0,0,0,var(--dim)) 0,rgba(0,0,0,var(--dim)) calc(var(--y) - var(--soft)),rgba(0,0,0,0) var(--y),
+    rgba(0,0,0,0) calc(var(--y) + var(--h)),rgba(0,0,0,var(--dim)) calc(var(--y) + var(--h) + var(--soft)),rgba(0,0,0,var(--dim)) 100%);
+}
+#guide .g-band{position:absolute;inset-inline:0;top:var(--y);height:var(--h);pointer-events:none}
+/* the grip on the band's left end moves it; the rest of the band lets the text be scrolled and selected */
+#guide .g-grip{position:absolute;left:calc(env(safe-area-inset-left) + 2px);top:calc(var(--y) + var(--h) / 2 - 22px);width:30px;height:44px;
+  pointer-events:auto;touch-action:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+#guide .g-grip i{display:block;width:14px;height:2px;border-radius:1px;background:rgba(255,255,255,.55)}
+#guide.moving .g-grip i{background:#fff}
+
+/* characters' names, in the style the owner picks */
+html.nm-tint .nm{color:color-mix(in srgb,var(--fg) 45%,#e0a84a)}
+html.nm-underline .nm{text-decoration:underline dotted;text-decoration-color:color-mix(in srgb,var(--fg) 50%,#e0a84a);text-underline-offset:.32em;text-decoration-thickness:2px}
+html.nm-bold .nm{font-weight:700}
+html.nm-glow .nm{color:color-mix(in srgb,var(--fg) 60%,#ffd27a);text-shadow:0 0 .55em rgba(255,200,110,.55)}
+/* comments never run wider than the screen */
+.cms,.cm,.cm p{max-width:100%;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.cm p{white-space:pre-wrap}
+button.go.cm.site{background:transparent;border-color:transparent}

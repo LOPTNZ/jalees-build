@@ -1,0 +1,2 @@
+/* Home screen name. The Info.plist name stays ASCII ("Jalees") because signing tools register it as the Apple App ID name, which must be English letters. */
+"CFBundleDisplayName" = "جليس";

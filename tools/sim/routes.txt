@@ -1,0 +1,16 @@
+# name  seconds  launch arguments
+car 13 -JaleesRoute car
+edit 13 -JaleesRoute edit
+browse 12 -JaleesRoute tab-browse
+site 20 -JaleesRoute tab-site
+history 12 -JaleesRoute tab-history
+updates 12 -JaleesRoute tab-updates
+downloads 12 -JaleesRoute tab-downloads
+menu 14 -JaleesRoute reader-menu
+themes 14 -JaleesRoute reader-themes
+reading 14 -JaleesRoute reader-reading
+guide 13 -JaleesRoute reader-guide
+jumps 16 -JaleesRoute reader-jumps
+swipe 14 -JaleesRoute reader-swipe
+first 13 -JaleesRoute reader-first
+mark 14 -JaleesRoute reader-mark
