@@ -44,6 +44,7 @@ enum Theme {
 extension JFont {
     /// Quotes, reviews and passages (Amiri), like the web's --f-quote.
     static func quote(_ size: CGFloat, bold: Bool = false) -> Font {
+        let size = size * scale
         if let f = UIFont(name: bold ? "Amiri-Bold" : "Amiri-Regular", size: size) { return Font(f as CTFont) }
         return .system(size: size, weight: bold ? .bold : .regular, design: .serif)
     }

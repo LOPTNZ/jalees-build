@@ -169,12 +169,18 @@ struct ShelfBoard: View {
                         standing(b, it)
                     }
                 }
-                if let h = editor.hint, h.row == r, h.index == nil {
-                    Capsule().fill(Color(L.accent)).frame(width: 4, height: 120).padding(.leading, CGFloat(h.gap ?? 0) * ShelfSize.K)
+                if let h = editor.hint, h.row == r, h.index == items.count, !items.isEmpty {
+                    Capsule().fill(Color(L.accent)).frame(width: 4, height: 120)
                 }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12).padding(.top, 14)
+            .overlay(alignment: .bottomLeading) {
+                if let h = editor.hint, h.row == r, h.index == nil {
+                    Capsule().fill(Color(L.accent)).frame(width: 4, height: 120).padding(.leading, 12 + CGFloat(h.gap ?? 0) * ShelfSize.K)
+                        .allowsHitTesting(false)
+                }
+            }
             .background(alignment: .bottom) {
                 if lights { RadialGradient(colors: [Color(hex: "#ffc46e").opacity(0.36), .clear], center: .top, startRadius: 0, endRadius: 140).frame(height: 160) }
             }
@@ -236,7 +242,7 @@ struct ShelfBoard: View {
             .zoomSource(b.id, ns)
         }
         .buttonStyle(.plain)
-        .onDrag { NSItemProvider(object: b.id as NSString) }
+        .onDrag { editor.dragIDs = [b.id]; return NSItemProvider(object: b.id as NSString) }
         .padding(.leading, CGFloat(it.gap) * ShelfSize.K)
         .accessibilityLabel(b.title)
     }
@@ -250,7 +256,7 @@ struct ShelfBoard: View {
                         FlatSpine(book: b, width: CGFloat(d.h) * ShelfSize.K, height: max(12, CGFloat(d.t) * ShelfSize.K))
                     }
                     .buttonStyle(.plain)
-                    .onDrag { NSItemProvider(object: b.id as NSString) }
+                    .onDrag { editor.dragIDs = [b.id]; return NSItemProvider(object: b.id as NSString) }
                     .accessibilityLabel(b.title)
                 }
             }
@@ -260,7 +266,7 @@ struct ShelfBoard: View {
                 // the grip moves the whole pile
                 Image(systemName: "arrow.up.and.down.and.arrow.left.and.right").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                     .frame(width: 26, height: 26).background(Circle().fill(Color(L.accent))).offset(x: -8, y: -12)
-                    .onDrag { NSItemProvider(object: g.map(\.id).joined(separator: ",") as NSString) }
+                    .onDrag { editor.dragIDs = g.map(\.id); return NSItemProvider(object: g.map(\.id).joined(separator: ",") as NSString) }
                     .accessibilityLabel("نقل المجموعة")
             }
         }

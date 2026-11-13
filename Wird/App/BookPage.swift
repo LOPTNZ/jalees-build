@@ -723,6 +723,7 @@ struct ItemListSheet: View {
     @ObservedObject private var lib = Library.shared
     @Environment(\.look) private var L
     @State private var editSession: String?
+    @State private var review = false
 
     var body: some View {
         if let b = lib.state.book(bookID) {
@@ -733,13 +734,19 @@ struct ItemListSheet: View {
                         ForEach(lib.state.sessions(of: b.id).sorted { $0.start > $1.start }) { s in SessionRow(book: b, session: s) { editSession = $0 } }
                     }
                 } else if let k = NoteKind(rawValue: kind) {
-                    Button { Flows.note(b.id, kind: kind) } label: { Label("أضف", systemImage: "plus") }.buttonStyle(JButtonStyle(look: L, small: true))
+                    HStack(spacing: 8) {
+                        Button { Flows.note(b.id, kind: kind) } label: { Label("أضف", systemImage: "plus") }.buttonStyle(JButtonStyle(look: L, small: true))
+                        if k == .word && !b.items(.word).isEmpty {
+                            Button { review = true } label: { Label("اختبار", systemImage: "rectangle.on.rectangle") }.buttonStyle(JButtonStyle(look: L, small: true))
+                        }
+                    }
                     VStack(spacing: 0) { ForEach(b.items(k).sorted { $0.at > $1.at }) { NoteRow(book: b, item: $0, kind: k, compact: false) } }
                 }
             }
             .sheet(item: Binding(get: { editSession.map { IDBox(id: $0) } }, set: { editSession = $0?.id })) { x in
                 SessionEditSheet(sessionID: x.id).presentationDetents([.medium]).environment(\.look, L).environment(\.layoutDirection, .rightToLeft)
             }
+            .sheet(isPresented: $review) { WordReview(bookID: b.id).environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
         }
     }
 }

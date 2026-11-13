@@ -18,6 +18,7 @@ final class Appearance: ObservableObject {
             for w in scene.windows where w.overrideUserInterfaceStyle != style { w.overrideUserInterfaceStyle = style }
         }
         let l = Theme.look(s, systemDark: self.systemDark)
+        JFont.scale = l.fs / 15
         if l != look || l.accent != look.accent || l.surface != look.surface { look = l }
     }
 }
@@ -35,6 +36,8 @@ struct RootView: View {
     @State private var opened: Set<Router.Tab> = [.library]
     /// grows each time a list tab is shown again, so its list is read afresh
     @State private var visits: [Router.Tab: Int] = [:]
+    /// the launch splash, once per launch
+    @State private var splash = true
 
     private var L: JLook { appearance.look }
 
@@ -52,6 +55,7 @@ struct RootView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { TabBar() }
         .overlay(alignment: .bottom) { VStack(spacing: 10) { ToastView(); SessionChip() }.padding(.bottom, 92) }
+        .overlay { if splash { SplashView { splash = false }.environment(\.look, L) } }
         .fullScreenCover(isPresented: $session.showScreen) {
             SessionScreen().environment(\.look, L).environment(\.layoutDirection, .rightToLeft).environment(\.locale, Locale(identifier: "ar@numbers=latn")).environment(\.calendar, Calendar.greg)
         }

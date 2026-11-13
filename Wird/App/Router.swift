@@ -39,10 +39,12 @@ final class Router: ObservableObject {
 
     func select(_ t: Tab) {
         if t == tab {
-            // a second tap on the open tab goes back to its first page, as on iPhone
-            if !(paths[t] ?? []).isEmpty { paths[t] = [] }
+            // a second tap on the open tab goes back to its first page, as on iPhone, or else to the top of it
+            if !(paths[t] ?? []).isEmpty { paths[t] = [] } else { NotificationCenter.default.post(name: .tabRetap, object: t.rawValue) }
             return
         }
+        // switching tabs leaves the shelf editor without saving, as the web app did
+        if ShelfEditor.shared.editing { ShelfEditor.shared.cancel() }
         group = t.group
         if t.group == .main { mainTab = t } else { novelsTab = t }
         Haptics.play("sel")
@@ -82,4 +84,9 @@ enum Toaster {
         // over the reader (or another full screen): its own message; otherwise Jalees's toast above the tab bar
         if top !== root { Toast.show(text, in: top.view, bottom: 110) } else { ToastCenter.shared.show(text, achievement: achievement) }
     }
+}
+
+extension Notification.Name {
+    /// the open tab was tapped again on its first page: its list goes back to the top
+    static let tabRetap = Notification.Name("jalees.tabRetap")
 }

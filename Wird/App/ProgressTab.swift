@@ -13,12 +13,15 @@ struct ProgressTab: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("إنجازاتي").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink))
+                    Text("إنجازاتي").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink)).id("top")
                     JSeg(options: [("goals", "الأهداف"), ("stats", "الإحصائيات")], value: $sub)
                         .padding(.bottom, 4)
                     if sub == "goals" { GoalsPage(state: lib.state) } else { StatsPage(state: lib.state, range: $range) }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 40)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .tabRetap)) { n in
+                if (n.object as? String) == "progress" { withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("top", anchor: .top) } }
             }
             .onReceive(NotificationCenter.default.publisher(for: .progressShow)) { n in
                 // debug routes: "goals", "stats", or either with a section to scroll to ("goals:ach")
@@ -40,13 +43,13 @@ extension Notification.Name {
 private struct H2: View {
     let text: String
     @Environment(\.look) private var L
-    var body: some View { Text(text).font(JFont.display(L.fs * 1.2)).foregroundStyle(Color(L.ink)) }
+    var body: some View { Text(text).font(JFont.display(15 * 1.2)).foregroundStyle(Color(L.ink)) }
 }
 
 private struct Small: View {
     let text: String
     @Environment(\.look) private var L
-    var body: some View { Text(text).font(JFont.body(L.fs * 0.87)).foregroundStyle(Color(L.ink2)) }
+    var body: some View { Text(text).font(JFont.body(15 * 0.87)).foregroundStyle(Color(L.ink2)) }
 }
 
 /// .bar: a thin rounded progress line.
@@ -83,7 +86,7 @@ private struct GoalsPage: View {
                             Image(systemName: "flame.fill")
                             Text(Words.cnt(Double(st.cur), Words.days) + (st.cur > 1 ? " متتالية" : ""))
                         }
-                        .font(JFont.body(L.fs, .medium)).foregroundStyle(Color(L.accentInk))
+                        .font(JFont.body(15, .medium)).foregroundStyle(Color(L.accentInk))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -105,7 +108,7 @@ private struct GoalsPage: View {
                     Achievements.check()
                 }
                 Text(fy > 0 ? "بهذا المعدل تنهي نحو \(Words.cnt(Double(fy) / yearFraction(), Words.books)) هذه السنة." : "أنهِ أول كتاب هذه السنة ليبدأ حساب وتيرتك.")
-                    .font(JFont.body(L.fs)).foregroundStyle(Color(L.ink2))
+                    .font(JFont.body(15)).foregroundStyle(Color(L.ink2))
             }
 
             AchievementsList(state: state).id("ach")
@@ -133,8 +136,8 @@ private struct GoalRing: View {
                 Circle().trim(from: 0, to: p).stroke(Color(L.primary), style: StrokeStyle(lineWidth: 10, lineCap: .round)).rotationEffect(.degrees(-90))
             }
             VStack(spacing: 0) {
-                Text("\(Int(today.rounded()))").font(JFont.display(L.fs * 1.9)).foregroundStyle(Color(L.ink))
-                Text("من \(goal) د").font(JFont.body(L.fs * 0.8)).foregroundStyle(Color(L.ink2))
+                Text("\(Int(today.rounded()))").font(JFont.display(15 * 1.9)).foregroundStyle(Color(L.ink))
+                Text("من \(goal) د").font(JFont.body(15 * 0.8)).foregroundStyle(Color(L.ink2))
             }
         }
         .padding(5)
@@ -153,7 +156,7 @@ private struct GoalStepper: View {
     var body: some View {
         HStack(spacing: 8) {
             key("−", -1, "أنقص")
-            Text("\(value)").font(JFont.body(L.fs * 1.25, .semibold)).foregroundStyle(Color(L.ink))
+            Text("\(value)").font(JFont.body(15 * 1.25, .semibold)).foregroundStyle(Color(L.ink))
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
@@ -188,7 +191,7 @@ private struct AchievementsList: View {
             HStack { H2(text: "الإنجازات"); Spacer(); Small(text: "\(on.values.filter { $0 }.count) من \(Achievements.all.count)") }
             ForEach(Achievements.groups, id: \.self) { g in
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(g).font(JFont.body(L.fs * 1.02, .semibold)).foregroundStyle(Color(L.ink2))
+                    Text(g).font(JFont.body(15 * 1.02, .semibold)).foregroundStyle(Color(L.ink2))
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                         ForEach(Achievements.all.filter { $0.group == g }) { a in
                             BadgeView(a: a, state: state, on: on[a.id] ?? false)
@@ -223,9 +226,9 @@ private struct BadgeView: View {
             }
             .frame(width: 52, height: 52)
             VStack(alignment: .leading, spacing: 1) {
-                Text(a.title).font(JFont.body(L.fs * 0.92, .semibold)).foregroundStyle(Color(L.ink)).lineLimit(2)
-                Text(a.detail).font(JFont.body(L.fs * 0.78)).foregroundStyle(Color(L.ink2)).lineLimit(3)
-                Text(status(cur)).font(JFont.body(L.fs * 0.78)).foregroundStyle(Color(L.ink2))
+                Text(a.title).font(JFont.body(15 * 0.92, .semibold)).foregroundStyle(Color(L.ink)).lineLimit(2)
+                Text(a.detail).font(JFont.body(15 * 0.78)).foregroundStyle(Color(L.ink2)).lineLimit(3)
+                Text(status(cur)).font(JFont.body(15 * 0.78)).foregroundStyle(Color(L.ink2))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -352,9 +355,9 @@ private struct Facts: View {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 18), GridItem(.flexible(), spacing: 18)], spacing: 0) {
                 ForEach(items.indices, id: \.self) { i in
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(items[i].0).font(JFont.display(L.fs * 1.4)).lineLimit(1).minimumScaleFactor(0.6)
+                        Text(items[i].0).font(JFont.display(15 * 1.4)).lineLimit(1).minimumScaleFactor(0.6)
                             .foregroundStyle(light ? Color(hex: "#eef6f3") : Color(L.ink))
-                        Text(items[i].1).font(JFont.body(L.fs * 0.84))
+                        Text(items[i].1).font(JFont.body(15 * 0.84))
                             .foregroundStyle(light ? Color(hex: "#eef6f3").opacity(0.75) : Color(L.ink2))
                     }
                     .padding(.vertical, 10)
@@ -384,9 +387,9 @@ private struct BarList: View {
             ForEach(rows) { r in
                 let inner = VStack(spacing: 5) {
                     HStack(spacing: 12) {
-                        Text(r.name).font(JFont.body(L.fs)).foregroundStyle(Color(L.ink)).lineLimit(1)
+                        Text(r.name).font(JFont.body(15)).foregroundStyle(Color(L.ink)).lineLimit(1)
                         Spacer(minLength: 0)
-                        Text(r.text).font(JFont.body(L.fs)).foregroundStyle(Color(L.ink2))
+                        Text(r.text).font(JFont.body(15)).foregroundStyle(Color(L.ink2))
                     }
                     JBar(value: max(0.03, r.value / mx))
                 }
@@ -419,9 +422,9 @@ private struct YearWrap: View {
         let ink = Color(hex: "#eef6f3")
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("حصاد \(String(y))").font(JFont.display(L.fs * 1.2)).foregroundStyle(ink)
+                Text("حصاد \(String(y))").font(JFont.display(15 * 1.2)).foregroundStyle(ink)
                 Spacer()
-                Text("حتى اليوم").font(JFont.body(L.fs * 0.87)).foregroundStyle(ink.opacity(0.75))
+                Text("حتى اليوم").font(JFont.body(15 * 0.87)).foregroundStyle(ink.opacity(0.75))
             }
             Facts(items: [("\(reads.count)", "كتاب أنهيته"), (mins > 0 ? Words.fmtMin(mins) : "0 د", "قراءة واستماع"),
                           (Words.n0(pages), "صفحة"), (Words.n0(chs), "فصل")], light: true)
@@ -434,7 +437,7 @@ private struct YearWrap: View {
                             Spacer(minLength: 0)
                             Text(r.1).foregroundStyle(ink).multilineTextAlignment(.trailing)
                         }
-                        .font(JFont.body(L.fs * 0.93))
+                        .font(JFont.body(15 * 0.93))
                     }
                 }
             }
@@ -511,7 +514,7 @@ private struct DailyChart: View {
                     Text("الهدف (\(Int(goal)) د)")
                 }
             }
-            .font(JFont.body(L.fs * 0.82)).foregroundStyle(Color(L.ink2))
+            .font(JFont.body(15 * 0.82)).foregroundStyle(Color(L.ink2))
         }
     }
 
@@ -569,7 +572,8 @@ private struct Heatmap: View {
     let state: AppState
     @Environment(\.look) private var L
 
-    private struct Cell: Identifiable { let id: Int; let level: Int }
+    private struct Cell: Identifiable { let id: Int; let level: Int; let ms: Double; let minutes: Double }
+    @State private var picked: Cell?
     private struct Week: Identifiable { let id: Int; let month: String; let cells: [Cell] }
 
     var body: some View {
@@ -584,18 +588,29 @@ private struct Heatmap: View {
                 }
                 HStack(spacing: 3) {
                     ForEach(weeks) { w in
-                        VStack(spacing: 3) { ForEach(w.cells) { c in square(c.level, 15) } }
+                        VStack(spacing: 3) {
+                            ForEach(w.cells) { c in
+                                square(c.level, 15)
+                                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Color(L.ink).opacity(picked?.ms == c.ms ? 0.9 : 0), lineWidth: 1.5))
+                                    .onTapGesture { if c.level >= 0 { picked = picked?.ms == c.ms ? nil : c; Haptics.play("sel") } }
+                            }
+                        }
                     }
                 }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("خريطة أيام القراءة")
+            // the web's tip on each day: tap a day to see it
+            if let c = picked {
+                Text(Words.date(c.ms) + ": " + (c.minutes > 0 ? Words.fmtMin(c.minutes) : "بدون قراءة"))
+                    .font(JFont.body(15 * 0.86, .medium)).foregroundStyle(Color(L.ink))
+            }
             HStack(spacing: 6) {
                 Text("أقل")
                 ForEach(0..<5) { l in square(l, 12) }
                 Text("أكثر · حسب هدفك اليومي")
             }
-            .font(JFont.body(L.fs * 0.82)).foregroundStyle(Color(L.ink2))
+            .font(JFont.body(15 * 0.82)).foregroundStyle(Color(L.ink2))
         }
     }
 
@@ -627,7 +642,7 @@ private struct Heatmap: View {
                 let dt = day(-w * 7 - (6 - d))
                 let v = m[Words.dkey(Millis.ms(dt))] ?? 0
                 let lv = dt > today ? -1 : v <= 0 ? 0 : v < g * 0.5 ? 1 : v < g ? 2 : v < g * 1.6 ? 3 : 4
-                cells.append(Cell(id: d, level: lv))
+                cells.append(Cell(id: d, level: lv, ms: Millis.ms(dt), minutes: v))
             }
             let first = day(-w * 7 - 6)
             let mo = cal.component(.month, from: first) - 1

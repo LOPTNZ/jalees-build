@@ -252,7 +252,7 @@ struct ItemForm: View {
 
     @State private var pendingOCR: UIImage?
 
-    private func close() { if m.dirty { askLeave = true } else { m.discard(); dismiss() } }
+    private func close() { if m.dirty { askLeave = true; Haptics.play("warn") } else { m.discard(); dismiss() } }
 
     // MARK: the book and the place
 

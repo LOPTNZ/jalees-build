@@ -22,10 +22,11 @@ struct NotebookView: View {
     private static let tabs: [(String, String)] = [("quote", "اقتباسات"), ("thought", "أفكار"), ("word", "كلمات"), ("char", "شخصيات"), ("mark", "معلومات")]
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("دفتري").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink))
+                    Text("دفتري").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink)).id("nbTop")
                     Spacer()
                     if tab != "mark" {
                         Button { add() } label: { Label(NoteKind(rawValue: tab)?.name ?? "", systemImage: "plus") }.buttonStyle(JButtonStyle(look: L, small: true))
@@ -45,6 +46,10 @@ struct NotebookView: View {
             .background(GeometryReader { g in Color.clear.preference(key: ScrollY.self, value: g.frame(in: .named("nb")).minY) })
         }
         .coordinateSpace(name: "nb")
+        .onReceive(NotificationCenter.default.publisher(for: .tabRetap)) { n in
+            if (n.object as? String) == "notebook" { withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("nbTop", anchor: .top) } }
+        }
+        }
         .onPreferenceChange(ScrollY.self) { y in
             // the + fades while scrolling down the list and comes back when scrolling up or near the top
             guard !fabOpen else { lastY = y; return }
@@ -85,13 +90,14 @@ struct NotebookView: View {
                                     .frame(width: 46, height: 46)
                                     .background(Circle().fill(Color(cur ? L.primary : L.surface)))
                                     .shadow(color: .black.opacity(0.35), radius: 8, y: 6)
-                                Text(it.1).font(JFont.body(L.fs * 0.92, .semibold)).foregroundStyle(Color(L.ink))
+                                Text(it.1).font(JFont.body(15 * 0.92, .semibold)).foregroundStyle(Color(L.ink))
                                     .padding(.horizontal, 12).padding(.vertical, 5)
                                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
                                     .shadow(color: .black.opacity(0.3), radius: 6, y: 4)
                             }
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(it.1)
                         .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 14)).combined(with: .scale(scale: 0.9))
                                                     .animation(.spring(response: 0.3, dampingFraction: 0.8).delay(Double(Self.fabItems.count - 1 - i) * 0.03)),
                                                 removal: .opacity.animation(.easeOut(duration: 0.15))))
@@ -111,7 +117,8 @@ struct NotebookView: View {
                 .opacity(fabDim && !fabOpen ? 0.38 : 1)
                 .scaleEffect(fabDim && !fabOpen ? 0.88 : 1)
             }
-            .padding(.leading, 16).padding(.bottom, 16)
+            // above the tab bar (58 high, with 8 over it and 4 under it), as the web's nav height + 16
+            .padding(.leading, 16).padding(.bottom, 16 + 70)
         }
     }
 

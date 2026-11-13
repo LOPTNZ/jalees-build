@@ -21,6 +21,8 @@ final class BookFormModel: ObservableObject {
     @Published var finish: Date?
     @Published var openBuy: Bool
     @Published var openDims: Bool
+    /// the web page's «صوّر غلافك»: open the cover's photo picker once the data is in
+    @Published var askCoverPhoto = false
     /// the dimension sheet's ratio locks, kept while the form is open
     var lockC: Bool?
     var lockS: Bool?
@@ -104,7 +106,10 @@ final class BookFormModel: ObservableObject {
             results = nil
         }
         let cover = (e["cover"] as? String) ?? "", thumb = e["thumb"] as? String
-        if !cover.isEmpty && !keepCover {
+        if (e["ownPhoto"] as? Bool) == true {
+            if !coverOnly { ToastCenter.shared.show("تمت تعبئة البيانات، راجعها") }
+            askCoverPhoto = true
+        } else if !cover.isEmpty && !keepCover {
             ToastCenter.shared.show("أجيب الغلاف…")
             var url = cover
             if (e["src"] as? String) == "abj", let u = e["url"] as? String {
@@ -296,7 +301,7 @@ struct BookFormView: View {
                     Button { close() } label: { Image(systemName: "xmark") }.accessibilityLabel("إغلاق")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button { if m.save() { dismiss() } } label: { Image(systemName: "checkmark") }.accessibilityLabel("حفظ")
+                    Button { if m.save() { dismiss() } } label: { Image(systemName: "checkmark") }.accessibilityLabel("حفظ").accessibilityIdentifier("form.save")
                 }
             }
         }
@@ -317,6 +322,11 @@ struct BookFormView: View {
                 Task { await m.apply(e, coverOnly: true, keepCover: false) }
             }
             .environment(\.look, L).environment(\.layoutDirection, .rightToLeft)
+        }
+        .onChange(of: m.askCoverPhoto) { on in
+            guard on else { return }
+            m.askCoverPhoto = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { photo = PhotoTarget(kind: "cover") }
         }
         .sheet(item: $photo) { t in
             ImageSource(target: t) { img in
@@ -344,7 +354,7 @@ struct BookFormView: View {
         .onReceive(NotificationCenter.default.publisher(for: .formQuery)) { n in if let q = n.object as? String { m.q = q; search() } }
     }
 
-    private func close() { if m.dirty { askLeave = true } else { m.discard(); dismiss() } }
+    private func close() { if m.dirty { askLeave = true; Haptics.play("warn") } else { m.discard(); dismiss() } }
 
     private var dimsText: String {
         if m.openDims, let d = m.b.dims {

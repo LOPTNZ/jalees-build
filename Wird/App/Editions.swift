@@ -31,7 +31,7 @@ struct EditionsSheet: View {
         for e in list { if let l = e["lang"] as? String, !l.isEmpty { langs[l, default: 0] += 1 } }
         let lk = langs.keys.sorted { langs[$0]! > langs[$1]! }
         return JSheet(title: "اختر طبعتك", action: sel >= 0 ? ("استخدم", { pick() }) : nil) {
-            Text(request.isbn.isEmpty ? "اختر الطبعة اللي عندك: غلافها وعدد صفحاتها ولغتها." : "هذي الطبعات اللي لقيتها للرقم \(request.isbn).")
+            Text((request.isbn.isEmpty ? "" : "هذي الطبعات اللي لقيتها للرقم \(request.isbn) ولنفس الكتاب. ") + "اختر اللي معك: غلافها وعدد صفحاتها ولغتها تنحفظ للكتاب.")
                 .font(JFont.body(13.5)).foregroundStyle(Color(L.ink2))
             if lk.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -49,13 +49,21 @@ struct EditionsSheet: View {
             if busy {
                 HStack(spacing: 8) { ProgressView(); Text("أدوّر على الطبعات…").font(JFont.body(14)).foregroundStyle(Color(L.ink2)) }
             } else if list.isEmpty {
-                Text("ما لقيت " + (request.isbn.isEmpty ? "طبعات لهذا الكتاب" : "هذا الرقم") + ". الكتب العربية كثير منها ما هو مسجّل، دوّر عليه بنفسك:")
-                    .font(JFont.body(14)).foregroundStyle(Color(L.ink)).padding(12)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(L.accentSoft)))
+                Notice(title: "ما لقيت " + (request.isbn.isEmpty ? "طبعات لهذا الكتاب" : "هذا الرقم") + ".",
+                       text: "الكتب العربية كثير منها ما له باركود في قواعد البيانات. ابحث بالعنوان، أو دوّر عليه في المواقع.")
             }
             if !errs.isEmpty && !busy { Text("ما وصلت لـ " + errs.joined(separator: "، ") + ".").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2)) }
             SiteChips { s in browse = BrowseRequest(query: request.isbn.isEmpty ? ((request.seed?["title"] as? String) ?? request.q) : request.isbn, site: s, coverOnly: false) }
             if ownCover { JSwitchRow(title: "احتفظ بصورتك للغلاف", sub: "تاخذ من الطبعة بياناتها بس", on: $keepOwn) }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if list.indices.contains(sel) {
+                let e = list[sel], pages = NovelBridge.num(e["pages"])
+                EdBar(title: (e["title"] as? String) ?? "",
+                      sub: [pages > 0 ? ((e["approx"] as? Bool) == true ? "≈ " : "") + "\(pages) صفحة" : "", Words.lang((e["lang"] as? String) ?? ""), (e["isbn"] as? String) ?? ""]
+                        .filter { !$0.isEmpty }.joined(separator: " · "),
+                      button: "استخدمها") { pick() }
+            }
         }
         .task { await load() }
         .onAppear { keepOwn = ownCover }
@@ -144,10 +152,14 @@ struct CoverSearchSheet: View {
                         let e = list[i]
                         let th = ((e["thumb"] as? String).flatMap { $0.isEmpty ? nil : $0 }) ?? ((e["cover"] as? String) ?? "")
                         Button { sel = i } label: {
-                            AsyncImage(url: URL(string: th)) { im in im.resizable().scaledToFill() } placeholder: { Color(L.surface2) }
-                                .aspectRatio(2 / 3, contentMode: .fit)
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color(i == sel ? L.primary : .clear), lineWidth: 3))
+                            VStack(spacing: 4) {
+                                AsyncImage(url: URL(string: th)) { im in im.resizable().scaledToFill() } placeholder: { Color(L.surface2) }
+                                    .aspectRatio(2 / 3, contentMode: .fit)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color(i == sel ? L.primary : .clear), lineWidth: 3))
+                                Text([BookLookup.sourceNames[(e["src"] as? String) ?? ""] ?? "", (e["year"] as? String) ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(JFont.body(10.5)).foregroundStyle(Color(L.ink2)).lineLimit(1)
+                            }
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel((e["title"] as? String) ?? "غلاف")
@@ -157,13 +169,19 @@ struct CoverSearchSheet: View {
             if busy {
                 HStack(spacing: 8) { ProgressView(); Text("أدوّر على الأغلفة…").font(JFont.body(14)).foregroundStyle(Color(L.ink2)) }
             } else if done && list.isEmpty {
-                Text("ما لقيت أغلفة. جرّب تكتب الاسم بطريقة ثانية أو بالإنجليزية.").font(JFont.body(14)).padding(12)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(L.accentSoft)))
+                Notice(title: "ما لقيت أغلفة.", text: "جرّب تكتب الاسم بطريقة ثانية أو بالإنجليزي، أو دوّر عليه في المواقع تحت.")
             }
             if !errs.isEmpty && !busy { Text("ما وصلت لـ " + errs.joined(separator: "، ") + ".").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2)) }
             if done || !list.isEmpty {
                 Text("ما لقيت غلافك؟ دوّر عليه بنفسك:").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
                 SiteChips { s in browse = BrowseRequest(query: q, site: s, coverOnly: true) }
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if list.indices.contains(sel) {
+                let e = list[sel]
+                EdBar(title: ((e["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }) ?? "غلاف",
+                      sub: BookLookup.sourceNames[(e["src"] as? String) ?? ""] ?? "", button: "استخدم الغلاف") { pick() }
             }
         }
         .onAppear { if q.isEmpty { q = query; run() } }
@@ -249,6 +267,7 @@ struct WebImportSheet: View {
     @State private var pages = ""
     @State private var isbn = ""
     @State private var loaded = false
+    @State private var err = ""
 
     var body: some View {
         NavigationStack {
@@ -257,18 +276,20 @@ struct WebImportSheet: View {
                     if (page["book"] as? Bool) == false && !coverOnly {
                         Text("هذي الصفحة ما تبدو صفحة كتاب، فأخذت صورها بس. لو تبي بياناته افتح صفحة الكتاب نفسه.").font(JFont.body(13)).foregroundStyle(Color(L.ink2))
                     }
-                    if !images.isEmpty {
-                        JLabel(text: "اختر الغلاف")
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
-                            ForEach(images.indices, id: \.self) { i in
-                                Button { pickIndex = i } label: {
-                                    AsyncImage(url: URL(string: images[i])) { im in im.resizable().scaledToFill() } placeholder: { Color(L.surface2) }
-                                        .aspectRatio(2 / 3, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 8))
-                                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(i == pickIndex ? L.primary : .clear), lineWidth: 3))
-                                }
-                                .buttonStyle(.plain)
+                    JLabel(text: "اختر الغلاف")
+                    if images.isEmpty { Text("ما لقيت صور في الصفحة.").font(JFont.body(13)).foregroundStyle(Color(L.ink2)) }
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                        ForEach(images.indices, id: \.self) { i in
+                            Button { pickIndex = i } label: {
+                                AsyncImage(url: URL(string: images[i])) { im in im.resizable().scaledToFill() } placeholder: { Color(L.surface2) }
+                                    .aspectRatio(2 / 3, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(i == pickIndex ? L.primary : .clear), lineWidth: 3))
                             }
+                            .buttonStyle(.plain)
                         }
+                        // your own photo instead (-2), or no cover from this page (-1)
+                        choice(-2, "camera", "صوّر غلافك")
+                        choice(-1, "nosign", "بدون غلاف")
                     }
                     if !coverOnly {
                         JSwitchRow(title: "عبّي بيانات الكتاب من الصفحة", on: $useData)
@@ -276,6 +297,7 @@ struct WebImportSheet: View {
                             box("العنوان", $t); box("المؤلف", $a); box("عدد الصفحات", $pages); box("ISBN", $isbn)
                         }
                     }
+                    if !err.isEmpty { Text(err).font(JFont.body(14)).foregroundStyle(Color(L.danger)) }
                     Button { use() } label: { Text("استخدم").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
                 }
                 .padding(18)
@@ -287,6 +309,20 @@ struct WebImportSheet: View {
         }
         .environment(\.layoutDirection, .rightToLeft)
         .onAppear(perform: load)
+    }
+
+    private func choice(_ i: Int, _ icon: String, _ label: String) -> some View {
+        Button { pickIndex = i } label: {
+            VStack(spacing: 8) {
+                Image(systemName: icon).font(.system(size: 22))
+                Text(label).font(JFont.body(12.5, .medium)).multilineTextAlignment(.center)
+            }
+            .foregroundStyle(Color(L.ink2))
+            .frame(maxWidth: .infinity).aspectRatio(2 / 3, contentMode: .fit)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color(L.surface2)))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(i == pickIndex ? L.primary : .clear), lineWidth: 3))
+        }
+        .buttonStyle(.plain)
     }
 
     private func box(_ label: String, _ v: Binding<String>) -> some View {
@@ -302,7 +338,8 @@ struct WebImportSheet: View {
         loaded = true
         var imgs = ((page["images"] as? [String]) ?? []).filter { !$0.isEmpty && (!$0.hasPrefix("data:") || $0.count < 600_000) }
         if let c = page["cover"] as? String, !c.isEmpty, !imgs.contains(c) { imgs.insert(c, at: 0) }
-        images = imgs
+        images = Array(imgs.prefix(12))
+        if images.isEmpty { pickIndex = -1 }
         let raw = ((page["title"] as? String) ?? "").replacingOccurrences(of: #"\s*[|–-]\s*(Goodreads|Amazon[^|]*|أبجد|Open Library|Google Books)\s*$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^Amazon\.\w+\s*:\s*"#, with: "", options: .regularExpression)
         t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -312,13 +349,53 @@ struct WebImportSheet: View {
     }
 
     private func use() {
+        if !coverOnly && useData && t.trimmingCharacters(in: .whitespaces).isEmpty { err = "اكتب العنوان."; return }
         var e: [String: Any] = ["src": "web"]
         if images.indices.contains(pickIndex) { e["cover"] = images[pickIndex] }
+        if pickIndex == -2 { e["ownPhoto"] = true }
         if !coverOnly && useData {
             e["title"] = t; e["author"] = a; e["isbn"] = isbn
             if let p = Int(pages), p > 0 { e["pages"] = p }
             if let l = page["lang"] as? String { e["lang"] = l }
         }
         done(e)
+    }
+}
+
+/// .notice: a bold line and its explanation on the accent's soft colour.
+struct Notice: View {
+    let title: String
+    let text: String
+    @Environment(\.look) private var L
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(JFont.body(14.5, .semibold))
+            Text(text).font(JFont.body(13.5))
+        }
+        .foregroundStyle(Color(L.ink))
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(L.accentSoft)))
+    }
+}
+
+/// .ed-bar: what is selected, pinned under the list, with its button.
+struct EdBar: View {
+    let title: String
+    let sub: String
+    let button: String
+    let action: () -> Void
+    @Environment(\.look) private var L
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(JFont.body(14.5, .semibold)).foregroundStyle(Color(L.ink)).lineLimit(1)
+                if !sub.isEmpty { Text(sub).font(JFont.body(12)).foregroundStyle(Color(L.ink2)).lineLimit(1) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button(button, action: action).buttonStyle(JButtonStyle(look: L, primary: true))
+        }
+        .padding(.horizontal, 18).padding(.vertical, 12)
+        .background(Color(L.surface).shadow(color: .black.opacity(0.25), radius: 10, y: -4).ignoresSafeArea(edges: .bottom))
     }
 }

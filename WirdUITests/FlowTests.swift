@@ -13,7 +13,7 @@ final class FlowTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_SA"]
         app.launch()
         _ = app.buttons["المكتبة"].waitForExistence(timeout: 15)
-        sleep(1)
+        sleep(3) // the splash
     }
 
     // MARK: helpers
@@ -46,6 +46,12 @@ final class FlowTests: XCTestCase {
 
     private func tab(_ name: String) { tap(button(name), "tab " + name); sleep(1) }
 
+    /// Scrolls until the element sits clear of the tab bar (a tap under it would land on a tab).
+    private func reveal(_ e: XCUIElement) {
+        var n = 0
+        while n < 10 && (!e.exists || e.frame.maxY > app.frame.maxY - 170) { app.swipeUp(velocity: .slow); n += 1 }
+    }
+
     // MARK: flows
 
     /// Every tab of both groups opens, and coming back to the library keeps it as it was.
@@ -54,7 +60,8 @@ final class FlowTests: XCTestCase {
         for (t, n) in [("دفتري", "ui02-notebook"), ("إنجازاتي", "ui03-progress"), ("الإعدادات", "ui04-settings")] { tab(t); shot(n) }
         tab("تصفّح"); shot("ui05-browse")
         for (t, n) in [("التحديثات", "ui06-updates"), ("التحميلات", "ui07-downloads"), ("السجل", "ui08-history")] { tab(t); shot(n) }
-        tab("المكتبة"); shot("ui09-library-again")
+        // the main group is now a round button showing the tab it was left at
+        tab("الإعدادات"); tab("المكتبة"); shot("ui09-library-again")
         XCTAssertTrue(button("إضافة كتاب").exists, "the library header is back")
     }
 
@@ -68,7 +75,7 @@ final class FlowTests: XCTestCase {
         if tap(title, "title field") {
             title.typeText("كتاب تجربة الواجهة")
             shot("ui11-form-typed")
-            tap(button("حفظ"), "save")
+            tap(app.buttons["form.save"].firstMatch, "save")
             sleep(2)
             shot("ui12-after-add")
             XCTAssertTrue(app.staticTexts["كتاب تجربة الواجهة"].waitForExistence(timeout: 4), "the new book is in the library")
@@ -155,13 +162,14 @@ final class FlowTests: XCTestCase {
         let car = app.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "مكتبتك")).firstMatch
         if car.waitForExistence(timeout: 4) { car.swipeUp() } else { app.swipeUp() }
         sleep(2)
-        for _ in 0..<6 where !button("بطاقة الكتاب").isHittable { app.swipeUp() }
+        reveal(buttonStarting("بطاقة الكتاب"))
         if tap(buttonStarting("بطاقة الكتاب"), "book card") {
             sleep(2)
             shot("ui25d-book-card")
             app.swipeDown(velocity: .fast)
             sleep(1)
         }
+        reveal(buttonStarting("ملخص PDF"))
         if tap(buttonStarting("ملخص PDF"), "pdf summary") {
             sleep(3)
             shot("ui25e-pdf")

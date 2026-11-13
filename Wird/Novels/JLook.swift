@@ -75,6 +75,9 @@ extension UIColor {
 
 /// The app's fonts, registered once at launch from the bundle.
 enum JFont {
+    /// the owner's text size (الإعدادات ← حجم الخط) for every Jalees screen: 14, 15 or 16.5 over 15, like the web's --fs
+    static var scale: CGFloat = 1
+
     static func register() {
         guard let urls = Bundle.main.urls(forResourcesWithExtension: "ttf", subdirectory: nil) else { return }
         for u in urls where !u.lastPathComponent.lowercased().hasPrefix("thmanyah") {
@@ -84,6 +87,7 @@ enum JFont {
 
     /// Titles (Reem Kufi), like the web's --f-display.
     static func display(_ size: CGFloat, _ weight: UIFont.Weight = .semibold) -> Font {
+        let size = size * scale
         let d = UIFontDescriptor(fontAttributes: [.family: "Reem Kufi", .traits: [UIFontDescriptor.TraitKey.weight: weight]])
         let f = UIFont(descriptor: d, size: size)
         return f.familyName == "Reem Kufi" ? Font(f as CTFont) : .system(size: size, weight: Font.Weight(weight))
@@ -91,6 +95,7 @@ enum JFont {
 
     /// Body text (IBM Plex Sans Arabic), like the web's --f-body.
     static func body(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> Font {
+        let size = size * scale
         let name: String
         switch weight {
         case .bold, .heavy, .black: name = "IBMPlexSansArabic-Bold"

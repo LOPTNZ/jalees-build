@@ -54,9 +54,12 @@ struct MultiAddSheet: View {
     @State private var format = BookFormat.physical
     @State private var status = BookStatus.want
     @State private var err = ""
+    @State private var askLeave = false
+
+    private var typed: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
-        JSheet(title: "عدة كتب", action: ("إضافة", { save() })) {
+        JSheet(title: "عدة كتب", action: ("إضافة", { save() }), onClose: { if typed { askLeave = true; Haptics.play("warn") } else { dismiss() } }) {
             JLabel(text: "كل كتاب في سطر، وممكن تكتب «العنوان - المؤلف»")
             TextEditor(text: $text).font(JFont.body(16)).frame(minHeight: 180).scrollContentBackground(.hidden)
                 .padding(8).background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
@@ -74,7 +77,13 @@ struct MultiAddSheet: View {
             if !err.isEmpty { Text(err).font(JFont.body(14)).foregroundStyle(Color(L.danger)) }
             Button { save() } label: { Text("إضافة الكتب").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
         }
-        .interactiveDismissDisabled(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .interactiveDismissDisabled(typed)
+        .confirmationDialog("تترك الإضافة؟", isPresented: $askLeave, titleVisibility: .visible) {
+            Button("اطلع بدون حفظ", role: .destructive) { dismiss() }
+            Button("أكمل", role: .cancel) {}
+        } message: {
+            Text("اللي كتبته ما انحفظ، وبيروح إذا طلعت.")
+        }
     }
 
     private func save() {
@@ -127,7 +136,7 @@ struct BatchAddSheet: View {
         let n = items.filter(\.on).count
         JSheet(title: "مسح متتابع", action: n > 0 ? ("إضافة", { save() }) : nil) {
             Text(left > 0 ? "أدوّر على " + Words.cnt(Double(items.count), ["كتاب واحد", "كتابين", "كتب", "كتابًا"]) + "… باقي \(left)."
-                          : "اختر اللي تبي تضيفه. الكتب تنضاف ملموسة، وتكمّل تفاصيلها لاحقًا.")
+                          : "اختر اللي تبي تضيفه. الكتب تنضاف ملموسة، وتكمّل تفاصيلها متى ما بغيت.")
                 .font(JFont.body(13.5)).foregroundStyle(Color(L.ink2))
             VStack(spacing: 0) {
                 ForEach($items) { $x in

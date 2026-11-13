@@ -101,6 +101,8 @@ struct JSheet<Content: View>: View {
     let title: String
     var subtitle: String? = nil
     var action: (label: String, run: () -> Void)? = nil
+    /// asks first instead of closing (unsaved text)
+    var onClose: (() -> Void)? = nil
     @ViewBuilder let content: () -> Content
     @Environment(\.dismiss) private var dismiss
     @Environment(\.look) private var L
@@ -108,7 +110,7 @@ struct JSheet<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Button { dismiss() } label: {
+                Button { if let c = onClose { c() } else { dismiss() } } label: {
                     Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Color(L.ink))
                         .frame(width: 36, height: 36).background(Circle().fill(Color(L.surface2)))
                 }
@@ -364,5 +366,48 @@ extension View {
     /// don't show through it.
     func statusBarBackdrop(_ c: Color) -> some View {
         overlay(alignment: .top) { c.opacity(0.96).frame(height: 0).ignoresSafeArea(edges: .top) }
+    }
+}
+
+/// The web app's splash (07-app.js, style.css .splash): the name, the verse and its poet, for 1.7 s (0.45 s with
+/// reduced motion), then a fade; a tap skips it.
+struct SplashView: View {
+    let done: () -> Void
+    @Environment(\.look) private var L
+    @Environment(\.accessibilityReduceMotion) private var reduce
+    @State private var shown = false
+    @State private var leaving = false
+
+    var body: some View {
+        ZStack {
+            Color(L.bg).ignoresSafeArea()
+            VStack(spacing: 8) {
+                Text("جَليس").font(JFont.display(58, .bold)).foregroundStyle(Color(L.primary))
+                    .scaleEffect(shown || reduce ? 1 : 0.9).opacity(shown || reduce ? 1 : 0)
+                    .animation(reduce ? nil : .timingCurve(0.2, 0.9, 0.25, 1.1, duration: 0.7), value: shown)
+                Text("وخيرُ جليسٍ في الزمانِ كتابُ").font(JFont.quote(21)).foregroundStyle(Color(L.ink).opacity(0.85))
+                    .offset(y: shown || reduce ? 0 : 10).opacity(shown || reduce ? 1 : 0)
+                    .animation(reduce ? nil : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.6).delay(0.35), value: shown)
+                Text("المتنبي").font(JFont.body(12)).foregroundStyle(Color(L.ink2))
+                    .offset(y: shown || reduce ? 0 : 10).opacity(shown || reduce ? 1 : 0)
+                    .animation(reduce ? nil : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.6).delay(0.5), value: shown)
+            }
+            .padding(24)
+            .scaleEffect(leaving ? 1.04 : 1)
+        }
+        .opacity(leaving ? 0 : 1)
+        .contentShape(Rectangle())
+        .onTapGesture { leave() }
+        .onAppear {
+            shown = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + (reduce ? 0.45 : 1.7)) { leave() }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func leave() {
+        guard !leaving else { return }
+        withAnimation(.easeOut(duration: 0.5)) { leaving = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { done() }
     }
 }

@@ -12,6 +12,8 @@ final class ShelfEditor: ObservableObject {
     /// where a dragged book would land: row, and index (or a free spot in centimetres from the row's start)
     @Published var hint: (row: Int, index: Int?, gap: Double?)?
     @Published var picked: String?
+    /// the books being dragged now (one, or a pile), known from the start of the drag
+    var dragIDs: [String] = []
 
     var hasGaps: Bool { draft.contains { $0.contains { $0.gap > 0 } } }
 
@@ -77,6 +79,67 @@ final class ShelfEditor: ObservableObject {
         draft = rows
         Haptics.play("sel")
     }
+
+    // MARK: free placement (02-library.js places, regap, freeDrop)
+
+    struct Slot { var off: Double; var w: Double; var items: [ShelfItem] }
+
+    /// Where each slot of a row sits now, in centimetres from the row's start (its right side); a pile is one slot.
+    static func slots(_ row: [ShelfItem]) -> [Slot] {
+        let st = Library.shared.state, K = Double(ShelfSize.K)
+        var out: [Slot] = []
+        for it in row {
+            let w = st.book(it.id).map { Double(ShelfSize.width($0, it.pose)) / K } ?? 0
+            if it.pose == "flat", it.gap == 0, var last = out.last, last.items.first?.pose == "flat" {
+                last.items.append(it)
+                last.w = max(last.w, w)
+                out[out.count - 1] = last
+            } else {
+                let start = (out.last.map { $0.off + $0.w + 2 / K } ?? 0) + it.gap
+                out.append(Slot(off: start, w: w, items: [it]))
+            }
+        }
+        return out
+    }
+
+    /// Gaps from wanted positions, in reading order; books never overlap (2 points apart); gaps under 0.25 cm close.
+    static func regap(_ pl: [Slot]) -> [ShelfItem] {
+        let K = Double(ShelfSize.K)
+        var end = 0.0
+        var out: [ShelfItem] = []
+        for p in pl.sorted(by: { $0.off < $1.off }) {
+            var g = max(0, p.off - end)
+            if g < 0.25 { g = 0 }
+            g = (g * 10).rounded() / 10
+            for (k, var it) in p.items.enumerated() { it.gap = k == 0 ? g : 0; out.append(it) }
+            end = end + g + p.w + 2 / K
+        }
+        return out
+    }
+
+    /// Drops books into empty space on a row: they stay where dropped, and every other book keeps its place.
+    func freeDrop(_ ids: [String], toRow r: Int, at: Double) {
+        var rows = draft
+        let moving = ids.compactMap { id in rows.joined().first { $0.id == id } }
+        guard !moving.isEmpty else { return }
+        let set = Set(ids)
+        let src = find(ids[0])?.r
+        func keep(_ row: [ShelfItem]) -> [Slot] {
+            Self.slots(row).compactMap { s in
+                var x = s
+                x.items = s.items.filter { !set.contains($0.id) }
+                return x.items.isEmpty ? nil : x
+            }
+        }
+        let w = Self.slots(moving.map { var x = $0; x.gap = 0; return x }).map(\.w).max() ?? 0
+        if r >= rows.count { rows.append([]) }
+        if let s = src, s != r { rows[s] = Self.regap(keep(rows[s])) }
+        var dest = keep(rows[r])
+        dest.append(Slot(off: max(0, at), w: w, items: moving))
+        rows[r] = Self.regap(dest)
+        draft = rows
+        Haptics.play("sel")
+    }
 }
 
 /// Drops on a row: the place comes from where the finger is, measured from the row's start (its right side).
@@ -85,20 +148,25 @@ struct ShelfRowDrop: DropDelegate {
     let width: CGFloat
     @ObservedObject var editor: ShelfEditor
 
+    /// Over a book (or pile): before or after it, by its middle. Over empty space: a free spot, in centimetres from
+    /// the row's start, for the dragged books' middle to sit under the finger.
     private func place(_ x: CGFloat) -> (index: Int?, gap: Double?) {
         let items = editor.draft.indices.contains(row) ? editor.draft[row] : []
-        let fromStart = width - x - 12
-        var used: CGFloat = 0
-        for (i, it) in items.enumerated() {
-            guard let b = Library.shared.state.book(it.id) else { continue }
-            let w = ShelfSize.width(b, it.pose)
-            let start = used + CGFloat(it.gap) * ShelfSize.K
-            if fromStart < start + w / 2 { return (i, nil) }
-            used = start + w + 2
+        let K = Double(ShelfSize.K)
+        let fromStart = Double(width - x - 12) / K
+        let moving = Set(editor.dragIDs)
+        for s in ShelfEditor.slots(items) {
+            let left = s.items.filter { !moving.contains($0.id) }
+            guard !left.isEmpty else { continue }
+            if fromStart >= s.off - 1 / K && fromStart <= s.off + s.w {
+                let first = items.firstIndex { $0.id == left.first!.id } ?? 0
+                let last = items.firstIndex { $0.id == left.last!.id } ?? first
+                return fromStart < s.off + s.w / 2 ? (first, nil) : (last + 1, nil)
+            }
         }
-        let free = Double((fromStart - used) / ShelfSize.K)
-        let g = (free * 10).rounded() / 10
-        return (nil, g < 0.25 ? nil : g)
+        let dragged = editor.draft.joined().filter { moving.contains($0.id) }.map { var x = $0; x.gap = 0; return x }
+        let w = ShelfEditor.slots(dragged).map(\.w).max() ?? 0
+        return (nil, max(0, fromStart - w / 2))
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -117,7 +185,8 @@ struct ShelfRowDrop: DropDelegate {
             let ids = s.split(separator: ",").map(String.init)
             Task { @MainActor in
                 editor.hint = nil
-                editor.move(ids, toRow: row, index: p.index, gap: p.gap)
+                editor.dragIDs = []
+                if let i = p.index { editor.move(ids, toRow: row, index: i, gap: nil) } else { editor.freeDrop(ids, toRow: row, at: p.gap ?? 0) }
             }
         }
         return true
@@ -134,12 +203,12 @@ struct ShelfEditBar: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Button { editor.cancel() } label: { Image(systemName: "xmark").frame(width: 36, height: 36) }
-                    .buttonStyle(.plain).foregroundStyle(Color(L.ink)).background(Circle().fill(Color(L.surface2))).accessibilityLabel("إلغاء")
+                    .buttonStyle(.plain).foregroundStyle(Color(L.ink)).background(Circle().fill(Color(L.surface2))).accessibilityLabel("إلغاء التعديل")
                 Spacer()
                 Text("تعديل الرف").font(JFont.display(19, .semibold)).foregroundStyle(Color(L.ink))
                 Spacer()
                 Button { editor.save() } label: { Image(systemName: "checkmark").frame(width: 36, height: 36) }
-                    .buttonStyle(.plain).foregroundStyle(Color(L.onPrimary)).background(Circle().fill(Color(L.primary))).accessibilityLabel("حفظ")
+                    .buttonStyle(.plain).foregroundStyle(Color(L.onPrimary)).background(Circle().fill(Color(L.primary))).accessibilityLabel("حفظ الرف")
             }
             Text("اضغط على كتاب لتعديله · اسحبه بين الكتب لترتيبها، أو لأي مكان فاضي على الرف ويبقى فيه").font(JFont.body(13)).foregroundStyle(Color(L.ink2))
             HStack(spacing: 8) {

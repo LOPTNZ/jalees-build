@@ -13,9 +13,10 @@ struct SettingsView: View {
     @State private var exporting = false
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
-                Text("الإعدادات").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink))
+                Text("الإعدادات").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink)).id("top")
 
                 section("المظهر") {
                     field("الوضع") { JSeg(options: [("system", "حسب الجهاز"), ("light", "فاتح"), ("dark", "داكن")], value: str("theme", "system")) }
@@ -89,7 +90,7 @@ struct SettingsView: View {
                     }
                     if lib.state.demo {
                         Text("الكتب الحالية تجريبية. إذا جهزت تبدأ بكتبك، امسحها بزر «ابدأ من الصفر».")
-                            .font(JFont.body(L.fs * 0.93)).foregroundStyle(Color(L.ink))
+                            .font(JFont.body(15 * 0.93)).foregroundStyle(Color(L.ink))
                             .padding(.horizontal, 14).padding(.vertical, 12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(L.accentSoft)))
@@ -107,9 +108,9 @@ struct SettingsView: View {
                 }
 
                 VStack(spacing: 4) {
-                    Text("جَليس " + Self.version).font(JFont.body(L.fs * 0.86)).foregroundStyle(Color(L.ink2))
+                    Text("جَليس " + Self.version).font(JFont.body(15 * 0.86)).foregroundStyle(Color(L.ink2))
                     Text("أعزُّ مكانٍ في الدُّنى سرجُ سابحٍ ... وخيرُ جليسٍ في الزمانِ كتابُ")
-                        .font(JFont.quote(L.fs * 0.9)).foregroundStyle(Color(L.ink2)).multilineTextAlignment(.center)
+                        .font(JFont.quote(15 * 0.9)).foregroundStyle(Color(L.ink2)).multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 6)
@@ -117,6 +118,10 @@ struct SettingsView: View {
             .padding(.horizontal, 16).padding(.bottom, 40)
         }
         .scrollDismissesKeyboard(.interactively)
+        .onReceive(NotificationCenter.default.publisher(for: .tabRetap)) { n in
+            if (n.object as? String) == "settings" { withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("top", anchor: .top) } }
+        }
+        }
         .statusBarBackdrop(Color(L.bg))
         .background(Color(L.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -133,7 +138,7 @@ struct SettingsView: View {
 
     private func section<C: View>(_ title: String, @ViewBuilder _ c: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(JFont.display(L.fs * 1.2)).foregroundStyle(Color(L.ink))
+            Text(title).font(JFont.display(15 * 1.2)).foregroundStyle(Color(L.ink))
             c()
         }
     }
@@ -143,7 +148,7 @@ struct SettingsView: View {
     }
 
     private func note(_ t: String) -> some View {
-        Text(t).font(JFont.body(L.fs * 0.86)).foregroundStyle(Color(L.ink2)).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+        Text(t).font(JFont.body(15 * 0.86)).foregroundStyle(Color(L.ink2)).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
     }
 
     private var swatches: some View {
@@ -243,9 +248,9 @@ struct RestoreSheet: View {
         let n = file.data.obj("state").arr("books").count
         JSheet(title: "استعادة نسخة") {
             Text("النسخة فيها \(Words.cnt(Double(n), Words.books)) من \(Words.date(file.data.num("exported"), year: true)).")
-                .font(JFont.body(L.fs)).foregroundStyle(Color(L.ink))
+                .font(JFont.body(15)).foregroundStyle(Color(L.ink))
             Text("بتحل محل كل بياناتك الحالية في التطبيق. إذا تبي تحتفظ فيها، صدّر نسخة أول.")
-                .font(JFont.body(L.fs * 0.93)).foregroundStyle(Color(L.ink))
+                .font(JFont.body(15 * 0.93)).foregroundStyle(Color(L.ink))
                 .padding(.horizontal, 14).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(L.accentSoft)))
             Button { dismiss(); Backup.restore(file.data) } label: { Text("استعادة").frame(maxWidth: .infinity) }
@@ -260,8 +265,8 @@ private struct ResetSheet: View {
     @Environment(\.look) private var L
     var body: some View {
         JSheet(title: "ابدأ من الصفر") {
-            Text("تنحذف كل الكتب والجلسات والملاحظات والصور. الإعدادات والإنجازات تبقى.").font(JFont.body(L.fs)).foregroundStyle(Color(L.ink))
-            Text("إذا تبي تحتفظ فيها، صدّر نسخة احتياطية أول.").font(JFont.body(L.fs * 0.86)).foregroundStyle(Color(L.ink2))
+            Text("تنحذف كل الكتب والجلسات والملاحظات والصور. الإعدادات والإنجازات تبقى.").font(JFont.body(15)).foregroundStyle(Color(L.ink))
+            Text("إذا تبي تحتفظ فيها، صدّر نسخة احتياطية أول.").font(JFont.body(15 * 0.86)).foregroundStyle(Color(L.ink2))
             Button { dismiss(); Backup.reset() } label: {
                 Text("احذف كل شيء").font(JFont.body(16, .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 50)
