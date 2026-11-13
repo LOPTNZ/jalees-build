@@ -4,12 +4,6 @@ import Combine
 // Parts whose full versions come in later phases of the port (docs/plan/swift/plan.md). Each is called from where it
 // will be needed, so filling it in later changes nothing around it. Nothing here may remain at delivery.
 
-/// The widgets' data in the App Group (phase 8).
-@MainActor
-enum WidgetFeed {
-    static func update() {}
-}
-
 /// Where the notebook should open (phase 5: دفتري).
 @MainActor
 final class NotebookNav: ObservableObject {
@@ -29,13 +23,12 @@ final class NotebookNav: ObservableObject {
 /// notebook entries (5), the book card and PDF (7).
 @MainActor
 enum Flows {
-    private static func later(_ what: String) { ToastCenter.shared.show(what + " · قيد البناء") }
     static func addBook() { Present.shared.open(.bookForm(nil)) }
     static func editBook(_ id: String) { Present.shared.open(.bookForm(id)) }
     static func scanAdd() { Scanning.single() }
     static func scanBatch() { Scanning.batch() }
     static func multiAdd() { Present.shared.open(.multiAdd) }
-    static func importBackup() { later("الاستعادة") }
+    static func importBackup() { BackupImport.shared.picking = true }
     static func startRead(_ id: String) { SessionModel.shared.start(id) }
     /// the finishing card after a book or a volume ends
     static func finish(_ id: String, volume: String?) { Present.shared.open(.finish(id, volume, true)) }
@@ -51,6 +44,7 @@ enum Flows {
         }
         Present.shared.open(.item(ItemRef(book: id, kind: kind, item: nil)))
     }
-    static func bookCard(_ id: String) { later("بطاقة الكتاب") }
-    static func pdf(_ id: String) { later("ملخص PDF") }
+    static func bookCard(_ id: String) { Present.shared.open(.card(CardRequest(kind: .book, book: id))) }
+    static func quoteCard(_ id: String, quote: String) { Present.shared.open(.card(CardRequest(kind: .quote, book: id, quote: quote))) }
+    static func pdf(_ id: String) { Present.shared.open(.pdf(id)) }
 }

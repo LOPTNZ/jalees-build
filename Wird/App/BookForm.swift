@@ -21,6 +21,9 @@ final class BookFormModel: ObservableObject {
     @Published var finish: Date?
     @Published var openBuy: Bool
     @Published var openDims: Bool
+    /// the dimension sheet's ratio locks, kept while the form is open
+    var lockC: Bool?
+    var lockS: Bool?
     @Published var q = ""
     @Published var results: [BookLookup.Item]?
     @Published var showAll = false
@@ -612,6 +615,7 @@ struct BookFormView: View {
         VStack(alignment: .leading, spacing: 6) {
             JLabel(text: label)
             TextField("", text: text).font(JFont.body(16)).keyboardType(keyboard)
+                .accessibilityLabel(label.replacingOccurrences(of: " *", with: ""))
                 .padding(.horizontal, 12).frame(height: 48)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))

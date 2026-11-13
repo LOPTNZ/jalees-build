@@ -9,8 +9,6 @@ struct SettingsView: View {
     @ObservedObject private var lib = Library.shared
     @Environment(\.look) private var L
     @State private var shelfStyle = false
-    @State private var importing = false
-    @State private var restore: BackupFile?
     @State private var askReset = false
     @State private var exporting = false
 
@@ -87,7 +85,7 @@ struct SettingsView: View {
                             Label(exporting ? "جاري التجهيز…" : "تصدير نسخة احتياطية", systemImage: "square.and.arrow.up")
                         }
                         .buttonStyle(JButtonStyle(look: L)).disabled(exporting)
-                        Button("استعادة نسخة") { importing = true }.buttonStyle(JButtonStyle(look: L))
+                        Button("استعادة نسخة") { Flows.importBackup() }.buttonStyle(JButtonStyle(look: L))
                     }
                     if lib.state.demo {
                         Text("الكتب الحالية تجريبية. إذا جهزت تبدأ بكتبك، امسحها بزر «ابدأ من الصفر».")
@@ -122,11 +120,7 @@ struct SettingsView: View {
         .background(Color(L.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $shelfStyle) { ShelfStyleSheet().environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
-        .sheet(item: $restore) { f in RestoreSheet(file: f).environment(\.look, L).environment(\.layoutDirection, .rightToLeft).presentationDetents([.medium]) }
         .sheet(isPresented: $askReset) { ResetSheet().environment(\.look, L).environment(\.layoutDirection, .rightToLeft).presentationDetents([.medium]) }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .data, .item]) { r in
-            if case .success(let url) = r { open(url) }
-        }
         .onReceive(NotificationCenter.default.publisher(for: .settingsDebug)) { n in
             if (n.object as? String) == "reset" { askReset = true }
         }
@@ -220,17 +214,6 @@ struct SettingsView: View {
             Share.data(file.0, name: file.1) { done in ToastCenter.shared.show(done ? "تم حفظ النسخة" : "تم الإلغاء") }
         }
     }
-
-    private func open(_ url: URL) {
-        let ok = url.startAccessingSecurityScopedResource()
-        defer { if ok { url.stopAccessingSecurityScopedResource() } }
-        guard let d = try? Data(contentsOf: url), let o = JSONValue.parse(d)?.object,
-              ["wird", "jalees"].contains(o.str("app")), o.obj("state")["books"]?.array != nil else {
-            ToastCenter.shared.show("الملف ما هو نسخة احتياطية من وِرد")
-            return
-        }
-        restore = BackupFile(data: o)
-    }
 }
 
 extension Notification.Name {
@@ -243,8 +226,15 @@ struct BackupFile: Identifiable {
     let data: JSONObject
 }
 
+/// The file picker for a backup, opened from the settings, the library's + menu or the welcome page.
+@MainActor
+final class BackupImport: ObservableObject {
+    static let shared = BackupImport()
+    @Published var picking = false
+}
+
 /// استعادة نسخة: it replaces everything.
-private struct RestoreSheet: View {
+struct RestoreSheet: View {
     let file: BackupFile
     @Environment(\.dismiss) private var dismiss
     @Environment(\.look) private var L
@@ -308,6 +298,18 @@ enum Backup {
             guard let data = try? JSONSerialization.data(withJSONObject: out) else { return nil }
             return (data, "jalees-backup-\(Words.dkey(Millis.now)).json")
         }.value
+    }
+
+    /// A picked file: a Jalees (or Wird) backup goes to the confirmation; anything else is refused.
+    static func open(_ url: URL) {
+        let ok = url.startAccessingSecurityScopedResource()
+        defer { if ok { url.stopAccessingSecurityScopedResource() } }
+        guard let d = try? Data(contentsOf: url), let o = JSONValue.parse(d)?.object,
+              ["wird", "jalees"].contains(o.str("app")), o.obj("state")["books"]?.array != nil else {
+            ToastCenter.shared.show("الملف ما هو نسخة احتياطية من وِرد")
+            return
+        }
+        Present.shared.open(.restore(BackupFile(data: o)))
     }
 
     /// Replaces everything with the backup (pictures not in it stay on disk, as before).

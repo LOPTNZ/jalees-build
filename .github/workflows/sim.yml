@@ -12,7 +12,7 @@ concurrency:
 jobs:
   sim:
     runs-on: macos-26
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - name: Runner
@@ -35,6 +35,14 @@ jobs:
           test -d build/Build/Products/Debug-iphonesimulator/Wird.app
       - name: Open the screens and take pictures
         run: bash tools/sim/shots.sh
+      - name: Walk through the app (UI tests)
+        if: always()
+        timeout-minutes: 12
+        run: |
+          mkdir -p out-sim/ui
+          # a fresh install: the demo library, not what the pictures above changed
+          xcrun simctl uninstall Jalees13 com.abdullah.wird.reader || true
+          TEST_RUNNER_SHOTS="$PWD/out-sim/ui" xcodebuild test -project Wird.xcodeproj -scheme Wird             -destination 'platform=iOS Simulator,name=Jalees13' -derivedDataPath build             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=""             2>&1 | tee test.log | grep -E "error:|Test Case .*(passed|failed)|: error|XCTAssert|not found|TEST (SUCCEEDED|FAILED)" || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -43,3 +51,4 @@ jobs:
           path: |
             out-sim/
             build.log
+            test.log

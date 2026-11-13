@@ -17,6 +17,9 @@ final class Present: ObservableObject {
         case item(ItemRef)
         case review(String?)
         case character(String, String)
+        case card(CardRequest)
+        case pdf(String)
+        case restore(BackupFile)
         var id: String {
             switch self {
             case .bookForm(let b): return "form" + (b ?? "")
@@ -28,6 +31,9 @@ final class Present: ObservableObject {
             case .item(let r): return "item" + r.id.uuidString
             case .review(let b): return "review" + (b ?? "")
             case .character(let b, let c): return "char" + b + c
+            case .card(let r): return "card" + r.id.uuidString
+            case .pdf(let b): return "pdf" + b
+            case .restore(let f): return "restore" + f.id.uuidString
             }
         }
     }

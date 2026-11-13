@@ -113,10 +113,25 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.abdullah.wird.reader.widget
         PRODUCT_NAME: WirdWidget
         SKIP_INSTALL: "YES"
+  WirdUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: WirdUITests
+    dependencies:
+      - target: Wird
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.abdullah.wird.reader.uitests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_TARGET_NAME: Wird
 schemes:
   Wird:
     build:
       targets:
         Wird: all
+    test:
+      targets:
+        - WirdUITests
     archive:
       config: Release

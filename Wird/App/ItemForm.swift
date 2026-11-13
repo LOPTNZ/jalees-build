@@ -315,6 +315,15 @@ struct ItemForm: View {
             if m.x.str("speakerId") == "__o" { JLabel(text: "اسم القائل"); box(m.str("speakerName")) }
         }
         JSwitchRow(title: "من المفضّلة", on: m.bool("fav"))
+        if m.editing {
+            Button {
+                let b = m.bookID, q = m.x.str("id")
+                dismiss()
+                // after this form has gone (it may be the notebook's own sheet)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.quoteCard(b, quote: q) }
+            } label: { Label("بطاقة الاقتباس", systemImage: "photo") }
+            .buttonStyle(JButtonStyle(look: L, small: true))
+        }
     }
 
     @ViewBuilder private var thought: some View {

@@ -78,6 +78,13 @@ enum DebugRoute {
                 } else if let b = st.books.first(where: { $0.status == .reading }) {
                     Flows.note(b.id, kind: what)
                 }
+            } else if route == "card" || route == "pdf" || route == "quotecard" {
+                // بطاقة الكتاب, ملخص PDF, بطاقة الاقتباس: on the first book that has quotes
+                let st = Library.shared.state
+                if let b = st.books.first(where: { !$0.items(.quote).isEmpty }) ?? st.books.first {
+                    if route == "card" { Flows.bookCard(b.id) } else if route == "pdf" { Flows.pdf(b.id) }
+                    else if let q = b.items(.quote).first { Flows.quoteCard(b.id, quote: q.id) }
+                }
             } else if route.hasPrefix("settings") {
                 // الإعدادات: settings, settings-reset (its confirmation), settings-data (scrolled to the data section)
                 Router.shared.select(.settings)

@@ -149,7 +149,7 @@ final class SessionModel: ObservableObject {
     }
 
     /// The keep-awake setting changed: apply it to the running session.
-    func refreshAwake() { awake(timer != nil && showScreen) }
+    func refreshAwake() { awake(timer != nil) }
 
     /// Everything about a session stops without saving (restoring a backup, starting from zero).
     func clear() { stopAll() }

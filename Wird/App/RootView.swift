@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// The look of the moment: the owner's theme and accent over the phone's light or dark mode.
 @MainActor
@@ -28,6 +29,7 @@ struct RootView: View {
     @ObservedObject private var library = Library.shared
     @ObservedObject private var present = Present.shared
     @ObservedObject private var session = SessionModel.shared
+    @ObservedObject private var backup = BackupImport.shared
     @Environment(\.colorScheme) private var scheme
     /// tabs opened at least once stay alive, so each keeps its place
     @State private var opened: Set<Router.Tab> = [.library]
@@ -65,6 +67,9 @@ struct RootView: View {
                 case .item(let r): ItemForm(ref: r)
                 case .review(let b): WordReview(bookID: b)
                 case .character(let b, let c): CharacterCard(bookID: b, charID: c)
+                case .card(let r): CardSheet(request: r).presentationDetents([.large])
+                case .pdf(let b): PDFSummarySheet(bookID: b).presentationDetents([.large])
+                case .restore(let f): RestoreSheet(file: f).presentationDetents([.medium])
                 }
             }
             .environment(\.look, L)
@@ -82,6 +87,9 @@ struct RootView: View {
         }
         .onChange(of: scheme) { appearance.update(systemDark: $0 == .dark) }
         .onReceive(library.$state) { _ in appearance.update() }
+        .fileImporter(isPresented: $backup.picking, allowedContentTypes: [.json, .data, .item]) { r in
+            if case .success(let url) = r { Backup.open(url) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             // back in the app: today's goal may be met now, and the reminders run three weeks ahead
             Reminder.sync()
@@ -127,7 +135,6 @@ private struct TabRoot: View {
         case .notebook: NotebookView()
         case .progress: ProgressTab()
         case .settings: SettingsView()
-        default: TabPlaceholder(tab: tab)
         }
     }
 }
@@ -193,23 +200,6 @@ struct TabBar: View {
         .overlay(Capsule().strokeBorder(Color(L.line), lineWidth: 1))
         .clipShape(Capsule())
         .shadow(color: .black.opacity(0.28), radius: 11, y: 8)
-    }
-}
-
-// MARK: - pages still to come (phases 2 to 7); never shipped
-
-private struct TabPlaceholder: View {
-    let tab: Router.Tab
-    @Environment(\.look) private var L
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: tab.icon).font(.system(size: 34)).foregroundStyle(Color(L.primary))
-            Text(tab.title).font(JFont.display(26)).foregroundStyle(Color(L.ink))
-            Text("\(Library.shared.state.books.count) كتاب").font(JFont.body(15)).foregroundStyle(Color(L.ink2))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(L.bg).ignoresSafeArea())
-        .navigationTitle(tab.title)
     }
 }
 

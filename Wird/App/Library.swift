@@ -52,6 +52,7 @@ final class Library: ObservableObject {
         saveWork = nil
         guard let d = JSONValue.object(state.json).data(), let s = String(data: d, encoding: .utf8) else { return }
         Store.shared.saveState(s)
+        WidgetFeed.schedule()
     }
 
     // MARK: pictures (same files as before: Application Support/Wird/img/<id>)
