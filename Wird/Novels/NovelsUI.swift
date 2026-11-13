@@ -66,6 +66,18 @@ enum DebugRoute {
                 }
             } else if route == "finish" {
                 if let b = Library.shared.state.books.first(where: { $0.status == .done }) { Flows.finish(b.id, volume: nil) }
+            } else if route.hasPrefix("note-") {
+                // the notebook's forms and cards: note-quote (a new quote), note-char (a character's card), note-review (words)
+                let st = Library.shared.state
+                let what = String(route.dropFirst(5))
+                if what == "char", let b = st.books.first(where: { !$0.chars.isEmpty }), let c = b.chars.first {
+                    Router.shared.select(.notebook)
+                    Present.shared.open(.character(b.id, c.id))
+                } else if what == "review" {
+                    Present.shared.open(.review(nil))
+                } else if let b = st.books.first(where: { $0.status == .reading }) {
+                    Flows.note(b.id, kind: what)
+                }
             } else if route == "multi" {
                 Flows.multiAdd()
             } else if route == "shelfedit" {

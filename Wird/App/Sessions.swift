@@ -265,6 +265,8 @@ struct SessionScreen: View {
     @ObservedObject private var s = SessionModel.shared
     @ObservedObject private var lib = Library.shared
     @Environment(\.look) private var L
+    /// a quick note during the session opens over the session itself
+    @State private var note: ItemRef?
 
     var body: some View {
         ZStack {
@@ -278,6 +280,7 @@ struct SessionScreen: View {
         }
         .foregroundStyle(Color(L.stageInk))
         .sheet(isPresented: $s.ending) { EndSessionSheet().environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
+        .sheet(item: $note) { r in ItemForm(ref: r).environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
     }
 
     private func content(_ b: Book) -> some View {
@@ -370,7 +373,7 @@ struct SessionScreen: View {
     }
 
     private func quick(_ icon: String, _ title: String, _ kind: String, _ b: Book) -> some View {
-        Button { Flows.note(b.id, kind: kind) } label: {
+        Button { note = ItemRef(book: b.id, kind: kind, item: nil) } label: {
             Label(title, systemImage: icon).font(JFont.body(15, .medium)).frame(maxWidth: .infinity, minHeight: 56)
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.08)))
         }

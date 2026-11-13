@@ -14,6 +14,9 @@ final class Present: ObservableObject {
         case finish(String, String?, Bool)
         case reread(String)
         case readDel(String, Int)
+        case item(ItemRef)
+        case review(String?)
+        case character(String, String)
         var id: String {
             switch self {
             case .bookForm(let b): return "form" + (b ?? "")
@@ -22,6 +25,9 @@ final class Present: ObservableObject {
             case .finish(let b, let v, _): return "finish" + b + (v ?? "")
             case .reread(let b): return "reread" + b
             case .readDel(let b, let n): return "readDel" + b + "\(n)"
+            case .item(let r): return "item" + r.id.uuidString
+            case .review(let b): return "review" + (b ?? "")
+            case .character(let b, let c): return "char" + b + c
             }
         }
     }

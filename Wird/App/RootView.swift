@@ -56,6 +56,9 @@ struct RootView: View {
                 case .finish(let b, let v, let c): FinishSheet(bookID: b, volume: v, congrats: c).presentationDetents([.large])
                 case .reread(let b): RereadSheet(bookID: b)
                 case .readDel(let b, let n): ReadDelSheet(bookID: b, n: n)
+                case .item(let r): ItemForm(ref: r)
+                case .review(let b): WordReview(bookID: b)
+                case .character(let b, let c): CharacterCard(bookID: b, charID: c)
                 }
             }
             .environment(\.look, L)
@@ -106,6 +109,7 @@ private struct TabRoot: View {
         case .downloads: DownloadsTab(look: L).id(visit)
         case .history: HistoryTab(look: L).id(visit)
         case .library: LibraryView(ns: zoom)
+        case .notebook: NotebookView()
         default: TabPlaceholder(tab: tab)
         }
     }

@@ -106,11 +106,12 @@ struct CropView: View {
         switch request.kind {
         case "spine": return [("حر", nil), ("1:6", 1 / 6), ("1:8", 1 / 8), ("1:10", 1 / 10), ("الأصلية", r)]
         case "photo": return [("دائري", 1)]
+        case "ocr": return [("حر", nil), ("الصورة كاملة", r), ("سطر", r / 0.07), ("فقرة", r / 0.3)]
         default: return [("حر", nil), ("الأصلية", r), ("2:3", 2 / 3), ("3:4", 3 / 4), ("1:1", 1)]
         }
     }
 
-    private var title: String { ["spine": "قص الكعب", "photo": "حدد مكان الوجه"][request.kind] ?? "قص الغلاف" }
+    private var title: String { ["spine": "قص الكعب", "photo": "حدد مكان الوجه", "ocr": "حدد النص"][request.kind] ?? "قص الغلاف" }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -254,7 +255,7 @@ struct CropView: View {
                                                                                                width: r.width * request.image.scale, height: r.height * request.image.scale)) else {
             done(request.image); return
         }
-        let maxSide: CGFloat = request.kind == "photo" ? 520 : (request.kind == "spine" ? 1300 : 1100)
+        let maxSide: CGFloat = request.kind == "photo" ? 520 : (request.kind == "spine" ? 1300 : (request.kind == "ocr" ? 2200 : 1100))
         done(UIImage(cgImage: cg).resized(maxSide: maxSide))
     }
 }
