@@ -156,7 +156,10 @@ struct CarouselView: View {
         let R = flow ? 4.9 : 3.05
         let tilt = flow ? min(12, max(-12, -car.vel * 4)) : 0
         // every card is placed first, then drawn in depth order (the middle one last, on top)
-        let cards: [(i: Int, b: Book, p: Place, show: Bool)] = books.enumerated().map { i, b in
+        // positions come from the carousel's own list, so a card and the words under it always agree
+        let at = Dictionary(car.ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        let cards: [(i: Int, b: Book, p: Place, show: Bool)] = books.enumerated().map { n, b in
+            let i = at[b.id] ?? n
             let o = car.offset(i)
             let cw = coverH * b.coverAspect
             let p = flow ? flowPlace(o, W: W, tilt: tilt) : stackPlace(o, cw: cw, W: W)

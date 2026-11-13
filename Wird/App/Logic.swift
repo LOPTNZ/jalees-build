@@ -217,6 +217,9 @@ extension AppState {
             return true
         }
         let asc = st.dir == "asc"
+        // ties keep the library's own order, so the list is the same every time it is drawn
+        let order = Dictionary(uniqueKeysWithValues: books.enumerated().map { ($1.id, $0) })
+        func tie(_ x: Book, _ y: Book) -> Bool { (order[x.id] ?? 0) < (order[y.id] ?? 0) }
         func num(_ b: Book) -> Double {
             switch st.sort {
             case "added": return b.added
@@ -233,11 +236,16 @@ extension AppState {
             list.sort { x, y in
                 let a = Words.norm(st.sort == "title" ? x.title : x.author), b = Words.norm(st.sort == "title" ? y.title : y.author)
                 let c = a.compare(b, locale: ar)
+                if c == .orderedSame { return tie(x, y) }
                 return asc ? c == .orderedAscending : c == .orderedDescending
             }
         } else {
             let keys = Dictionary(uniqueKeysWithValues: list.map { ($0.id, num($0)) })
-            list.sort { asc ? (keys[$0.id] ?? 0) < (keys[$1.id] ?? 0) : (keys[$0.id] ?? 0) > (keys[$1.id] ?? 0) }
+            list.sort { x, y in
+                let a = keys[x.id] ?? 0, b = keys[y.id] ?? 0
+                if a == b { return tie(x, y) }
+                return asc ? a < b : a > b
+            }
         }
         return list
     }
