@@ -21,6 +21,7 @@ struct RootView: View {
     @ObservedObject private var appearance = Appearance.shared
     @ObservedObject private var library = Library.shared
     @ObservedObject private var present = Present.shared
+    @ObservedObject private var session = SessionModel.shared
     @Environment(\.colorScheme) private var scheme
     /// tabs opened at least once stay alive, so each keeps its place
     @State private var opened: Set<Router.Tab> = [.library]
@@ -42,13 +43,19 @@ struct RootView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { TabBar() }
-        .overlay(alignment: .bottom) { ToastView().padding(.bottom, 92) }
+        .overlay(alignment: .bottom) { VStack(spacing: 10) { ToastView(); SessionChip() }.padding(.bottom, 92) }
+        .fullScreenCover(isPresented: $session.showScreen) {
+            SessionScreen().environment(\.look, L).environment(\.layoutDirection, .rightToLeft).environment(\.locale, Locale(identifier: "ar@numbers=latn"))
+        }
         .sheet(item: $present.modal) { m in
             Group {
                 switch m {
                 case .bookForm(let id): BookFormView(bookID: id)
                 case .multiAdd: MultiAddSheet().presentationDetents([.large])
                 case .batch(let codes): BatchAddSheet(codes: codes)
+                case .finish(let b, let v, let c): FinishSheet(bookID: b, volume: v, congrats: c).presentationDetents([.large])
+                case .reread(let b): RereadSheet(bookID: b)
+                case .readDel(let b, let n): ReadDelSheet(bookID: b, n: n)
                 }
             }
             .environment(\.look, L)

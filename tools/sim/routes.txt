@@ -1,9 +1,7 @@
 # name  seconds  launch arguments
+formsearch 24 -JaleesRoute formsearch
+session 12 -JaleesRoute session
+sessionend 14 -JaleesRoute sessionend
+finish 10 -JaleesRoute finish
+book-done 12 -JaleesRoute book-4
 carousel 10 -JaleesRoute lib-carousel
-shelfedit 12 -JaleesRoute shelfedit
-form 10 -JaleesRoute form
-formsearch 22 -JaleesRoute formsearch
-formedit 10 -JaleesRoute formedit
-multi 10 -JaleesRoute multi
-book-series 12 -JaleesRoute book-1
-reader 13 -JaleesRoute reader-chrome

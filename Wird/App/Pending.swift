@@ -42,8 +42,11 @@ enum Flows {
     static func scanBatch() { Scanning.batch() }
     static func multiAdd() { Present.shared.open(.multiAdd) }
     static func importBackup() { later("الاستعادة") }
-    static func startRead(_ id: String) { later("الجلسة") }
-    static func finish(_ id: String, volume: String?) {}
+    static func startRead(_ id: String) { SessionModel.shared.start(id) }
+    /// the finishing card after a book or a volume ends
+    static func finish(_ id: String, volume: String?) { Present.shared.open(.finish(id, volume, true)) }
+    /// the review of a book or a volume, from its page
+    static func review(_ id: String, volume: String?) { Present.shared.open(.finish(id, volume, false)) }
     static func note(_ id: String, kind: String) { later("الدفتر") }
     static func bookCard(_ id: String) { later("بطاقة الكتاب") }
     static func pdf(_ id: String) { later("ملخص PDF") }

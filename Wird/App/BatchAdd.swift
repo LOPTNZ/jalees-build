@@ -11,11 +11,17 @@ final class Present: ObservableObject {
         case bookForm(String?)
         case multiAdd
         case batch([String])
+        case finish(String, String?, Bool)
+        case reread(String)
+        case readDel(String, Int)
         var id: String {
             switch self {
             case .bookForm(let b): return "form" + (b ?? "")
             case .multiAdd: return "multi"
             case .batch(let c): return "batch" + c.joined()
+            case .finish(let b, let v, _): return "finish" + b + (v ?? "")
+            case .reread(let b): return "reread" + b
+            case .readDel(let b, let n): return "readDel" + b + "\(n)"
             }
         }
     }

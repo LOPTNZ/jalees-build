@@ -54,9 +54,18 @@ enum DebugRoute {
                 // the book form: adding (form), searching online (formsearch), editing (formedit), many (multi)
                 if route == "formedit" { Flows.editBook(Library.shared.state.lastBookId() ?? "") } else { Flows.addBook() }
                 if route == "formsearch" {
-                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
                     NotificationCenter.default.post(name: .formQuery, object: "البؤساء")
                 }
+            } else if route.hasPrefix("session") {
+                // a reading session on the book read last (sessionend: its end sheet too)
+                let st = Library.shared.state
+                if let id = st.books.first(where: { $0.status == .reading && !$0.isNovel })?.id {
+                    SessionModel.shared.start(id)
+                    if route == "sessionend" { try? await Task.sleep(nanoseconds: 2_500_000_000); SessionModel.shared.beginEnd() }
+                }
+            } else if route == "finish" {
+                if let b = Library.shared.state.books.first(where: { $0.status == .done }) { Flows.finish(b.id, volume: nil) }
             } else if route == "multi" {
                 Flows.multiAdd()
             } else if route == "shelfedit" {

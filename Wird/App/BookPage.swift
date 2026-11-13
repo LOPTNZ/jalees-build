@@ -223,7 +223,7 @@ struct BookPage: View {
                 let finished = i < b.vi || b.status == .done
                 let current = i == b.vi && b.status != .done
                 let review = b.volReviews[v.id]?.object
-                Button { Flows.finish(b.id, volume: v.id) } label: {
+                Button { Flows.review(b.id, volume: v.id) } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text("المجلد \(i + 1)" + (v.title.isEmpty ? "" : " · " + v.title)).font(JFont.body(14.5, current ? .semibold : .regular))
@@ -302,7 +302,7 @@ struct BookPage: View {
             HStack {
                 Text("مراجعتك" + (b.readNo > 1 ? " · القراءة \(b.readNo)" : "")).font(JFont.display(18, .semibold)).foregroundStyle(Color(L.ink))
                 Spacer()
-                Button { Flows.finish(b.id, volume: nil) } label: { Label(b.review.isEmpty ? "اكتبها" : "تعديل", systemImage: "pencil").font(JFont.body(14)) }
+                Button { Flows.review(b.id, volume: nil) } label: { Label(b.review.isEmpty ? "اكتبها" : "تعديل", systemImage: "pencil").font(JFont.body(14)) }
                     .buttonStyle(.plain).foregroundStyle(Color(L.primary))
             }
             if b.rating > 0 { Text(Words.stars(b.rating)).foregroundStyle(Color(L.star)) }
@@ -398,10 +398,18 @@ struct BookPage: View {
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
                 }
                 .buttonStyle(.plain)
+                if openReads.contains(n) {
+                    Button { Present.shared.open(.readDel(b.id, n)) } label: { Label("حذف هذه القراءة", systemImage: "trash").font(JFont.body(13.5)) }
+                        .buttonStyle(.plain).foregroundStyle(Color(L.danger))
+                }
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("القراءة \(b.readNo)" + (b.status == .done ? "" : " (الحالية)")).font(JFont.body(15, .semibold)).foregroundStyle(Color(L.ink))
                 Text(readDates(b.start, b.finish)).font(JFont.body(13)).foregroundStyle(Color(L.ink2))
+                Button { Present.shared.open(.readDel(b.id, b.readNo)) } label: {
+                    Label(b.status == .done ? "حذف هذه القراءة" : "إلغاء هذه القراءة والرجوع للقراءة " + Words.ord(max(1, b.readNo - 1)), systemImage: "trash").font(JFont.body(13.5))
+                }
+                .buttonStyle(.plain).foregroundStyle(Color(L.danger))
             }
         }
     }
