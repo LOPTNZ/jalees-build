@@ -108,6 +108,9 @@ struct LibraryView: View {
                             .font(JFont.body(15, .medium)).foregroundStyle(over ? Color.white : Color(L.primary))
                     }
                 } else {
+                    ZStack {
+                    // the minimised session sits at the start of this row, as in the web app
+                    HStack { HeaderSessionChip(); Spacer(minLength: 0) }
                     Button { sheet = .status } label: {
                         HStack(spacing: 6) {
                             Text(statusTitle).font(JFont.body(15, .semibold))
@@ -120,6 +123,7 @@ struct LibraryView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("عرض: " + statusTitle)
+                    }
                 }
             }
         }
@@ -275,7 +279,7 @@ struct LibraryGrid: View {
                     .accessibilityLabel(b.title)
                 }
             }
-            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 30)
+            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 110)
         }
     }
 }

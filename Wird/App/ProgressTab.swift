@@ -13,12 +13,17 @@ struct ProgressTab: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("إنجازاتي").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink)).id("top")
+                    HStack(spacing: 12) {
+                        Text("إنجازاتي").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink))
+                        HeaderSessionChip()
+                        Spacer(minLength: 0)
+                    }
+                    .id("top")
                     JSeg(options: [("goals", "الأهداف"), ("stats", "الإحصائيات")], value: $sub)
                         .padding(.bottom, 4)
                     if sub == "goals" { GoalsPage(state: lib.state) } else { StatsPage(state: lib.state, range: $range) }
                 }
-                .padding(.horizontal, 16).padding(.bottom, 40)
+                .padding(.horizontal, 16).padding(.bottom, 110)
             }
             .onReceive(NotificationCenter.default.publisher(for: .tabRetap)) { n in
                 if (n.object as? String) == "progress" { withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("top", anchor: .top) } }

@@ -74,8 +74,9 @@ struct BookPage: View {
                 }
                 .padding(.horizontal, 16)
             }
-            .padding(.bottom, 40)
+            .padding(.bottom, 110)
         }
+        .statusBarBackdrop(Color(L.bg))
         .background(Color(L.bg).ignoresSafeArea())
     }
 
@@ -84,14 +85,18 @@ struct BookPage: View {
     private func hero(_ b: Book) -> some View {
         let tint = UIColor.hslParts(b.hslString) ?? L.primary
         return VStack(alignment: .leading, spacing: 14) {
-            Button { dismiss() } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.forward").font(.system(size: 15, weight: .semibold))
-                    Text(backLabel).font(JFont.body(15, .medium))
+            HStack {
+                Button { dismiss() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.forward").font(.system(size: 15, weight: .semibold))
+                        Text(backLabel).font(JFont.body(15, .medium))
+                    }
+                    .foregroundStyle(.white)
                 }
-                .foregroundStyle(.white)
+                .buttonStyle(.plain)
+                Spacer(minLength: 0)
+                HeaderSessionChip()
             }
-            .buttonStyle(.plain)
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(b.title).font(JFont.display(26, .bold)).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
@@ -654,7 +659,7 @@ struct TargetSheet: View {
                 DatePicker("أبي أنهيه قبل", selection: $date, in: Date()..., displayedComponents: .date).font(JFont.body(15.5)).tint(Color(L.primary))
                     .environment(\.locale, Locale(identifier: "ar@numbers=latn"))
                 Text("يحسب لك كم " + b.unit.pl + " تحتاج يوميًا عشان توصل.").font(JFont.body(13.5)).foregroundStyle(Color(L.ink2))
-                Button { save() } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
+                Button { afterEditing(save) } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
                 if !b.target.isEmpty {
                     Button { lib.changeBook(bookID) { $0.target = "" }; dismiss() } label: { Text("إلغاء الموعد").frame(maxWidth: .infinity).foregroundStyle(Color(L.danger)) }
                         .buttonStyle(JButtonStyle(look: L))

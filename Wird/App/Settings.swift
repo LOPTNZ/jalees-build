@@ -16,7 +16,12 @@ struct SettingsView: View {
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
-                Text("الإعدادات").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink)).id("top")
+                HStack(spacing: 12) {
+                    Text("الإعدادات").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink))
+                    HeaderSessionChip()
+                    Spacer(minLength: 0)
+                }
+                .id("top")
 
                 section("المظهر") {
                     field("الوضع") { JSeg(options: [("system", "حسب الجهاز"), ("light", "فاتح"), ("dark", "داكن")], value: str("theme", "system")) }
@@ -115,7 +120,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 6)
             }
-            .padding(.horizontal, 16).padding(.bottom, 40)
+            .padding(.horizontal, 16).padding(.bottom, 110)
         }
         .scrollDismissesKeyboard(.interactively)
         .onReceive(NotificationCenter.default.publisher(for: .tabRetap)) { n in

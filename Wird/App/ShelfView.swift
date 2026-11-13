@@ -102,7 +102,7 @@ struct ShelfView: View {
                     }
                     ShelfBoard(books: editor.editing ? lib.state.books : books, ns: ns, width: g.size.width - 32)
                 }
-                .padding(.horizontal, 16).padding(.bottom, 30)
+                .padding(.horizontal, 16).padding(.bottom, 110)
             }
             .onAppear { ShelfStore.ensure(width: g.size.width) }
             .onChange(of: lib.state.books.count) { _ in ShelfStore.ensure(width: g.size.width) }

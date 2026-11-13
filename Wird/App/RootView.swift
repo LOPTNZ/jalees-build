@@ -54,7 +54,7 @@ struct RootView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { TabBar() }
-        .overlay(alignment: .bottom) { VStack(spacing: 10) { ToastView(); SessionChip() }.padding(.bottom, 92) }
+        .overlay(alignment: .bottom) { VStack(spacing: 10) { ToastView(); if router.group == .novels { SessionChip() } }.padding(.bottom, 92) }
         .overlay { if splash { SplashView { splash = false }.environment(\.look, L) } }
         .fullScreenCover(isPresented: $session.showScreen) {
             SessionScreen().environment(\.look, L).environment(\.layoutDirection, .rightToLeft).environment(\.locale, Locale(identifier: "ar@numbers=latn")).environment(\.calendar, Calendar.greg)

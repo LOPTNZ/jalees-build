@@ -74,6 +74,9 @@ final class FlowTests: XCTestCase {
         let title = app.textFields["العنوان"].firstMatch
         if tap(title, "title field") {
             title.typeText("كتاب تجربة الواجهة")
+            // the page count is required for a book read by pages; ✓ right after typing must keep it
+            let pages = app.textFields["صفحات"].firstMatch
+            if tap(pages, "pages field") { pages.typeText("240") }
             shot("ui11-form-typed")
             tap(app.buttons["form.save"].firstMatch, "save")
             sleep(2)
@@ -135,6 +138,18 @@ final class FlowTests: XCTestCase {
             tap(button("حفظ"), "save quote")
             sleep(2)
             shot("ui22-notebook-after")
+            // the saved quote: its form, then its card
+            let row = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "نص اقتباس من اختبار")).firstMatch
+            if tap(row, "the saved quote") {
+                sleep(1)
+                reveal(buttonStarting("بطاقة الاقتباس"))
+                if tap(buttonStarting("بطاقة الاقتباس"), "quote card") {
+                    sleep(2)
+                    shot("ui22b-quote-card")
+                    app.swipeDown(velocity: .fast)
+                    sleep(1)
+                }
+            }
         }
         tap(buttonStarting("أفكار"), "thoughts list")
         shot("ui23-thoughts")

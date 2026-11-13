@@ -423,7 +423,7 @@ struct EndSessionSheet: View {
                 }
                 Text(preview(b, t)).font(JFont.body(13.5)).foregroundStyle(Color(L.ink2))
                 if !err.isEmpty { Text(err).font(JFont.body(14)).foregroundStyle(Color(L.danger)) }
-                Button { if let e = s.save(vi: vi, pos: pos) { err = e } } label: { Text("حفظ الجلسة").frame(maxWidth: .infinity) }
+                Button { afterEditing { if let e = s.save(vi: vi, pos: pos) { err = e } } } label: { Text("حفظ الجلسة").frame(maxWidth: .infinity) }
                     .buttonStyle(JButtonStyle(look: L, primary: true))
                 Button { s.discard() } label: { Text("لا تحفظ الجلسة").frame(maxWidth: .infinity) }.buttonStyle(.plain).foregroundStyle(Color(L.ink2))
             }
@@ -462,6 +462,38 @@ struct SessionChip: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("الجلسة الجارية")
+        }
+    }
+
+    private var clock: String {
+        let t = Int(s.elapsed / 1000)
+        return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60) : String(format: "%02d:%02d", t / 60, t % 60)
+    }
+}
+
+/// The minimised session where the web app kept it (05-session.js updateChip, style.css .tchip): a small pill with a
+/// dot (pulsing while it runs) and the time, in the page's header; tap it to go back to the session.
+struct HeaderSessionChip: View {
+    @ObservedObject private var s = SessionModel.shared
+    @Environment(\.look) private var L
+    @Environment(\.accessibilityReduceMotion) private var reduce
+    @State private var pulse = false
+
+    var body: some View {
+        if s.timer != nil && !s.showScreen {
+            Button { s.open() } label: {
+                HStack(spacing: 8) {
+                    Circle().fill(Color(L.accent)).frame(width: 8, height: 8)
+                        .opacity(s.running && !reduce && pulse ? 0.35 : 1)
+                    Text(clock).font(JFont.body(13.5, .semibold)).monospacedDigit().environment(\.layoutDirection, .leftToRight)
+                }
+                .foregroundStyle(Color(L.accentInk))
+                .padding(.horizontal, 12).frame(height: 32)
+                .background(Capsule().fill(Color(L.accentSoft)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("العودة للجلسة")
+            .onAppear { withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulse = true } }
         }
     }
 

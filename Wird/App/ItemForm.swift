@@ -185,7 +185,7 @@ struct ItemForm: View {
                     case .char: character
                     }
                     if !m.err.isEmpty { Text(m.err).font(JFont.body(14)).foregroundStyle(Color(L.danger)) }
-                    Button { if m.save() { dismiss() } } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
+                    Button { afterEditing { if m.save() { dismiss() } } } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
                     if m.editing {
                         if let nv = m.x["nv"]?.object, let b = m.book, let n = b.novel {
                             Button { dismiss(); NovelBridge.openReader(novel: n.novelID, book: b.id, index: nil, chapter: nv.int("ch"), paragraph: nv.int("p")) } label: {
@@ -208,7 +208,7 @@ struct ItemForm: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button { close() } label: { Image(systemName: "xmark") }.accessibilityLabel("إغلاق") }
-                ToolbarItem(placement: .confirmationAction) { Button { if m.save() { dismiss() } } label: { Image(systemName: "checkmark") }.accessibilityLabel("حفظ") }
+                ToolbarItem(placement: .confirmationAction) { Button { afterEditing { if m.save() { dismiss() } } } label: { Image(systemName: "checkmark") }.accessibilityLabel("حفظ") }
             }
         }
         .tint(Color(L.primary))

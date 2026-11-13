@@ -273,7 +273,7 @@ struct QuickProgress: View {
                 PositionField(unitTime: b.unit.time, value: $pos, total: total)
                 if let t = total { Text("من " + b.uv(t)).font(JFont.body(13)).foregroundStyle(Color(L.ink2)) }
                 if !err.isEmpty { Text(err).font(JFont.body(14)).foregroundStyle(Color(L.danger)) }
-                Button { save() } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
+                Button { afterEditing(save) } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
             }
             .onAppear {
                 guard !loaded else { return }

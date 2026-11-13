@@ -287,7 +287,7 @@ struct BookFormView: View {
                         .buttonStyle(.plain)
                     }
                     if !m.err.isEmpty { Text(m.err).font(JFont.body(14.5)).foregroundStyle(Color(L.danger)).id("err") }
-                    Button { if m.save() { dismiss() } } label: { Text(m.editing ? "حفظ التعديلات" : "إضافة الكتاب").frame(maxWidth: .infinity) }
+                    Button { afterEditing { if m.save() { dismiss() } } } label: { Text(m.editing ? "حفظ التعديلات" : "إضافة الكتاب").frame(maxWidth: .infinity) }
                         .buttonStyle(JButtonStyle(look: L, primary: true))
                 }
                 .padding(.horizontal, 18).padding(.vertical, 16)
@@ -301,7 +301,7 @@ struct BookFormView: View {
                     Button { close() } label: { Image(systemName: "xmark") }.accessibilityLabel("إغلاق")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button { if m.save() { dismiss() } } label: { Image(systemName: "checkmark") }.accessibilityLabel("حفظ").accessibilityIdentifier("form.save")
+                    Button { afterEditing { if m.save() { dismiss() } } } label: { Image(systemName: "checkmark") }.accessibilityLabel("حفظ").accessibilityIdentifier("form.save")
                 }
             }
         }
@@ -640,6 +640,7 @@ struct BookFormView: View {
     private func numberField(_ placeholder: String, _ v: Binding<Double?>) -> some View {
         TextField(placeholder, value: v, format: .number.grouping(.never).locale(Locale(identifier: "en_US_POSIX"))).keyboardType(.numberPad).font(JFont.body(16)).monospacedDigit()
             .multilineTextAlignment(.center)
+            .accessibilityLabel(placeholder)
             .padding(.horizontal, 10).frame(height: 48)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))

@@ -411,3 +411,10 @@ struct SplashView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { done() }
     }
 }
+
+/// Ends typing first (a number field hands over its value only when editing ends), then runs the action: so tapping
+/// «حفظ» right after typing a page count saves that count.
+@MainActor func afterEditing(_ f: @escaping () -> Void) {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { f() }
+}

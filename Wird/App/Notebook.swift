@@ -27,6 +27,7 @@ struct NotebookView: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     Text("دفتري").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink)).id("nbTop")
+                    HeaderSessionChip()
                     Spacer()
                     if tab != "mark" {
                         Button { add() } label: { Label(NoteKind(rawValue: tab)?.name ?? "", systemImage: "plus") }.buttonStyle(JButtonStyle(look: L, small: true))
@@ -42,7 +43,7 @@ struct NotebookView: View {
                 filters
                 if tab == "mark" { marks } else { list }
             }
-            .padding(.horizontal, 16).padding(.bottom, 96)
+            .padding(.horizontal, 16).padding(.bottom, 110)
             .background(GeometryReader { g in Color.clear.preference(key: ScrollY.self, value: g.frame(in: .named("nb")).minY) })
         }
         .coordinateSpace(name: "nb")
@@ -95,6 +96,7 @@ struct NotebookView: View {
                                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
                                     .shadow(color: .black.opacity(0.3), radius: 6, y: 4)
                             }
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(it.1)
