@@ -40,20 +40,22 @@ final class BookFormModel: ObservableObject {
     var saved = false
 
     init(bookID: String?) {
-        if let id = bookID, let b = Library.shared.state.book(id) {
+        let book: Book
+        if let id = bookID, let found = Library.shared.state.book(id) {
             editing = true
-            self.b = Book(Library.fixBook(b.raw))
+            book = Book(Library.fixBook(found.raw))
         } else {
             editing = false
-            self.b = Book(Library.fixBook(Library.blankBook()))
+            book = Book(Library.fixBook(Library.blankBook()))
         }
-        start = b.start.map(Millis.date)
-        finish = b.finish.map(Millis.date)
-        let p = b.purchase
+        b = book
+        start = book.start.map(Millis.date)
+        finish = book.finish.map(Millis.date)
+        let p = book.purchase
         openBuy = !p.str("where").isEmpty || !p.str("price").isEmpty || !p.str("date").isEmpty || p.bool("gift")
-        openDims = b.dims != nil
-        old = (b.cover, b.spine)
-        original = JSONValue.object(b.raw).data()
+        openDims = book.dims != nil
+        old = (book.cover, book.spine)
+        original = JSONValue.object(book.raw).data()
     }
 
     var dirty: Bool { !saved && (JSONValue.object(b.raw).data() != original || !newImgs.isEmpty) }
