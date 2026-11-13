@@ -138,7 +138,6 @@ enum NovelBridge {
         return v
     }
 }
-}
 
 extension Notification.Name {
     static let novelPageReload = Notification.Name("jalees.novelPageReload")
