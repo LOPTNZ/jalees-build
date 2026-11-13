@@ -5,6 +5,7 @@ import WebKit
 // The book summary («ملخص الكتاب»): web/js/06-extras.js, PDF_SECS … pdfMake. The page itself is built as HTML,
 // character for character as the web app builds it, then PDFMaker turns it into an A4 PDF.
 
+@MainActor
 enum PDFSummary {
     /// PDF_SECS
     static let sections: [(String, String)] = [

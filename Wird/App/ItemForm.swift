@@ -247,6 +247,7 @@ struct ItemForm: View {
             Button("إلغاء", role: .cancel) { pendingOCR = nil }
         }
         .onDisappear { if !m.saved { m.discard() } }
+        .onAppear { if ref.photo && !m.editing { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { ocrSource = PhotoTarget(kind: "ocr") } } }
     }
 
     @State private var pendingOCR: UIImage?
@@ -441,7 +442,7 @@ struct ItemForm: View {
     }
 
     private func box(_ v: Binding<Double?>, numeric: Bool) -> some View {
-        TextField("", value: v, format: .number.grouping(.never)).keyboardType(.numberPad).font(JFont.body(16)).padding(.horizontal, 12).frame(height: 46)
+        TextField("", value: v, format: .number.grouping(.never).locale(Locale(identifier: "en_US_POSIX"))).keyboardType(.numberPad).font(JFont.body(16)).padding(.horizontal, 12).frame(height: 46)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
     }

@@ -35,7 +35,10 @@ struct ImageSource: View {
             guard let it = it else { return }
             Task {
                 let d = try? await it.loadTransferable(type: Data.self)
-                done(d.flatMap { UIImage(data: $0) }?.fixedOrientation().resized(maxSide: 2200))
+                let img = d.flatMap { UIImage(data: $0) }?.fixedOrientation().resized(maxSide: 2200)
+                // a picture that can't be read (an odd format, or not downloaded from iCloud)
+                if img == nil { ToastCenter.shared.show("تعذّر فتح الصورة، جرّب صورة ثانية.") }
+                done(img)
             }
         }
         .fullScreenCover(isPresented: $camera) {

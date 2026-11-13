@@ -2,7 +2,7 @@
 # Boots an iPhone 13 simulator (the owner's phone), installs the build and takes one picture per line of routes.txt.
 # A route line is: <name> <seconds to wait> [launch arguments...]
 set -uo pipefail
-[ -d build/Build/Products/Debug-iphonesimulator/Wird.app ] || { echo "the build failed: no app to install"; exit 1; }
+[ -f build/Build/Products/Debug-iphonesimulator/Wird.app/Wird ] || { echo "the build failed: no app to install"; exit 1; }
 APP=build/Build/Products/Debug-iphonesimulator/Wird.app
 BID=com.abdullah.wird.reader
 OUT=out-sim
@@ -29,5 +29,9 @@ while read -r name wait args; do
   sleep "$wait"
   xcrun simctl io "$DEV" screenshot --type=jpeg "$OUT/$name.jpg" > /dev/null 2>&1 && echo "shot: $name"
 done < tools/sim/routes.txt
+# crash reports of the app, if any (the simulator's apps write them on the Mac)
+mkdir -p "$OUT/crash"
+find "$HOME/Library/Logs/DiagnosticReports" -name "Wird*" -mmin -40 -exec cp {} "$OUT/crash/" \; 2>/dev/null || true
+ls "$OUT/crash"
 xcrun simctl spawn "$DEV" log show --last 15m --predicate 'process == "Wird"' --style compact 2>/dev/null | grep -iE "jalees" | tail -60 > "$OUT/app.log" || true
 ls -la "$OUT"

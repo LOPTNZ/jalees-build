@@ -65,8 +65,8 @@ enum Words {
     /// "12 نوفمبر" (with the year when asked, or when it is not this year)
     static func date(_ ms: Double?, year: Bool = false) -> String {
         guard let ms = ms, ms > 0 else { return "" }
-        let c = Calendar.current.dateComponents([.day, .month, .year], from: Millis.date(ms))
-        let thisYear = Calendar.current.component(.year, from: Date())
+        let c = Calendar.greg.dateComponents([.day, .month, .year], from: Millis.date(ms))
+        let thisYear = Calendar.greg.component(.year, from: Date())
         return "\(c.day ?? 1) \(months[(c.month ?? 1) - 1])" + (year || c.year != thisYear ? " \(c.year ?? thisYear)" : "")
     }
 
@@ -92,7 +92,7 @@ enum Words {
 
     /// A local day as yyyy-mm-dd.
     static func dkey(_ ms: Double) -> String {
-        let c = Calendar.current.dateComponents([.year, .month, .day], from: Millis.date(ms))
+        let c = Calendar.greg.dateComponents([.year, .month, .day], from: Millis.date(ms))
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
@@ -101,7 +101,7 @@ enum Words {
         let p = s.split(separator: "-").compactMap { Int($0) }
         guard p.count >= 3 else { return nil }
         var c = DateComponents(); c.year = p[0]; c.month = p[1]; c.day = p[2]; c.hour = 12
-        return Calendar.current.date(from: c).map(Millis.ms)
+        return Calendar.greg.date(from: c).map(Millis.ms)
     }
 }
 

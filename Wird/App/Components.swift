@@ -358,3 +358,11 @@ struct ToastView: View {
         }
     }
 }
+
+extension View {
+    /// Pages without a navigation bar: the status bar area takes the page colour, so lines scrolling under the clock
+    /// don't show through it.
+    func statusBarBackdrop(_ c: Color) -> some View {
+        overlay(alignment: .top) { c.opacity(0.96).frame(height: 0).ignoresSafeArea(edges: .top) }
+    }
+}

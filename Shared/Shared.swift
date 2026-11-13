@@ -80,3 +80,14 @@ struct WirdSessionAttributes: ActivityAttributes {
     var author: String
     var audio: Bool
 }
+
+extension Calendar {
+    /// Days, months and years as the web app counted them (JavaScript's Date): always Gregorian, in the phone's time
+    /// zone, whatever calendar the phone shows (an Arabic region may default to Hijri, which made «حصاد 1448»).
+    static let greg: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = .autoupdatingCurrent
+        c.locale = Locale(identifier: "en_US_POSIX")
+        return c
+    }()
+}

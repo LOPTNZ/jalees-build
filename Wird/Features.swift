@@ -201,7 +201,7 @@ enum Notify {
                 done(false)
                 return
             }
-            let cal = Calendar.current
+            let cal = Calendar.greg
             let now = Date()
             for d in 0..<21 {
                 guard let day = cal.date(byAdding: .day, value: d, to: now) else { continue }

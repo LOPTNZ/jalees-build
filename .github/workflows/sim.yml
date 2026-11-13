@@ -32,7 +32,7 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM="" \
             build 2>&1 | tee build.log | grep -E "error:|error |BUILD (SUCCEEDED|FAILED)" || true
-          test -d build/Build/Products/Debug-iphonesimulator/Wird.app
+          test -f build/Build/Products/Debug-iphonesimulator/Wird.app/Wird
       - name: Open the screens and take pictures
         run: bash tools/sim/shots.sh
       - name: Walk through the app (UI tests)

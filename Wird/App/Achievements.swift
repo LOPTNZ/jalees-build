@@ -18,7 +18,7 @@ struct Streak {
 
 /// Noon, n days ago.
 func dayAt(_ n: Int) -> Date {
-    let cal = Calendar.current
+    let cal = Calendar.greg
     let noon = cal.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date()
     return cal.date(byAdding: .day, value: -n, to: noon) ?? noon
 }
@@ -40,7 +40,7 @@ extension AppState {
     var finishedBooks: [Book] { books.filter { $0.status == .done || $0.history.contains { $0.num("finish") > 0 } } }
 
     var finishedThisYear: Int {
-        let cal = Calendar.current, y = cal.component(.year, from: Date())
+        let cal = Calendar.greg, y = cal.component(.year, from: Date())
         return finishedReads.filter { $0.finish > 0 && cal.component(.year, from: Millis.date($0.finish)) == y }.count
     }
 
@@ -104,7 +104,7 @@ extension AppState {
     }
 
     func sessionStarted(_ test: (Int) -> Bool) -> Bool {
-        sessions.contains { test(Calendar.current.component(.hour, from: Millis.date($0.start))) }
+        sessions.contains { test(Calendar.greg.component(.hour, from: Millis.date($0.start))) }
     }
 }
 

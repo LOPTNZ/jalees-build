@@ -15,6 +15,9 @@ struct NotebookView: View {
     @State private var edit: ItemRef?
     @State private var card: ItemRef?
     @State private var review = false
+    @State private var fabOpen = false
+    @State private var fabDim = false
+    @State private var lastY: CGFloat = 0
 
     private static let tabs: [(String, String)] = [("quote", "اقتباسات"), ("thought", "أفكار"), ("word", "كلمات"), ("char", "شخصيات"), ("mark", "معلومات")]
 
@@ -38,8 +41,20 @@ struct NotebookView: View {
                 filters
                 if tab == "mark" { marks } else { list }
             }
-            .padding(.horizontal, 16).padding(.bottom, 40)
+            .padding(.horizontal, 16).padding(.bottom, 96)
+            .background(GeometryReader { g in Color.clear.preference(key: ScrollY.self, value: g.frame(in: .named("nb")).minY) })
         }
+        .coordinateSpace(name: "nb")
+        .onPreferenceChange(ScrollY.self) { y in
+            // the + fades while scrolling down the list and comes back when scrolling up or near the top
+            guard !fabOpen else { lastY = y; return }
+            if y - lastY < -4 && y < -40 { if !fabDim { withAnimation(.easeOut(duration: 0.2)) { fabDim = true } } }
+            else if y - lastY > 4 || y > -40 { if fabDim { withAnimation(.easeOut(duration: 0.2)) { fabDim = false } } }
+            lastY = y
+        }
+        .overlay { if fabOpen { Color(red: 6 / 255, green: 14 / 255, blue: 12 / 255).opacity(0.42).ignoresSafeArea().onTapGesture { fabMenu(false) }.transition(.opacity) } }
+        .overlay(alignment: .bottomLeading) { fab }
+        .statusBarBackdrop(Color(L.bg))
         .background(Color(L.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .onAppear(perform: follow)
@@ -49,6 +64,69 @@ struct NotebookView: View {
         .sheet(item: $edit) { r in ItemForm(ref: r).environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
         .sheet(item: $card) { r in CharacterCard(bookID: r.book, charID: r.item ?? "").environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
         .sheet(isPresented: $review) { WordReview(bookID: bookFilter.isEmpty ? nil : bookFilter).environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
+    }
+
+    // MARK: the floating + (03-app's FAB): a fan of the four kinds and a photographed quote
+
+    private static let fabItems: [(String, String, String)] = [("char", "شخصية", "person"), ("word", "كلمة", "character.book.closed"),
+                                                               ("thought", "فكرة", "lightbulb"), ("photo", "صوّر اقتباس", "camera"),
+                                                               ("quote", "اقتباس", "quote.opening")]
+
+    @ViewBuilder private var fab: some View {
+        if SessionModel.shared.timer == nil || !SessionModel.shared.showScreen {
+            VStack(alignment: .leading, spacing: 12) {
+                if fabOpen {
+                    ForEach(Array(Self.fabItems.enumerated()), id: \.element.0) { i, it in
+                        Button { fabPick(it.0) } label: {
+                            HStack(spacing: 10) {
+                                let cur = it.0 == tab
+                                Image(systemName: it.2).font(.system(size: 18, weight: .medium))
+                                    .foregroundStyle(Color(cur ? L.onPrimary : L.primary))
+                                    .frame(width: 46, height: 46)
+                                    .background(Circle().fill(Color(cur ? L.primary : L.surface)))
+                                    .shadow(color: .black.opacity(0.35), radius: 8, y: 6)
+                                Text(it.1).font(JFont.body(L.fs * 0.92, .semibold)).foregroundStyle(Color(L.ink))
+                                    .padding(.horizontal, 12).padding(.vertical, 5)
+                                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
+                                    .shadow(color: .black.opacity(0.3), radius: 6, y: 4)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 14)).combined(with: .scale(scale: 0.9))
+                                                    .animation(.spring(response: 0.3, dampingFraction: 0.8).delay(Double(Self.fabItems.count - 1 - i) * 0.03)),
+                                                removal: .opacity.animation(.easeOut(duration: 0.15))))
+                    }
+                    .padding(.leading, 6)
+                }
+                Button { fabMenu(!fabOpen) } label: {
+                    Image(systemName: "plus").font(.system(size: 24, weight: .semibold))
+                        .rotationEffect(.degrees(fabOpen ? 135 : 0))
+                        .foregroundStyle(Color(L.onPrimary))
+                        .frame(width: 58, height: 58)
+                        .background(Circle().fill(Color(L.primary)))
+                        .shadow(color: .black.opacity(0.4), radius: 12, y: 10)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(fabOpen ? "إغلاق القائمة" : "إضافة للدفتر")
+                .opacity(fabDim && !fabOpen ? 0.38 : 1)
+                .scaleEffect(fabDim && !fabOpen ? 0.88 : 1)
+            }
+            .padding(.leading, 16).padding(.bottom, 16)
+        }
+    }
+
+    private func fabMenu(_ on: Bool) {
+        if on { Haptics.play("soft"); fabDim = false }
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) { fabOpen = on }
+    }
+
+    private func fabPick(_ k: String) {
+        fabMenu(false)
+        let b = bookFilter.isEmpty ? (lib.state.lastBookId() ?? "") : bookFilter
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            if k == "photo" { edit = ItemRef(book: b, kind: "quote", item: nil, pick: true, photo: true) }
+            else { edit = ItemRef(book: b, kind: k, item: nil, pick: true) }
+        }
     }
 
     /// Opened from somewhere else (a book, the reader): its book, its list, maybe a character's card.
@@ -252,6 +330,14 @@ struct ItemRef: Identifiable {
     let kind: String
     let item: String?
     var pick = false
+    /// open the camera (or photos) for a page right away (the + menu's «صوّر اقتباس»)
+    var photo = false
+}
+
+/// The notebook's scroll position, for the floating + that fades while scrolling.
+struct ScrollY: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 /// Shares files from wherever the app is.

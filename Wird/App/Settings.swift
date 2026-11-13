@@ -117,6 +117,7 @@ struct SettingsView: View {
             .padding(.horizontal, 16).padding(.bottom, 40)
         }
         .scrollDismissesKeyboard(.interactively)
+        .statusBarBackdrop(Color(L.bg))
         .background(Color(L.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $shelfStyle) { ShelfStyleSheet().environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
@@ -191,9 +192,9 @@ struct SettingsView: View {
     private var remindTime: Binding<Date> {
         Binding(get: {
             let p = remind.str("time", "21:00").split(separator: ":").compactMap { Int($0) }
-            return Calendar.current.date(bySettingHour: p.first ?? 21, minute: p.count > 1 ? p[1] : 0, second: 0, of: Date()) ?? Date()
+            return Calendar.greg.date(bySettingHour: p.first ?? 21, minute: p.count > 1 ? p[1] : 0, second: 0, of: Date()) ?? Date()
         }, set: { d in
-            let c = Calendar.current.dateComponents([.hour, .minute], from: d)
+            let c = Calendar.greg.dateComponents([.hour, .minute], from: d)
             lib.change { st in
                 var r = st.settings.raw.obj("remind")
                 r.set("time", String(format: "%02d:%02d", c.hour ?? 21, c.minute ?? 0))

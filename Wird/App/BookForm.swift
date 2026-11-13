@@ -628,7 +628,7 @@ struct BookFormView: View {
     }
 
     private func numberField(_ placeholder: String, _ v: Binding<Double?>) -> some View {
-        TextField(placeholder, value: v, format: .number.grouping(.never)).keyboardType(.numberPad).font(JFont.body(16)).monospacedDigit()
+        TextField(placeholder, value: v, format: .number.grouping(.never).locale(Locale(identifier: "en_US_POSIX"))).keyboardType(.numberPad).font(JFont.body(16)).monospacedDigit()
             .multilineTextAlignment(.center)
             .padding(.horizontal, 10).frame(height: 48)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
@@ -660,7 +660,7 @@ struct DurationField: View {
 
     private func box(_ v: Binding<Double>, _ unit: String) -> some View {
         HStack(spacing: 6) {
-            TextField("0", value: v, format: .number.grouping(.never)).keyboardType(.numberPad).multilineTextAlignment(.center).font(JFont.body(17)).monospacedDigit()
+            TextField("0", value: v, format: .number.grouping(.never).locale(Locale(identifier: "en_US_POSIX"))).keyboardType(.numberPad).multilineTextAlignment(.center).font(JFont.body(17)).monospacedDigit()
             Text(unit).font(JFont.body(14)).foregroundStyle(Color(L.ink2))
         }
         .padding(.horizontal, 10).frame(height: 48)

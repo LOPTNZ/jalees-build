@@ -137,6 +137,40 @@ final class FlowTests: XCTestCase {
         shot("ui25-highlights")
     }
 
+    /// The notebook's floating +: its menu, then a thought from it.
+    func test05bNotebookFab() {
+        tab("دفتري")
+        if tap(button("إضافة للدفتر"), "notebook +") {
+            sleep(1)
+            shot("ui25b-fab-menu")
+            tap(buttonStarting("فكرة"), "thought from the menu")
+            sleep(1)
+            shot("ui25c-thought-form")
+            tap(button("إغلاق"), "close the form")
+        }
+    }
+
+    /// A book page's card and PDF summary.
+    func test05cCardAndPDF() {
+        let car = app.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "مكتبتك")).firstMatch
+        if car.waitForExistence(timeout: 4) { car.swipeUp() } else { app.swipeUp() }
+        sleep(2)
+        for _ in 0..<6 where !button("بطاقة الكتاب").isHittable { app.swipeUp() }
+        if tap(buttonStarting("بطاقة الكتاب"), "book card") {
+            sleep(2)
+            shot("ui25d-book-card")
+            app.swipeDown(velocity: .fast)
+            sleep(1)
+        }
+        if tap(buttonStarting("ملخص PDF"), "pdf summary") {
+            sleep(3)
+            shot("ui25e-pdf")
+            app.swipeUp()
+            sleep(1)
+            shot("ui25f-pdf-preview")
+        }
+    }
+
     /// إنجازاتي: goals with the achievements, then stats with the charts.
     func test06Progress() {
         tab("إنجازاتي")

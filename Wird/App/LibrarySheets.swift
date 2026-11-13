@@ -313,7 +313,7 @@ struct PositionField: View {
     }
 
     private func numberBox(_ v: Binding<Double>, label: String) -> some View {
-        TextField(label, value: v, format: .number.grouping(.never))
+        TextField(label, value: v, format: .number.grouping(.never).locale(Locale(identifier: "en_US_POSIX")))
             .keyboardType(.numberPad).multilineTextAlignment(.center).font(JFont.body(20, .medium)).monospacedDigit()
             .frame(height: 48).frame(maxWidth: .infinity)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))

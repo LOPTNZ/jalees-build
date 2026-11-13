@@ -19,7 +19,7 @@ enum WidgetData {
     }
 
     static func dayKey(_ d: Date) -> String {
-        let c = Calendar.current.dateComponents([.year, .month, .day], from: d)
+        let c = Calendar.greg.dateComponents([.year, .month, .day], from: d)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
@@ -41,7 +41,7 @@ struct Provider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<WirdEntry>) -> Void) {
         let (s, img) = WidgetData.load()
         let now = Date()
-        let midnight = Calendar.current.startOfDay(for: now.addingTimeInterval(86_400))
+        let midnight = Calendar.greg.startOfDay(for: now.addingTimeInterval(86_400))
         let entries = [WirdEntry(date: now, snap: s, cover: img), WirdEntry(date: midnight, snap: s, cover: img)]
         completion(Timeline(entries: entries, policy: .after(midnight.addingTimeInterval(120))))
     }
@@ -380,7 +380,7 @@ struct QuoteProvider: TimelineProvider {
            saved["day"] == key, let id = saved["id"], let q = list.first(where: { $0.id == id }) {
             return q
         }
-        let day = Calendar.current.ordinality(of: .day, in: .era, for: date) ?? 0
+        let day = Calendar.greg.ordinality(of: .day, in: .era, for: date) ?? 0
         let q = list[day % list.count]
         // only today's pick is remembered (the timeline also asks about midnight)
         if key == WidgetData.dayKey(Date()), let f = file, let d = try? JSONEncoder().encode(["day": key, "id": q.id]) {
@@ -402,7 +402,7 @@ struct QuoteProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuoteEntry>) -> Void) {
         let (s, _) = WidgetData.load()
         let now = Date()
-        let midnight = Calendar.current.startOfDay(for: now.addingTimeInterval(86_400))
+        let midnight = Calendar.greg.startOfDay(for: now.addingTimeInterval(86_400))
         let list = s?.quotes ?? []
         let entries = [QuoteEntry(date: now, quote: QuoteProvider.pick(list, for: now), accent: s?.accent),
                        QuoteEntry(date: midnight, quote: QuoteProvider.pick(list, for: midnight), accent: s?.accent)]

@@ -27,6 +27,7 @@ struct ProgressTab: View {
                 if parts.count > 1 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { proxy.scrollTo(parts[1], anchor: .top) } }
             }
         }
+        .statusBarBackdrop(Color(L.bg))
         .background(Color(L.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
     }
@@ -113,7 +114,7 @@ private struct GoalsPage: View {
 
     /// How much of this year has gone (at least 2%).
     private func yearFraction() -> Double {
-        let cal = Calendar.current, y = cal.component(.year, from: Date())
+        let cal = Calendar.greg, y = cal.component(.year, from: Date())
         guard let y0 = cal.date(from: DateComponents(year: y, month: 1, day: 1)),
               let y1 = cal.date(from: DateComponents(year: y + 1, month: 1, day: 1)) else { return 1 }
         return min(1, max(0.02, Date().timeIntervalSince(y0) / y1.timeIntervalSince(y0)))
@@ -408,7 +409,7 @@ private struct YearWrap: View {
     @Environment(\.look) private var L
 
     var body: some View {
-        let cal = Calendar.current, y = cal.component(.year, from: Date())
+        let cal = Calendar.greg, y = cal.component(.year, from: Date())
         let y0 = Millis.ms(cal.date(from: DateComponents(year: y, month: 1, day: 1)) ?? Date())
         let reads = state.finishedReads.filter { $0.finish >= y0 }
         let ss = state.sessions.filter { $0.start >= y0 }
@@ -461,7 +462,7 @@ private struct YearWrap: View {
         }
         var mm = [Double](repeating: 0, count: 12)
         var any = false
-        for s in ss { mm[Calendar.current.component(.month, from: Millis.date(s.start)) - 1] += s.minutes; any = true }
+        for s in ss { mm[Calendar.greg.component(.month, from: Millis.date(s.start)) - 1] += s.minutes; any = true }
         if any {
             var top = 0
             for i in 1..<12 where mm[i] > mm[top] { top = i }
@@ -523,7 +524,7 @@ private struct DailyChart: View {
         let m = state.minutesByDay(), n = days
         struct Day { let v: Double; let dow: Int; let dom: Int; let k: Int }
         var vals: [Day] = []
-        let cal = Calendar.current
+        let cal = Calendar.greg
         for j in 0..<n {
             let d = dayAt(n - 1 - j)
             vals.append(Day(v: m[Words.dkey(Millis.ms(d))] ?? 0, dow: cal.component(.weekday, from: d) - 1, dom: cal.component(.day, from: d), k: n - 1 - j))
@@ -614,7 +615,7 @@ private struct Heatmap: View {
     }
 
     private func build() -> [Week] {
-        let m = state.minutesByDay(), g = Double(state.goals.daily), cal = Calendar.current
+        let m = state.minutesByDay(), g = Double(state.goals.daily), cal = Calendar.greg
         let today = dayAt(0)
         let end = cal.date(byAdding: .day, value: 6 - (cal.component(.weekday, from: today) - 1), to: today) ?? today
         func day(_ off: Int) -> Date { cal.date(byAdding: .day, value: off, to: end) ?? end }

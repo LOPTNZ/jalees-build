@@ -53,7 +53,7 @@ struct RootView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { TabBar() }
         .overlay(alignment: .bottom) { VStack(spacing: 10) { ToastView(); SessionChip() }.padding(.bottom, 92) }
         .fullScreenCover(isPresented: $session.showScreen) {
-            SessionScreen().environment(\.look, L).environment(\.layoutDirection, .rightToLeft).environment(\.locale, Locale(identifier: "ar@numbers=latn"))
+            SessionScreen().environment(\.look, L).environment(\.layoutDirection, .rightToLeft).environment(\.locale, Locale(identifier: "ar@numbers=latn")).environment(\.calendar, Calendar.greg)
         }
         .sheet(item: $present.modal) { m in
             Group {
@@ -74,11 +74,11 @@ struct RootView: View {
             }
             .environment(\.look, L)
             .environment(\.layoutDirection, .rightToLeft)
-            .environment(\.locale, Locale(identifier: "ar@numbers=latn"))
+            .environment(\.locale, Locale(identifier: "ar@numbers=latn")).environment(\.calendar, Calendar.greg)
         }
         .environment(\.look, L)
         .environment(\.layoutDirection, .rightToLeft)
-        .environment(\.locale, Locale(identifier: "ar@numbers=latn"))
+        .environment(\.locale, Locale(identifier: "ar@numbers=latn")).environment(\.calendar, Calendar.greg)
         .tint(Color(L.primary))
         .onAppear {
             appearance.update(systemDark: scheme == .dark)

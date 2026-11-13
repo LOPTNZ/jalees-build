@@ -686,7 +686,7 @@ struct SessionEditSheet: View {
             let b = lib.state.book(s.bookId)
             JSheet(title: "جلسة " + Words.date(s.start), subtitle: b?.title) {
                 JLabel(text: "المدة بالدقائق")
-                TextField("المدة", value: $minutes, format: .number.grouping(.never)).keyboardType(.numberPad).font(JFont.body(18))
+                TextField("المدة", value: $minutes, format: .number.grouping(.never).locale(Locale(identifier: "en_US_POSIX"))).keyboardType(.numberPad).font(JFont.body(18))
                     .multilineTextAlignment(.center).frame(height: 48)
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
