@@ -73,7 +73,11 @@ struct BrowseTab: View {
     private func siteName(_ id: String) -> String { (sources.first { ($0["id"] as? String) == id }?["name"] as? String) ?? id }
 
     private func loadSources() async {
-        sources = await SourceEngine.shared.list()
+        for _ in 0..<3 {
+            sources = await SourceEngine.shared.list()
+            if !sources.isEmpty { return }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
     }
 
     private func search() {

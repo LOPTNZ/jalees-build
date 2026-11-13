@@ -137,10 +137,16 @@ final class SourceEngine: NSObject, WKNavigationDelegate {
         w.navigationDelegate = self
         w.isHidden = true
         web = w
-        // inside a window, so the system never suspends its scripts
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        if let win = scenes.flatMap({ $0.windows }).first { win.insertSubview(w, at: 0) }
+        attach(w)
         if let u = URL(string: AppSchemeHandler.scheme + "://app/reader/engine.html") { w.load(URLRequest(url: u)) }
+    }
+
+    /// Inside the app's main window, so the system never suspends its scripts (tried again until there is one).
+    private func attach(_ w: WKWebView) {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let win = scenes.compactMap(\.keyWindow).first ?? scenes.flatMap(\.windows).first { $0.rootViewController != nil }
+        if let win = win { win.insertSubview(w, at: 0); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in if w.window == nil { self?.attach(w) } }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -158,12 +164,21 @@ final class SourceEngine: NSObject, WKNavigationDelegate {
     private func waitReady() async {
         boot()
         if ready { return }
+        // never wait for good: after 8 seconds the caller hears that the engine is not ready
+        let timer = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            guard let self = self, !self.ready else { return }
+            let w = self.waiters
+            self.waiters = []
+            w.forEach { $0.resume() }
+        }
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in waiters.append(c) }
+        timer.cancel()
     }
 
     private func call(_ body: String, _ args: [String: Any]) async throws -> Any? {
         await waitReady()
-        guard let web = web else { throw NovelError.parse("engine") }
+        guard ready, let web = web else { throw NovelError.message("محرّك المواقع ما اشتغل، حاول مرة ثانية") }
         return await withCheckedContinuation { (c: CheckedContinuation<Any?, Never>) in
             web.jalees(body, args) { v in c.resume(returning: v) }
         }
