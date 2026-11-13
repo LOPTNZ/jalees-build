@@ -133,6 +133,8 @@ final class SourceEngine: NSObject, WKNavigationDelegate {
         guard web == nil else { return }
         let cfg = WKWebViewConfiguration()
         cfg.setURLSchemeHandler(AppSchemeHandler(), forURLScheme: AppSchemeHandler.scheme)
+        // the book search (lookup.js) asks Swift to fetch other sites for it
+        cfg.userContentController.addScriptMessageHandler(NetReply(), contentWorld: .page, name: "net")
         let w = WKWebView(frame: CGRect(x: 0, y: 0, width: 320, height: 480), configuration: cfg)
         w.navigationDelegate = self
         w.isHidden = true
@@ -182,6 +184,11 @@ final class SourceEngine: NSObject, WKNavigationDelegate {
         return await withCheckedContinuation { (c: CheckedContinuation<Any?, Never>) in
             web.jalees(body, args) { v in c.resume(returning: v) }
         }
+    }
+
+    /// Runs a function of the book search (lookup.js) and waits for its answer.
+    func lookup(_ body: String, _ args: [String: Any]) async -> Any? {
+        try? await call(body, args)
     }
 
     /// Whether the address is a novel's own page (otherwise it is one of its chapters).
@@ -618,5 +625,13 @@ enum Sample {
         var paras: [String] = []
         for i in 0..<(base.count * 3) { paras.append(base[(i + ch.idx) % base.count]) }
         return ChapterText(title: ch.title, paras: paras, removed: 0)
+    }
+}
+
+/// Fetches for the book search page: {url, ua, as} in, {ok, status, text} out.
+final class NetReply: NSObject, WKScriptMessageHandlerWithReply {
+    func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
+        guard let o = message.body as? [String: Any] else { replyHandler(["ok": false, "status": 0], nil); return }
+        Net.fetch(o) { r in replyHandler(r, nil) }
     }
 }

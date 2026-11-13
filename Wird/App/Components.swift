@@ -67,7 +67,9 @@ struct BookCover: View {
         var body: some View {
             let c = UIColor.hslParts(book.hslString) ?? UIColor(hex: "#2f5c53")
             ZStack {
-                LinearGradient(colors: [Color(c).opacity(0.85), Color(c)], startPoint: .top, endPoint: .bottom)
+                // solid underneath, so nothing behind ever shows through
+                Color(c)
+                LinearGradient(colors: [Color.white.opacity(0.1), Color.black.opacity(0.14)], startPoint: .top, endPoint: .bottom)
                 RoundedRectangle(cornerRadius: 3).strokeBorder(Color.white.opacity(0.22), lineWidth: 1).padding(7)
                 GeometryReader { g in
                     VStack(spacing: 6) {

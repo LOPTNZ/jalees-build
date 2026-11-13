@@ -50,6 +50,15 @@ enum DebugRoute {
                     DB.shared.set("updates.checked", String(Date().timeIntervalSince1970))
                 }
                 Router.shared.select(t)
+            } else if route.hasPrefix("form") {
+                // the book form: adding (form), searching online (formsearch), editing (formedit), many (multi)
+                if route == "formedit" { Flows.editBook(Library.shared.state.lastBookId() ?? "") } else { Flows.addBook() }
+                if route == "formsearch" {
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    NotificationCenter.default.post(name: .formQuery, object: "البؤساء")
+                }
+            } else if route == "multi" {
+                Flows.multiAdd()
             } else if route == "shelfedit" {
                 Library.shared.change { $0.settings.view = "shelf" }
                 Router.shared.select(.library)

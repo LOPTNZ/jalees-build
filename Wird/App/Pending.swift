@@ -36,11 +36,11 @@ final class NotebookNav: ObservableObject {
 @MainActor
 enum Flows {
     private static func later(_ what: String) { ToastCenter.shared.show(what + " · قيد البناء") }
-    static func addBook() { later("إضافة كتاب") }
-    static func editBook(_ id: String) { later("تعديل الكتاب") }
-    static func scanAdd() { later("الباركود") }
-    static func scanBatch() { later("المسح المتتابع") }
-    static func multiAdd() { later("عدة كتب") }
+    static func addBook() { Present.shared.open(.bookForm(nil)) }
+    static func editBook(_ id: String) { Present.shared.open(.bookForm(id)) }
+    static func scanAdd() { Scanning.single() }
+    static func scanBatch() { Scanning.batch() }
+    static func multiAdd() { Present.shared.open(.multiAdd) }
     static func importBackup() { later("الاستعادة") }
     static func startRead(_ id: String) { later("الجلسة") }
     static func finish(_ id: String, volume: String?) {}
