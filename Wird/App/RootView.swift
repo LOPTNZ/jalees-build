@@ -10,7 +10,13 @@ final class Appearance: ObservableObject {
 
     func update(systemDark: Bool? = nil) {
         if let d = systemDark { self.systemDark = d }
-        let l = Theme.look(Library.shared.state.settings, systemDark: self.systemDark)
+        let s = Library.shared.state.settings
+        // light or dark by choice: the whole window follows, so system parts (keyboard, menus, sheets) match
+        let style: UIUserInterfaceStyle = s.theme == "dark" ? .dark : s.theme == "light" ? .light : .unspecified
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for w in scene.windows where w.overrideUserInterfaceStyle != style { w.overrideUserInterfaceStyle = style }
+        }
+        let l = Theme.look(s, systemDark: self.systemDark)
         if l != look || l.accent != look.accent || l.surface != look.surface { look = l }
     }
 }
@@ -69,9 +75,18 @@ struct RootView: View {
         .environment(\.layoutDirection, .rightToLeft)
         .environment(\.locale, Locale(identifier: "ar@numbers=latn"))
         .tint(Color(L.primary))
-        .onAppear { appearance.update(systemDark: scheme == .dark) }
+        .onAppear {
+            appearance.update(systemDark: scheme == .dark)
+            // as the web app did after loading: unlock what the saved data already reached (quietly on the first run)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { Achievements.check(); Reminder.sync() }
+        }
         .onChange(of: scheme) { appearance.update(systemDark: $0 == .dark) }
         .onReceive(library.$state) { _ in appearance.update() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            // back in the app: today's goal may be met now, and the reminders run three weeks ahead
+            Reminder.sync()
+            WidgetFeed.update()
+        }
         .onChange(of: router.tab) { t in
             opened.insert(t)
             if [.updates, .downloads, .history].contains(t) { visits[t, default: 0] += 1 }
@@ -110,6 +125,8 @@ private struct TabRoot: View {
         case .history: HistoryTab(look: L).id(visit)
         case .library: LibraryView(ns: zoom)
         case .notebook: NotebookView()
+        case .progress: ProgressTab()
+        case .settings: SettingsView()
         default: TabPlaceholder(tab: tab)
         }
     }

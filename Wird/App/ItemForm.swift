@@ -19,19 +19,22 @@ final class ItemFormModel: ObservableObject {
     private let original: Data?
 
     init(ref: ItemRef) {
-        kind = NoteKind(rawValue: ref.kind) ?? .quote
+        let k = NoteKind(rawValue: ref.kind) ?? .quote
+        kind = k
         bookID = ref.book
         let b = Library.shared.state.book(ref.book)
-        if let id = ref.item, let b = b, let found = b.raw.objs(kind.listKey).first(where: { $0.str("id") == id }) {
+        let item: JSONObject
+        if let id = ref.item, let b = b, let found = b.raw.objs(k.listKey).first(where: { $0.str("id") == id }) {
             editing = true
-            x = found
+            item = found
         } else {
             editing = false
-            x = b.map { NovelLibrary.blankItem(kind, $0) } ?? [:]
+            item = b.map { NovelLibrary.blankItem(k, $0) } ?? [:]
         }
-        showPassage = !x.str("passage").isEmpty
-        oldImg = kind == .char ? x.optStr("photo") : x.optStr("img")
-        original = JSONValue.object(x).data()
+        x = item
+        showPassage = !item.str("passage").isEmpty
+        oldImg = k == .char ? item.optStr("photo") : item.optStr("img")
+        original = JSONValue.object(item).data()
     }
 
     var book: Book? { Library.shared.state.book(bookID) }

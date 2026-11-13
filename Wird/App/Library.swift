@@ -75,6 +75,9 @@ final class Library: ObservableObject {
         return id
     }
 
+    /// Pictures may have changed on disk (a restored backup): read them again.
+    func forgetImages() { images.removeAllObjects() }
+
     func deleteImage(_ id: String?) {
         guard let id = id, !id.isEmpty else { return }
         images.removeObject(forKey: id as NSString)

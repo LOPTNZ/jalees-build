@@ -5,7 +5,7 @@ import UIKit
 /// a light and a dark set, the accent the owner picked (teal, indigo, plum, amber) and the text size (s, m, l).
 enum Theme {
     /// [primary, bar-lo, on-primary] for light and for dark
-    private static let accents: [String: (light: [String], dark: [String])] = [
+    static let accents: [String: (light: [String], dark: [String])] = [
         "teal": (["#1c5a50", "#8fb8af", "#f4faf8"], ["#5cc2ae", "#2f6b5f", "#08201b"]),
         "indigo": (["#33449a", "#a6afdc", "#f5f6fd"], ["#93a1f2", "#3c4785", "#0c0f2c"]),
         "plum": (["#7a2e5c", "#d3a0bd", "#fdf4f8"], ["#e48dbf", "#6f3557", "#2a0b1c"]),

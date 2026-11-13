@@ -6,4 +6,10 @@ note-review 10 -JaleesRoute note-review
 session 12 -JaleesRoute session
 sessionend 14 -JaleesRoute sessionend
 finish 10 -JaleesRoute finish
+goals 10 -JaleesRoute prog-goals
+goals-ach 10 -JaleesRoute prog-goals:ach
+stats 10 -JaleesRoute prog-stats
+stats-facts 10 -JaleesRoute prog-stats:facts
+settings 10 -JaleesRoute settings
+settings-reset 10 -JaleesRoute settings-reset
 formsearch 24 -JaleesRoute formsearch

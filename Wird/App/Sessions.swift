@@ -148,6 +148,12 @@ final class SessionModel: ObservableObject {
         }
     }
 
+    /// The keep-awake setting changed: apply it to the running session.
+    func refreshAwake() { awake(timer != nil && showScreen) }
+
+    /// Everything about a session stops without saving (restoring a backup, starting from zero).
+    func clear() { stopAll() }
+
     private func awake(_ on: Bool) {
         UIApplication.shared.isIdleTimerDisabled = on && Library.shared.state.settings.raw.bool("wake", true)
     }
@@ -231,6 +237,7 @@ final class SessionModel: ObservableObject {
         }
         stopAll()
         ProgressRules.after(b.id, prevVi: prevVi, prevStatus: prevStatus)
+        Reminder.sync()
         Haptics.play("success")
         if Library.shared.state.book(b.id)?.status != .done { ToastCenter.shared.show("تم حفظ الجلسة") }
         return nil

@@ -78,6 +78,16 @@ enum DebugRoute {
                 } else if let b = st.books.first(where: { $0.status == .reading }) {
                     Flows.note(b.id, kind: what)
                 }
+            } else if route.hasPrefix("settings") {
+                // الإعدادات: settings, settings-reset (its confirmation), settings-data (scrolled to the data section)
+                Router.shared.select(.settings)
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                if route == "settings-reset" { NotificationCenter.default.post(name: .settingsDebug, object: "reset") }
+            } else if route.hasPrefix("prog") {
+                // إنجازاتي: prog-goals, prog-goals:ach, prog-stats, prog-stats:facts
+                Router.shared.select(.progress)
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                NotificationCenter.default.post(name: .progressShow, object: String(route.dropFirst(5)))
             } else if route == "multi" {
                 Flows.multiAdd()
             } else if route == "shelfedit" {

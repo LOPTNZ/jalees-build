@@ -4,12 +4,6 @@ import Combine
 // Parts whose full versions come in later phases of the port (docs/plan/swift/plan.md). Each is called from where it
 // will be needed, so filling it in later changes nothing around it. Nothing here may remain at delivery.
 
-/// Achievements (phase 6: إنجازاتي): checks for new ones after a change.
-@MainActor
-enum Achievements {
-    static func check() {}
-}
-
 /// The widgets' data in the App Group (phase 8).
 @MainActor
 enum WidgetFeed {
