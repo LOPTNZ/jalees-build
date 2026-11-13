@@ -2,134 +2,45 @@ import UIKit
 import SwiftUI
 import SafariServices
 
-/// What the web library asks of the native novel code (bridge command "novel"), and the way back:
-/// progress and reading sessions go into the book in the web app, so the library, notebook and stats see them.
+/// The novel code's doors to the rest of the app: adding a novel or a book file, keeping its library book in step,
+/// showing a novel's page, the reader and the site.
 @MainActor
 enum NovelBridge {
-    static weak var host: WebViewController?
-    private static var page: NovelPageController?
-    /// the open page came from the library's carousel: it faded in over the cover, and fades out as the cover flies back
-    private static var pageFaded = false
-    /// where the web tab bar starts, as the page last reported it (0 until it does)
-    static var navTop: CGFloat = 0
-
-    /// The height native screens over the library get: down to the tab bar.
-    static func refit() {
-        for d in [0.6, 1.6] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + d) {
-                look { l in
-                    guard l.navTop > 0 else { return }
-                    navTop = l.navTop
-                    if let v = page?.view, v.transform == .identity { v.frame.size.height = l.navTop }
-                    NovelTabs.fit(l.navTop)
-                }
-            }
-        }
-    }
-
-    static func height(_ lk: JLook, in h: UIViewController) -> CGFloat {
-        let t = lk.navTop > 0 ? lk.navTop : navTop
-        return t > 0 ? t : h.view.bounds.height
-    }
-
-    static func handle(_ o: [String: Any], host h: WebViewController?, reply: @escaping (Any?) -> Void) {
-        if let h = h { host = h }
-        let op = o["op"] as? String ?? ""
-        let id = num(o["id"])
-        let book = o["book"] as? String
-        switch op {
-        case "add":
-            Task { reply(await add(o["url"] as? String ?? "")) }
-        case "link":
-            if let b = book { Novels.shared.link(id, book: b); sync(id) }
-            reply(true)
-        case "page":
-            showPage(novel: id, book: book, openIndex: o["idx"].map { num($0) }, fade: (o["fade"] as? Bool) == true)
-            reply(true)
-        case "closePage":
-            closePage(animated: false)
-            reply(true)
-        case "tab":
-            NovelTabs.show(o["tab"] as? String ?? "")
-            reply(true)
-        case "cover":
-            let on = (o["on"] as? Bool) == true
-            page?.view.isHidden = on
-            NovelTabs.cover(on)
-            if !on { pageNeedsReload() }
-            reply(true)
-        case "firstMention":
-            Task {
-                let f = await Novels.shared.firstMention(id, names: (o["names"] as? [String]) ?? [])
-                reply(f.map { ["n": $0.num, "sure": $0.sure] as [String: Any] })
-            }
-        case "toast":
-            // a message from the library while a native screen covers it (an achievement, say)
-            if let h = host, let t = o["text"] as? String, !t.isEmpty {
-                let top = NovelBridge.top(h)
-                if top !== h { Toast.show(t, in: top.view, top: 64) }
-                else if (page.map { !$0.view.isHidden } ?? false) || NovelTabs.visible { Toast.show(t, in: h.view, top: 64) }
-            }
-            reply(true)
-        case "navTop":
-            navTop = CGFloat(num(o["top"]))
-            if navTop > 0 {
-                if let v = page?.view, v.transform == .identity { v.frame.size.height = navTop }
-                NovelTabs.fit(navTop)
-            }
-            reply(true)
-        case "read":
-            openReader(novel: id, book: book, index: o["idx"].map { num($0) }, chapter: o["ch"].map { num($0) }, paragraph: o["p"].map { num($0) })
-            reply(true)
-        case "refresh":
-            Task {
-                guard let n = Novels.shared.novel(id) else { reply(["error": "ما لقيت الرواية"]); return }
-                do { let f = try await Novels.shared.refresh(n); sync(id); reply(["fresh": f]) }
-                catch { reply(["error": error.localizedDescription]) }
-            }
-        case "site":
-            if let n = Novels.shared.novel(id) { openSite(n.url) }
-            reply(true)
-        case "epubPick":
-            guard let h = host else { reply(nil); return }
-            EpubStore.pick(from: top(h)) { url in
-                guard let u = url else { reply(nil); return }
-                reply(epubInfo(u))
-            }
-        case "export":
-            reply(["novels": Novels.shared.exportAll()])
-        case "import":
-            Novels.shared.importAll((o["novels"] as? [[String: Any]]) ?? [])
-            reply(true)
-        default:
-            reply(nil)
-        }
-    }
+    /// the app's root screen: the reader and the site are presented from it
+    static weak var host: UIViewController?
 
     static func num(_ v: Any?) -> Int {
         if let i = v as? Int { return i }
         if let d = v as? Double { return Int(d) }
         if let s = v as? String { return Int(s) ?? 0 }
+        if let n = v as? NSNumber { return n.intValue }
         return 0
     }
 
     // MARK: adding
 
-    private static func add(_ url: String) async -> [String: Any] {
+    /// Adds a novel from its link (or finds it), makes its library book, and says what was added.
+    static func add(_ url: String, progress: @escaping (String) -> Void) async -> [String: Any] {
         do {
-            let r = try await Novels.shared.add(url: url) { msg in
-                host?.webView.jalees("return wirdNovelProgress(t)", ["t": msg])
-            }
+            let r = try await Novels.shared.add(url: url, progress: progress)
             let n = r.novel
             var out: [String: Any] = [
                 "id": n.id, "title": n.title, "author": n.author, "cover": n.cover, "url": n.url, "site": n.source,
                 "total": n.total, "complete": n.complete, "translator": n.translator, "genres": n.genres
             ]
+            out["book"] = await NovelLibrary.adopt(out)
             if let i = r.openIndex { out["open"] = i }
             return out
         } catch {
             return ["error": error.localizedDescription]
         }
+    }
+
+    /// A novel found while browsing: added (or found), then its page.
+    static func open(_ url: String, progress: @escaping (String) -> Void) async throws {
+        let r = await add(url, progress: progress)
+        if let e = r["error"] as? String { throw NovelError.message(e) }
+        Router.shared.openNovel(num(r["id"]), book: (r["book"] as? String) ?? "")
     }
 
     // MARK: EPUB books (read in place)
@@ -150,98 +61,35 @@ enum NovelBridge {
 
     /// A book opened from the Files app ("فتح في جليس" or the «جليس» folder): added in place, then shown.
     static func importEpub(_ url: URL) {
-        guard let w = host?.webView else { return }
-        let o = epubInfo(url)
-        if let e = o["error"] as? String { if let h = host { Toast.show(e, in: h.view, top: 60) }; return }
-        w.jalees("return wirdEpubAdded(o)", ["o": o])
+        NovelLibrary.epubAdded(epubInfo(url))
     }
 
     // MARK: keeping the library in step
 
-    /// Sends the novel's counts and place to its book in the web library.
+    /// The novel's counts and place, onto its book in the library.
     static func sync(_ novel: Int, opened: Bool = false) {
         var s = Novels.shared.stats(novel)
         guard let b = s["book"] as? String, !b.isEmpty else { return }
         if opened { s["opened"] = true }
-        host?.webView.jalees("return wirdNovelSync(o)", ["o": s])
+        NovelLibrary.sync(s)
     }
 
-    /// After the reader or the page closes: lets the library redraw once with everything that changed.
-    static func settle() {
-        host?.webView.jalees("return wirdNovelClosed()")
-    }
+    static func look(_ done: @escaping (JLook) -> Void) { done(Appearance.shared.look) }
 
-    static func look(_ done: @escaping (JLook) -> Void) {
-        guard let w = host?.webView else { done(JLook()); return }
-        w.jalees("return wirdLook()") { v in done((v as? [String: Any]).map(JLook.init) ?? JLook()) }
-    }
+    // MARK: the novel's page (a page in the open tab)
 
-    // MARK: the novel's page (native, in Jalees's look, above the web library and below its tab bar)
-
-    static func showPage(novel: Int, book: String?, openIndex: Int?, fade: Bool = false) {
-        guard let h = host, let n = Novels.shared.novel(novel) else { return }
-        closePage(animated: false, keepCover: fade)
+    static func showPage(novel: Int, book: String?, openIndex: Int?) {
+        guard let n = Novels.shared.novel(novel) else { return }
         let bookID = book ?? n.book
-        look { lk in
-            let model = NovelPageModel(novel: n, book: bookID, look: lk)
-            let vc = NovelPageController(model: model)
-            model.close = { closePage(animated: true) }
-            page = vc
-            h.addChild(vc)
-            vc.view.frame = CGRect(x: 0, y: 0, width: h.view.bounds.width, height: height(lk, in: h))
-            vc.view.autoresizingMask = [.flexibleWidth]
-            h.view.addSubview(vc.view)
-            vc.didMove(toParent: h)
-            pageFaded = fade
-            refit()
-            if fade {
-                // from the carousel: the cover is flying up in the library underneath; the page appears as it lands
-                vc.view.alpha = 0
-                UIView.animate(withDuration: 0.28, delay: 0.3, options: [.curveEaseOut, .allowUserInteraction]) { vc.view.alpha = 1 }
-            } else {
-                // like a page pushed in a right-to-left app: it comes in from the left
-                vc.view.transform = CGAffineTransform(translationX: -h.view.bounds.width, y: 0)
-                UIView.animate(withDuration: 0.34, delay: 0, usingSpringWithDamping: 0.92, initialSpringVelocity: 0, options: [.allowUserInteraction]) {
-                    vc.view.transform = .identity
-                }
-            }
-            if let i = openIndex { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { openReader(novel: novel, book: bookID, index: i, chapter: nil, paragraph: nil) } }
-        }
+        Router.shared.openNovel(novel, book: bookID)
+        if let i = openIndex { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { openReader(novel: novel, book: bookID, index: i, chapter: nil, paragraph: nil) } }
     }
 
-    static func closePage(animated: Bool, keepCover: Bool = false) {
-        guard let vc = page else { return }
-        page = nil
-        let faded = pageFaded
-        pageFaded = false
-        if !keepCover { host?.webView.jalees("return wirdNovelPageGone(a)", ["a": animated && faded]) }
-        let done = {
-            vc.willMove(toParent: nil)
-            vc.view.removeFromSuperview()
-            vc.removeFromParent()
-            settle()
-        }
-        guard animated, let w = vc.view.superview?.bounds.width else { done(); return }
-        if faded && vc.view.transform == .identity {
-            UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseIn], animations: { vc.view.alpha = 0 }, completion: { _ in done() })
-            return
-        }
-        UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseIn], animations: {
-            vc.view.transform = CGAffineTransform(translationX: -w, y: 0)
-        }, completion: { _ in done() })
-    }
+    /// The open novel page reads its book again (after the reader, a download, a change).
+    static func pageNeedsReload() { NotificationCenter.default.post(name: .novelPageReload, object: nil) }
 
-    static func pageNeedsReload() { page?.model.reload() }
-
-    /// Back to Jalees's own tabs with nothing native over the library (a widget opened a book, say).
-    static func toLibrary() {
-        closePage(animated: false)
-        NovelTabs.hide()
-        host?.webView.jalees("return wirdNavMain()")
-    }
-
-    /// for the simulator pictures: the open page's «تعديل»
-    static func debugEdit() { page?.model.edit() }
+    /// Back to Jalees's own tabs, at the library.
+    static func toLibrary() { Router.shared.select(.library) }
 
     // MARK: reading
 
@@ -268,7 +116,6 @@ enum NovelBridge {
         reader.onClose = {
             Novels.shared.reload()
             sync(novel, opened: true)
-            settle()
             pageNeedsReload()
         }
         top(h).present(reader, animated: true)
@@ -291,37 +138,10 @@ enum NovelBridge {
         return v
     }
 }
+}
 
-/// Holds the novel page; a swipe from the right edge goes back, as in a right-to-left app.
-final class NovelPageController: UIHostingController<NovelPageView> {
-    let model: NovelPageModel
-
-    init(model: NovelPageModel) {
-        self.model = model
-        super.init(rootView: NovelPageView(model: model))
-        view.backgroundColor = model.look.bg
-        let edge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(swiped(_:)))
-        edge.edges = .right
-        view.addGestureRecognizer(edge)
-    }
-
-    @MainActor required dynamic init?(coder: NSCoder) { fatalError("no storyboard") }
-
-    @objc private func swiped(_ g: UIScreenEdgePanGestureRecognizer) {
-        let x = g.translation(in: view.superview).x
-        switch g.state {
-        case .changed:
-            view.transform = CGAffineTransform(translationX: min(0, x), y: 0)
-        case .ended, .cancelled:
-            if x < -90 || g.velocity(in: view.superview).x < -600 {
-                Task { @MainActor in NovelBridge.closePage(animated: true) }
-            } else {
-                UIView.animate(withDuration: 0.2) { self.view.transform = .identity }
-            }
-        default:
-            break
-        }
-    }
+extension Notification.Name {
+    static let novelPageReload = Notification.Name("jalees.novelPageReload")
 }
 
 /// Downloads chapters one after another, quietly, so they can be read without a connection.

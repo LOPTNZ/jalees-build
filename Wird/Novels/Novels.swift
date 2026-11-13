@@ -68,6 +68,7 @@ enum NovelError: LocalizedError {
     case unknownSite, blocked, empty
     case network(String)
     case parse(String)
+    case message(String)
 
     var errorDescription: String? {
         switch self {
@@ -76,6 +77,7 @@ enum NovelError: LocalizedError {
         case .empty: return "الصفحة وصلت بدون نص الفصل"
         case .network(let m): return "تعذّر الاتصال بالموقع: \(m)"
         case .parse(let m): return "ما قدرت أقرأ الصفحة (\(m))"
+        case .message(let m): return m
         }
     }
 }

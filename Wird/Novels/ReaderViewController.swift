@@ -84,7 +84,6 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     override var prefersHomeIndicatorAutoHidden: Bool { !chromeShown }
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { orientationLocked ? .portrait : .allButUpsideDown }
 
-    private var mainWeb: WKWebView? { NovelBridge.host?.webView }
     /// EPUB books have their own reading mode (an endless scroll by default).
     private var mode: String { novel.source == "epub" ? settings.prefs.epubMode : settings.prefs.mode }
     private var paged: Bool { mode == "paged" }
@@ -206,10 +205,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         web.jalees("return " + body, args, done: done)
     }
 
-    /// Runs something in the library (the main web app), where the book's highlights and notebook live.
+    /// Asks the library (where the book's highlights and notebook live), by the names the web library had.
     func library(_ body: String, _ args: [String: Any] = [:], done: ((Any?) -> Void)? = nil) {
-        guard let w = mainWeb else { done?(nil); return }
-        w.jalees("return " + body, args, done: done)
+        done?(NovelLibrary.call(body, args))
     }
 
     private func applyTheme() {
@@ -260,13 +258,8 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     }
 
     private func marks(for chapter: Int) async -> (marks: [[String: Any]], bmarks: [[String: Any]]) {
-        guard let b = bookID, let w = mainWeb else { return ([], []) }
-        return await withCheckedContinuation { c in
-            w.jalees("return wirdNovelMarks(b, ch)", ["b": b, "ch": chapter]) { v in
-                let d = v as? [String: Any]
-                c.resume(returning: ((d?["marks"] as? [[String: Any]]) ?? [], (d?["bmarks"] as? [[String: Any]]) ?? []))
-            }
-        }
+        guard let b = bookID else { return ([], []) }
+        return NovelLibrary.marks(b, chapter: chapter)
     }
 
     func show(_ i: Int, place given: [String: Any]?, refresh: Bool = false) {
@@ -710,11 +703,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         a.addAction(UIAlertAction(title: "افتح بطاقتها في دفتري", style: .default) { [weak self] _ in
             guard let self = self, let b = self.bookID else { return }
             self.closeTapped()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                NovelBridge.closePage(animated: false)
-                NovelTabs.hide()
-                NovelBridge.host?.webView.jalees("return wirdNovelChar(b, c)", ["b": b, "c": id])
-            }
+            NotebookNav.shared.show(book: b, kind: "char", character: id)
+            Router.shared.openNotebook(book: b, kind: "char")
+            NotebookNav.shared.character = id
         })
         a.addAction(UIAlertAction(title: "تمام", style: .cancel))
         a.popoverPresentationController?.sourceView = view
@@ -1166,7 +1157,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         let m = Int(minutes.rounded())
         let ch = max(0, readNow - readAtStart)
         let text = (m < 1 ? "أقل من دقيقة" : (m == 1 ? "دقيقة" : "\(m) دقيقة")) + (ch > 0 ? " · " + (ch == 1 ? "فصل" : "\(ch) فصول") : "")
-        if let host = NovelBridge.host { Toast.show("جلسة قراءة: " + text, in: host.view, bottom: 110) }
+        Toaster.show("جلسة قراءة: " + text)
     }
 
     func toast(_ s: String) { Toast.show(s, in: view, top: 64) }

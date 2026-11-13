@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// The novel's page: the same layout and look as a book's page in Jalees (cover, status, progress, notes, sessions),
-/// with its chapters and highlights. Everything here is native; the book's own data comes from the web library.
+/// with its chapters and highlights. It is a page in the open tab; the book's own data comes from the library.
 @MainActor
 final class NovelPageModel: ObservableObject {
     @Published var look: JLook
@@ -38,7 +38,13 @@ final class NovelPageModel: ObservableObject {
         self.look = look
         hideNext = DB.shared.get("nv.hideNext") == "1"
         reload()
+        watcher = NotificationCenter.default.addObserver(forName: .novelPageReload, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.reload() }
+        }
     }
+
+    private var watcher: NSObjectProtocol?
+    deinit { if let w = watcher { NotificationCenter.default.removeObserver(w) } }
 
     func reload() {
         if let n = Novels.shared.novel(novel.id) { novel = n }
@@ -49,10 +55,9 @@ final class NovelPageModel: ObservableObject {
             let here = currentIndex.map { chapters[$0].volume } ?? chapters.first?.volume ?? ""
             if vols.count > 1 { folded = vols.subtracting([here]) }
         }
-        NovelBridge.host?.webView.jalees("return wirdNovelBook(id)", ["id": bookID]) { [weak self] v in
-            self?.book = (v as? [String: Any]) ?? [:]
-        }
-        NovelBridge.look { [weak self] l in if self?.look != l { self?.look = l } }
+        book = NovelLibrary.book(bookID) ?? [:]
+        let l = Appearance.shared.look
+        if look != l { look = l }
     }
 
     // book fields
@@ -90,7 +95,8 @@ final class NovelPageModel: ObservableObject {
     }
 
     func setStatus(_ st: String) {
-        NovelBridge.host?.webView.jalees("return wirdNovelStatus(id, st)", ["id": bookID, "st": st]) { [weak self] _ in self?.reload() }
+        NovelLibrary.status(bookID, st)
+        reload()
         Haptics.play("sel")
     }
 
@@ -141,18 +147,17 @@ final class NovelPageModel: ObservableObject {
     }
 
     func openNotebook(_ kind: String) {
-        NovelTabs.hide()
-        NovelBridge.host?.webView.jalees("return wirdNovelNotebook(id, k)", ["id": bookID, "k": kind])
-        close()
+        Router.shared.openNotebook(book: bookID, kind: kind)
     }
 
     /// The library's own form for a book's name, author and cover (what the owner changes stays).
     func edit() {
-        NovelBridge.host?.webView.jalees("return wirdNovelEdit(b)", ["b": bookID])
+        Router.shared.push(.book(bookID))
     }
 
     func saveNames(_ names: [String: String]) {
-        NovelBridge.host?.webView.jalees("return wirdNovelLabelsSet(o)", ["o": names]) { [weak self] _ in self?.reload() }
+        NovelLibrary.labelsSet(names)
+        reload()
     }
 }
 
@@ -720,5 +725,34 @@ struct ColorNames: View {
         .environment(\.layoutDirection, .rightToLeft)
         .preferredColorScheme(L.dark ? .dark : .light)
         .tint(Color(L.primary))
+    }
+}
+
+/// The novel's page as a page of the open tab: its own bar on top, the edge swipe to go back.
+struct NovelPageScreen: View {
+    let novelID: Int
+    let bookID: String
+
+    var body: some View {
+        if let n = Novels.shared.novel(novelID) {
+            NovelPageHolder(novel: n, bookID: bookID)
+        } else {
+            Text("ما لقيت الرواية").font(JFont.body(16)).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+private struct NovelPageHolder: View {
+    @StateObject private var model: NovelPageModel
+    @Environment(\.dismiss) private var dismiss
+
+    init(novel: Novel, bookID: String) {
+        _model = StateObject(wrappedValue: NovelPageModel(novel: novel, book: bookID, look: Appearance.shared.look))
+    }
+
+    var body: some View {
+        NovelPageView(model: model)
+            .toolbar(.hidden, for: .navigationBar)
+            .onAppear { model.close = { dismiss() }; model.reload() }
     }
 }

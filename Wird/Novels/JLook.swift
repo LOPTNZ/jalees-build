@@ -2,8 +2,8 @@ import SwiftUI
 import UIKit
 import CoreText
 
-/// Jalees's own look for native screens: the colours are read from the running web app (so the theme and accent the
-/// owner picked carry over), the fonts are the app's (Reem Kufi for titles, IBM Plex Sans Arabic for text).
+/// Jalees's own look for native screens: its colours (light or dark, with the accent the owner picked) and its fonts
+/// (Reem Kufi for titles, IBM Plex Sans Arabic for text, Amiri for quotes). See Theme.look.
 struct JLook: Equatable {
     var dark = true
     var bg = UIColor(hex: "#0e1614")
@@ -16,6 +16,14 @@ struct JLook: Equatable {
     var onPrimary = UIColor(hex: "#08201b")
     var danger = UIColor(hex: "#e5786d")
     var star = UIColor(hex: "#f2b84b")
+    var barLo = UIColor(hex: "#2f6b5f")
+    var accent = UIColor(hex: "#f0ae48")
+    var accentInk = UIColor(hex: "#f3c06f")
+    var accentSoft = UIColor(hex: "#3a2c12")
+    var stage = UIColor(hex: "#070c0b")
+    var stageInk = UIColor(hex: "#eef3f1")
+    /// the text size the owner picked: 14, 15 or 16.5
+    var fs: CGFloat = 15
     /// where the web tab bar starts (points from the top); 0 when there is none
     var navTop: CGFloat = 0
 
@@ -31,7 +39,7 @@ struct JLook: Equatable {
     }
 
     static func == (a: JLook, b: JLook) -> Bool {
-        a.dark == b.dark && a.bg == b.bg && a.primary == b.primary && a.ink == b.ink && a.navTop == b.navTop
+        a.dark == b.dark && a.bg == b.bg && a.primary == b.primary && a.ink == b.ink && a.navTop == b.navTop && a.fs == b.fs
     }
 }
 
