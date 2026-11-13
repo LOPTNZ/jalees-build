@@ -11,7 +11,7 @@ protocol JSONBacked {
 }
 
 extension JSONBacked {
-    var id: String { raw.str("id") }
+    var jsonID: String { raw.str("id") }
 }
 
 // MARK: - the whole library
@@ -73,6 +73,7 @@ enum BookFormat: String, CaseIterable {
 struct Book: JSONBacked, Identifiable {
     var raw: JSONObject
     init(_ raw: JSONObject) { self.raw = raw }
+    var id: String { raw.str("id") }
 
     var title: String { get { raw.str("title") } set { raw.set("title", newValue) } }
     var author: String { get { raw.str("author") } set { raw.set("author", newValue) } }
@@ -160,6 +161,7 @@ struct NovelLink: JSONBacked {
 struct Volume: JSONBacked, Identifiable {
     var raw: JSONObject
     init(_ raw: JSONObject) { self.raw = raw }
+    var id: String { raw.str("id") }
     var title: String { get { raw.str("title") } set { raw.set("title", newValue) } }
     /// in the book's unit; nil when unknown
     var total: Double? { get { raw.optNum("total").flatMap { $0 > 0 ? $0 : nil } } set { raw.set("total", optional: newValue) } }
@@ -171,6 +173,7 @@ struct Volume: JSONBacked, Identifiable {
 struct Session: JSONBacked, Identifiable {
     var raw: JSONObject
     init(_ raw: JSONObject) { self.raw = raw }
+    var id: String { raw.str("id") }
     var bookId: String { get { raw.str("bookId") } set { raw.set("bookId", newValue) } }
     var start: Double { get { raw.num("start") } set { raw.set("start", newValue) } }
     var minutes: Double { get { raw.num("minutes") } set { raw.set("minutes", newValue) } }
@@ -193,6 +196,7 @@ enum NoteKind: String, CaseIterable {
 struct NoteItem: JSONBacked, Identifiable {
     var raw: JSONObject
     init(_ raw: JSONObject) { self.raw = raw }
+    var id: String { raw.str("id") }
     var at: Double { get { raw.num("at") } set { raw.set("at", newValue) } }
     var text: String { get { raw.str("text") } set { raw.set("text", newValue) } }
     var word: String { get { raw.str("word") } set { raw.set("word", newValue) } }
@@ -210,6 +214,7 @@ struct NoteItem: JSONBacked, Identifiable {
 struct BookCharacter: JSONBacked, Identifiable {
     var raw: JSONObject
     init(_ raw: JSONObject) { self.raw = raw }
+    var id: String { raw.str("id") }
     var name: String { get { raw.str("name") } set { raw.set("name", newValue) } }
     var alias: String { get { raw.str("alias") } set { raw.set("alias", newValue) } }
     /// "main" or "secondary"
