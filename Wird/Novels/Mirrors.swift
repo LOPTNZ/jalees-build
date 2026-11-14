@@ -13,7 +13,8 @@ extension Novels {
     /// The novel's page and its whole chapter list on a site (oldest first).
     func readSeries(_ url: String, progress: @escaping (String) -> Void) async throws -> (site: String, info: [String: Any], rows: [[String: Any]]) {
         var u = clean(url)
-        guard let site = await SourceEngine.shared.site(for: u) else { throw NovelError.unknownSite }
+        guard u.hasPrefix("http") else { throw NovelError.unknownSite }
+        let site = await SourceEngine.shared.site(for: u) ?? "generic"
         if !(await SourceEngine.shared.isSeries(site, u)) {
             let page = try await Fetcher.html(u)
             guard let s = try await SourceEngine.shared.run(site, "seriesUrl", html: page, url: u) as? String, !s.isEmpty else { throw NovelError.parse("series link") }

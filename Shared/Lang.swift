@@ -10,7 +10,7 @@ enum Lang {
     private static var on: Bool = readChoice()
     private static var cache: [String: String] = [:]
     private static var table: [String: String] = [:]
-    private static var patterns: [(NSRegularExpression, String)] = []
+    private static var patterns: [(NSRegularExpression, String, [Bool])] = []
     /// pieces the code joins to other text («تمت إضافة » + a count): keys that start or end with a space
     private static var heads: [String] = []
     private static var tails: [String] = []
@@ -60,7 +60,10 @@ enum Lang {
         for (k, v) in table.sorted(by: { $0.key.count > $1.key.count }) where k.contains("{}") {
             let parts = k.components(separatedBy: "{}").map { NSRegularExpression.escapedPattern(for: $0) }
             if let re = try? NSRegularExpression(pattern: "^" + parts.joined(separator: "(.+?)") + "$", options: [.dotMatchesLineSeparators]) {
-                patterns.append((re, v))
+                // which places sit inside «…»: a name there may be anything
+                let raw = k.components(separatedBy: "{}")
+                let quoted = (0..<max(0, raw.count - 1)).map { i in raw[i].hasSuffix("«") && raw[i + 1].hasPrefix("»") }
+                patterns.append((re, v, quoted))
             }
         }
         let keys = table.keys.filter { !$0.contains("{}") }.sorted { $0.count > $1.count }
@@ -86,7 +89,7 @@ enum Lang {
         if t != s, let v = table[t] { return s.replacingOccurrences(of: t, with: v) }
         guard depth < 3 else { return nil }
         let ns = s as NSString
-        for (re, en) in patterns {
+        for (re, en, quoted) in patterns {
             guard let m = re.firstMatch(in: s, range: NSRange(location: 0, length: ns.length)) else { continue }
             var raw: [String] = []
             for i in 1..<m.numberOfRanges {
@@ -98,7 +101,7 @@ enum Lang {
             // a short key («{} من {}») could match someone's own sentence: it counts only when what fills it is
             // numbers, English or interface text, or when the key's own words are most of the text
             let fixed = s.count - raw.reduce(0) { $0 + $1.count }
-            let filled = zip(raw, parts).allSatisfy { r, p in p != nil || !hasArabic(r) }
+            let filled = raw.indices.allSatisfy { i in parts[i] != nil || !hasArabic(raw[i]) || (i < quoted.count && quoted[i]) }
             guard filled || (fixed >= 8 && Double(fixed) >= Double(s.count) * 0.4) else { continue }
             return fill(en, zip(raw, parts).map { $1 ?? $0 })
         }

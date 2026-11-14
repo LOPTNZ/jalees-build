@@ -1,6 +1,8 @@
 # name  seconds  launch arguments
-reader-tts 18 -JaleesRoute reader-tts
+reader-tts 14 -JaleesRoute reader-tts -JaleesSilent
 reader-menu 10 -JaleesRoute reader-menu
+reader-menugrid 10 -JaleesRoute reader-menugrid
+reader-menubar 10 -JaleesRoute reader-menubar
 settings 8 -JaleesRoute settings
 en-library 8 -JaleesLang en -JaleesRoute tab-library
 en-notebook 8 -JaleesLang en -JaleesRoute tab-notebook
@@ -17,3 +19,4 @@ live-realmnovel 30 -JaleesRoute live https://realmnovel.com/novel/68db5e531871e6
 live-layl 30 -JaleesRoute live https://layl.io/novels/necromancer-thief 5
 live-wetriedtls 30 -JaleesRoute live https://wetriedtls.com/series/a-regressors-tale-of-cultivation 1
 live-wtrlab 30 -JaleesRoute live https://wtr-lab.com/en/novel/114527/soul-land-koi-fish-martial-soul-luck-based-soul-master 1
+live-generic 30 -JaleesRoute live https://novelfull.com/shadow-slave.html 1

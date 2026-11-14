@@ -309,7 +309,7 @@ extension AppState {
         case .dnf: return "تركته"
         case .paused: return "وقفت مؤقتًا" + (b.pct.map { " · \(Int(($0 * 100).rounded()))%" } ?? "")
         case .reading:
-            return (b.isAudio ? "تستمع له" : "تقرأه") + (b.pct.map { " · \(Int(($0 * 100).rounded()))%" } ?? "") + (b.readNo > 1 ? " · القراءة " + Words.ord(b.readNo) : "")
+            return (b.isAudio ? "تستمع له" : "تقرأه") + (b.pct.map { " · \(Int(($0 * 100).rounded()))%" } ?? "") + (b.readNo > 1 ? " · " + "القراءة \(Words.ord(b.readNo))".tr : "")
         }
     }
 

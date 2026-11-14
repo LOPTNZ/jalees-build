@@ -267,6 +267,7 @@ struct ReadingSheet: View {
     @ObservedObject var settings: ReaderSettings
     let novelID: Int
     var close: () -> Void
+    @State private var menuLayout = ReaderMenuView.layout
 
     private var modeBinding: Binding<String> {
         Binding(get: { settings.prefs.mode == "paged" ? "paged-" + settings.prefs.anim : settings.prefs.mode },
@@ -288,6 +289,11 @@ struct ReadingSheet: View {
                     }
                     Toggle("السحب يمين ويسار يغيّر الفصل", isOn: $settings.prefs.swipeChapters)
                 }
+                Section {
+                    Picker("شكل القائمة", selection: Binding(get: { menuLayout }, set: { menuLayout = $0; ReaderMenuView.layout = $0 })) {
+                        Text("قائمة").tag("list"); Text("شبكة").tag("grid"); Text("شريط").tag("bar")
+                    }
+                } header: { Text("القائمة") } footer: { Text("نفس الأزرار بثلاث ترتيبات. بدّل وافتح القائمة لتقارن.") }
                 Section("الصفحة") {
                     Toggle("التعليقات آخر الفصل", isOn: $settings.prefs.comments)
                     Toggle("أخفِ عنوان الفصل", isOn: $settings.prefs.hideHeading)

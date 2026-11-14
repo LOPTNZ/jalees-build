@@ -22,7 +22,7 @@ struct Novel: Identifiable, Equatable {
 
     /// «مكتملة» on the site means no new chapters will come.
     var complete: Bool { status.contains("مكتمل") }
-    var siteName: String { Self.siteNames[source] ?? source }
+    var siteName: String { Self.siteNames[source] ?? (source == "generic" ? (URL(string: url)?.host?.replacingOccurrences(of: "www.", with: "") ?? "موقع آخر") : source) }
     static let siteNames = ["kolnovel": "ملوك الروايات", "cenele": "فضاء الروايات", "rewayat": "نادي الروايات", "realmnovel": "realmnovel",
                             "layl": "Layl", "wetriedtls": "We Tried TLs", "wtrlab": "WTR-LAB", "ranobes": "Ranobes",
                             "archive": "أرشيف أداتك", "epub": "ملف EPUB", "sample": "جليس"]
@@ -176,10 +176,31 @@ final class SourceEngine: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // the definitions downloaded from the repository (SiteRepo) go after the app's own, and take their place
+        let extra = SiteRepo.scripts()
+        guard !extra.isEmpty else { markReady(); return }
+        var left = extra.count
+        for js in extra {
+            webView.evaluateJavaScript("(function(){try{" + js + "
+}catch(e){}})();1") { [weak self] _, _ in
+                left -= 1
+                if left == 0 { self?.markReady() }
+            }
+        }
+    }
+
+    private func markReady() {
         ready = true
         let w = waiters
         waiters = []
         w.forEach { $0.resume() }
+    }
+
+    /// After the repository changed: the page again, with the new definitions.
+    func restart() {
+        guard let w = web else { return }
+        ready = false
+        w.reload()
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
@@ -305,7 +326,9 @@ final class Novels: ObservableObject {
     /// found from it and `openIndex` points at that chapter. `progress` gets a short Arabic status line.
     func add(url raw: String, progress: @escaping (String) -> Void) async throws -> Added {
         var url = clean(raw)
-        guard let site = await SourceEngine.shared.site(for: url) else { throw NovelError.unknownSite }
+        // a site Jalees has no definition for is read the general way (sites/generic.js, س17.4)
+        guard url.hasPrefix("http") else { throw NovelError.unknownSite }
+        let site = await SourceEngine.shared.site(for: url) ?? "generic"
         var chapterURL: String?
         if !(await SourceEngine.shared.isSeries(site, url)) {
             progress("أدوّر على صفحة الرواية من الفصل")
@@ -324,7 +347,13 @@ final class Novels: ObservableObject {
         }
         progress("أقرأ صفحة الرواية")
         let page = try await Fetcher.html(url)
-        guard let info = try await SourceEngine.shared.run(site, "series", html: page, url: url) as? [String: Any] else { throw NovelError.parse("series") }
+        let info: [String: Any]
+        do {
+            guard let i = try await SourceEngine.shared.run(site, "series", html: page, url: url) as? [String: Any] else { throw NovelError.parse("series") }
+            info = i
+        } catch where site == "generic" {
+            throw NovelError.message("جليس ما يعرف هالموقع، وحاول يقرأه لحاله وما قدر. جرّب رابط صفحة الرواية نفسها (اللي فيها قائمة الفصول).")
+        }
         let title = (info["title"] as? String) ?? ""
         guard !title.isEmpty else { throw NovelError.parse("title") }
         let rows = try await allRows(site: site, first: (info["rows"] as? [[String: Any]]) ?? [], pages: (info["listPages"] as? [String]) ?? [], progress: progress)
@@ -340,6 +369,8 @@ final class Novels: ObservableObject {
         }
         reload()
         guard let n = novel(id) else { throw NovelError.parse("save") }
+        // your server follows it too
+        if ServerLink.isOn { let u = url; Task { _ = try? await ServerLink.follow([u]) } }
         return Added(novel: n, openIndex: openAt(id))
     }
 
@@ -601,8 +632,21 @@ final class Novels: ObservableObject {
             // missing or broken on the main site: the same chapter from a backup source, when there is one (س63)
             if source != "epub", source != "archive", source != "sample", !mirrors(ch.novel).isEmpty,
                let t = try? await textFromMirror(ch, novel: ch.novel) { return t }
+            // and from your server's archive (ServerLink), when one is set
+            if source != "epub", source != "sample", ServerLink.isOn, let t = try? await ServerLink.chapter(ch.url) {
+                keep(ch, t)
+                return t
+            }
             throw error
         }
+    }
+
+    /// Saves a chapter's text got some other way (the server's archive).
+    func keep(_ ch: ChapterRow, _ t: ChapterText) {
+        let json = String(data: (try? JSONSerialization.data(withJSONObject: t.paras)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
+        db.run("INSERT INTO texts(chapter,title,paras,removed,fetched) VALUES(?,?,?,?,?) ON CONFLICT(chapter) DO UPDATE SET title=excluded.title, paras=excluded.paras, removed=excluded.removed, fetched=excluded.fetched",
+               [ch.id, t.title, json, t.removed, Date().timeIntervalSince1970])
+        db.run("UPDATE chapters SET words=? WHERE id=?", [t.words, ch.id])
     }
 
     /// Quietly gets the next few chapters ready so turning to them is instant.

@@ -496,7 +496,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         if paged, lastPos["pages"] != nil {
             topPill.text = "الصفحة \(NovelBridge.num(lastPos["page"]) + 1) من \(NovelBridge.num(lastPos["pages"]))".tr
         } else {
-            topPill.text = !known ? ch.label : (pagesLeft == 0 ? "الصفحة الأخيرة في الفصل" : "الصفحات المتبقية في الفصل: \(pagesLeft)")
+            topPill.text = (!known ? ch.label : (pagesLeft == 0 ? "الصفحة الأخيرة في الفصل" : "الصفحات المتبقية في الفصل: \(pagesLeft)")).tr
         }
         if ch.numbered, let last = chapters.last(where: { $0.numbered }) {
             bottomPill.text = "\(ch.num) من \(last.num)".tr
@@ -1272,7 +1272,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         NSLog("jalees debug: %@ (in window: %@)", what, view.window == nil ? "no" : "yes")
         switch what {
         case "chrome": setChrome(true)
-        case "menu": setChrome(true); menuTapped()
+        case "menu": ReaderMenuView.layout = "list"; setChrome(true); menuTapped()
+        case "menugrid": ReaderMenuView.layout = "grid"; setChrome(true); menuTapped()
+        case "menubar": ReaderMenuView.layout = "bar"; setChrome(true); menuTapped()
         case "themes": openThemes()
         case "custom": openCustomize()
         case "reading": openReading()

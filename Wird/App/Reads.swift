@@ -29,7 +29,7 @@ struct FinishSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(vi.map { "المجلد \($0 + 1)" + (b.volumes[$0].title.isEmpty ? "" : " · " + b.volumes[$0].title) } ?? b.title).font(JFont.body(16, .semibold))
                         if vi != nil { Text(b.title).font(JFont.body(13)).foregroundStyle(Color(L.ink2)) }
-                        else if b.readNo > 1 { Text("القراءة " + Words.ord(b.readNo)).font(JFont.body(13)).foregroundStyle(Color(L.ink2)) }
+                        else if b.readNo > 1 { Text("القراءة \(Words.ord(b.readNo))").font(JFont.body(13)).foregroundStyle(Color(L.ink2)) }
                     }
                 }
                 HStack { JLabel(text: "تقييمك"); Spacer(); JStars(value: $rating) }
@@ -106,8 +106,8 @@ struct RereadSheet: View {
     var body: some View {
         if let b = lib.state.book(bookID) {
             JSheet(title: b.verbs.again) {
-                Text("تبدأ القراءة " + Words.ord(b.readNo + 1) + " لـ«" + b.title + "»؟").font(JFont.body(16)).foregroundStyle(Color(L.ink))
-                Text("تقدمك يرجع للصفر، وقراءتك " + Words.ord(b.readNo) + " بتواريخها وتقييمها ومراجعتها تنحفظ في سجل القراءات. الاقتباسات والشخصيات والكلمات تبقى للكتاب.")
+                Text("تبدأ القراءة \(Words.ord(b.readNo + 1)) لـ«\(b.title)»؟").font(JFont.body(16)).foregroundStyle(Color(L.ink))
+                Text("تقدمك يرجع للصفر، وقراءتك \(Words.ord(b.readNo)) بتواريخها وتقييمها ومراجعتها تنحفظ في سجل القراءات. الاقتباسات والشخصيات والكلمات تبقى للكتاب.")
                     .font(JFont.body(13.5)).foregroundStyle(Color(L.ink2))
                 Button { go(true) } label: { Label("ابدأ " + b.verbs.sess + " الآن", systemImage: "play.fill").frame(maxWidth: .infinity) }
                     .buttonStyle(JButtonStyle(look: L, primary: true))
@@ -124,7 +124,7 @@ struct RereadSheet: View {
         if withSession {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { SessionModel.shared.start(bookID) }
         } else if let b = lib.state.book(bookID) {
-            ToastCenter.shared.show("بدأت القراءة " + Words.ord(b.readNo))
+            ToastCenter.shared.show("بدأت القراءة \(Words.ord(b.readNo))")
         }
     }
 }
@@ -142,9 +142,9 @@ struct ReadDelSheet: View {
             let cur = n == b.readNo
             let k = lib.state.sessions.filter { $0.bookId == b.id && $0.read == n }.count
             let prev = cur ? b.history.last : nil
-            JSheet(title: (cur && b.status != .done ? "إلغاء القراءة " : "حذف القراءة ") + Words.ord(n)) {
-                Text(cur ? "ترجع قراءتك " + Words.ord(prev?.int("n") ?? 1) + " لـ«" + b.title + "» كما انتهت، بتاريخها وتقييمها ومراجعتها، وكأنك ما بدأت هذه القراءة."
-                         : "تنشال القراءة " + Words.ord(n) + " من سجل «" + b.title + "»، والقراءات بعدها يتعدل ترقيمها.")
+            JSheet(title: cur && b.status != .done ? "إلغاء القراءة \(Words.ord(n))".tr : "حذف القراءة \(Words.ord(n))".tr) {
+                Text(cur ? "ترجع قراءتك \(Words.ord(prev?.int("n") ?? 1)) لـ«\(b.title)» كما انتهت، بتاريخها وتقييمها ومراجعتها، وكأنك ما بدأت هذه القراءة."
+                         : "تنشال القراءة \(Words.ord(n)) من سجل «\(b.title)»، والقراءات بعدها يتعدل ترقيمها.")
                     .font(JFont.body(15.5))
                 Text((k > 0 ? "تنحذف جلساتها (" + Words.cnt(Double(k), Words.sessions) + ") من الإحصائيات. " : "") + "الاقتباسات والأفكار والكلمات تبقى للكتاب. وتقدر تتراجع بعدها مباشرة.")
                     .font(JFont.body(13)).foregroundStyle(Color(L.ink2))
@@ -229,7 +229,7 @@ enum Reads {
                 x.moods = h.strs("moods"); x.pace = h.str("pace"); x.volReviews = h.obj("volReviews")
                 if let p = h.optNum("pos") { x.pos = p; x.vi = h.int("vi") }
                 move([n: h.int("n", 1)])
-                msg = "ألغيت القراءة " + Words.ord(n)
+                msg = "ألغيت القراءة \(Words.ord(n))"
             } else {
                 var hist = x.history
                 guard let idx = hist.firstIndex(where: { $0.int("n") == n }) else { return }
@@ -242,7 +242,7 @@ enum Reads {
                 x.history = hist.enumerated().map { k, h in var h = h; h.set("n", k + 1); return h }
                 move(map)
                 x.readNo = hist.count + 1
-                msg = "حذفت القراءة " + Words.ord(n)
+                msg = "حذفت القراءة \(Words.ord(n))"
             }
             st.books[i] = x
         }

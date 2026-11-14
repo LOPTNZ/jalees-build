@@ -14,6 +14,7 @@ struct BrowseTab: View {
     @State private var searching = false
     @State private var busy: String?
     @State private var note: String?
+    @State private var repo = false
 
     var body: some View {
         ScrollView {
@@ -60,6 +61,9 @@ struct BrowseTab: View {
                     }
                 }
                 Text("اضغط مطوّلًا على موقع لتسجيل الدخول فيه، لو كان يطلب حساب أو يتحقق إنك مو روبوت.").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
+                Button { repo = true } label: { Label("مستودع المواقع", systemImage: "shippingbox") }
+                    .buttonStyle(JButtonStyle(look: look, small: true))
+                Text("رابط موقع ما يعرفه جليس؟ الصقه من «إضافة ← رواية من موقع» ويحاول يقرأه لحاله.").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
             }
             .padding(16)
         }
@@ -70,7 +74,8 @@ struct BrowseTab: View {
         .preferredColorScheme(look.dark ? .dark : .light)
         .overlay { if let b = busy { BusyCard(look: look, text: b) } }
         .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) { Button("تمام", role: .cancel) {} }
-        .task { await loadSources() }
+        .task { await loadSources(); await SiteRepo.updateIfDue() }
+        .sheet(isPresented: $repo, onDismiss: { Task { try? await Task.sleep(nanoseconds: 800_000_000); await loadSources() } }) { SiteRepoSheet(look: look) }
     }
 
     private func siteName(_ id: String) -> String { (sources.first { ($0["id"] as? String) == id }?["name"] as? String) ?? id }
@@ -122,8 +127,11 @@ struct SourceBrowse: View {
     @State private var query = ""
     @State private var busy: String?
     @State private var note: String?
+    @State private var filter = BrowseFilter()
+    @State private var filtering = false
 
     var body: some View {
+        let shown = items.filter { filter.keeps($0) }
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 0) {
@@ -143,10 +151,22 @@ struct SourceBrowse: View {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Color(look.ink2))
                     TextField("ابحث في \(name)", text: $query).font(JFont.body(15)).submitLabel(.search).onSubmit { kind = "search"; reload() }
+                    Button { filtering = true } label: {
+                        Image(systemName: filter.isOn ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                            .font(.system(size: 20)).foregroundStyle(Color(filter.isOn ? look.primary : look.ink2))
+                    }
+                    .accessibilityLabel("التصفية")
                 }
                 .padding(.horizontal, 12).frame(minHeight: 42)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(look.surface)))
-                NovelGrid(look: look, items: items) { open($0) }
+                if filter.isOn {
+                    HStack {
+                        Text("يطابق \(shown.count) من \(items.count)").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
+                        Spacer()
+                        Button("إلغاء التصفية") { filter = BrowseFilter() }.font(JFont.body(13, .medium)).foregroundStyle(Color(look.primary))
+                    }
+                }
+                NovelGrid(look: look, items: shown) { open($0) }
                 if loading { ProgressView().frame(maxWidth: .infinity).padding() }
                 else if more {
                     Button("المزيد") { page += 1; load() }.buttonStyle(JButtonStyle(look: look)).frame(maxWidth: .infinity)
@@ -160,6 +180,7 @@ struct SourceBrowse: View {
         .overlay { if let b = busy { BusyCard(look: look, text: b) } }
         .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) { Button("تمام", role: .cancel) {} }
         .task { if items.isEmpty { reload() } }
+        .sheet(isPresented: $filtering) { BrowseFilterSheet(look: look, filter: $filter).presentationDetents([.medium, .large]) }
     }
 
     private func reload() { page = 1; items = []; load() }
@@ -184,6 +205,104 @@ struct SourceBrowse: View {
             do { try await NovelBridge.open(u) { s in busy = s } } catch { note = error.localizedDescription }
             busy = nil
         }
+    }
+}
+
+/// البحث المتقدّم (س62): what a site's listing shows, narrowed by status, chapter count, genres and rating. Sites
+/// give these in each novel's line («مستمرة · 120 فصل · أكشن»), so the filter reads that line; «المزيد» brings more to
+/// filter.
+struct BrowseFilter: Equatable {
+    var status = ""          // "" | ongoing | completed | paused
+    var minCh = ""
+    var maxCh = ""
+    var want = ""            // genres to have, comma separated
+    var skip = ""            // genres to leave out
+    var minRating = 0.0
+
+    var isOn: Bool { self != BrowseFilter() }
+
+    private static func words(_ s: String) -> [String] {
+        s.split(whereSeparator: { $0 == "," || $0 == "،" }).map { Words.norm(String($0)).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    func keeps(_ it: [String: Any]) -> Bool {
+        guard isOn else { return true }
+        let meta = (it["meta"] as? String) ?? ""
+        let text = Words.norm(meta + " " + ((it["title"] as? String) ?? "") + " " + ((it["genres"] as? [String]) ?? []).joined(separator: " "))
+        switch status {
+        case "ongoing": if text.range(of: "مستمر|ongoing|جاري", options: .regularExpression) == nil { return false }
+        case "completed": if text.range(of: "مكتمل|منتهي|complete|finished", options: .regularExpression) == nil { return false }
+        case "paused": if text.range(of: "متوقف|hiatus|dropped|paused", options: .regularExpression) == nil { return false }
+        default: break
+        }
+        if !minCh.isEmpty || !maxCh.isEmpty {
+            guard let c = (it["chapters"] as? Int) ?? Self.chapters(meta) else { return false }
+            if let lo = Int(minCh), c < lo { return false }
+            if let hi = Int(maxCh), c > hi { return false }
+        }
+        for w in Self.words(want) where !text.contains(w) { return false }
+        for w in Self.words(skip) where text.contains(w) { return false }
+        if minRating > 0 {
+            guard let r = (it["rating"] as? Double) ?? Self.rating(meta), r >= minRating else { return false }
+        }
+        return true
+    }
+
+    /// «120 فصل» / «120 chapters»
+    static func chapters(_ meta: String) -> Int? {
+        guard let r = meta.range(of: "[0-9]+\\s*(فصل|فصول|فصلا|chapters?|ch)", options: [.regularExpression, .caseInsensitive]) else { return nil }
+        return Int(meta[r].filter(\.isNumber))
+    }
+
+    /// «★ 4.5»
+    static func rating(_ meta: String) -> Double? {
+        guard let r = meta.range(of: "★\\s*[0-9]+(\\.[0-9]+)?", options: .regularExpression) else { return nil }
+        return Double(meta[r].filter { $0.isNumber || $0 == "." })
+    }
+}
+
+struct BrowseFilterSheet: View {
+    let look: JLook
+    @Binding var filter: BrowseFilter
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("الحالة") {
+                    Picker("الحالة", selection: $filter.status) {
+                        Text("الكل").tag(""); Text("مستمرة").tag("ongoing"); Text("مكتملة").tag("completed"); Text("متوقفة").tag("paused")
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Section("عدد الفصول") {
+                    HStack {
+                        TextField("من", text: $filter.minCh).keyboardType(.numberPad)
+                        Text("إلى").foregroundStyle(.secondary)
+                        TextField("إلى", text: $filter.maxCh).keyboardType(.numberPad)
+                    }
+                }
+                Section {
+                    TextField("تصنيفات أبيها (أكشن، فانتازيا)", text: $filter.want)
+                    TextField("تصنيفات ما أبيها", text: $filter.skip)
+                } header: { Text("التصنيفات") } footer: { Text("افصل بينها بفاصلة.") }
+                Section("التقييم") {
+                    Picker("أقل تقييم", selection: $filter.minRating) {
+                        Text("أي تقييم").tag(0.0); Text("★ 3+").tag(3.0); Text("★ 4+").tag(4.0); Text("★ 4.5+").tag(4.5)
+                    }
+                }
+                Section { Text("التصفية على اللي ظاهر من الموقع، و«المزيد» يجيب روايات أكثر تتصفّى معها. بعض المواقع ما تكتب الحالة أو التقييم في قائمتها، فتختفي رواياتها لو اخترتها.").font(.footnote).foregroundStyle(.secondary) }
+            }
+            .navigationTitle("التصفية")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("مسح") { filter = BrowseFilter() } }
+                ToolbarItem(placement: .confirmationAction) { Button("تم") { dismiss() } }
+            }
+        }
+        .environment(\.layoutDirection, Lang.direction)
+        .preferredColorScheme(look.dark ? .dark : .light)
+        .tint(Color(look.primary))
     }
 }
 

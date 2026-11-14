@@ -204,16 +204,29 @@ final class FlowTests: XCTestCase {
     }
 
     /// A novel in the reader: the menu, reading aloud from it, the next paragraph, stopping, closing.
-    func test08ReaderAloud() {
+    /// The novel page's main button opens the reader.
+    func test08aPageOpensReader() {
         app.terminate()
         app.launchArguments += ["-JaleesRoute", "page"]
         app.launch()
         sleep(5)
         let go = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "ابدأ القراءة", "تابع القراءة")).firstMatch
         guard tap(go, "open the reader", timeout: 10) else { shot("ui40-no-reader"); return }
-        sleep(3)
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        sleep(1)
+        sleep(4)
+        shot("ui40-reader-open")
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 6), "the reader's page is not there")
+    }
+
+    func test08ReaderAloud() {
+        app.terminate()
+        app.launchArguments += ["-JaleesRoute", "reader", "-JaleesSilent"]
+        app.launch()
+        sleep(6)
+        // the reader's buttons show with a tap on the text (they may be showing already)
+        if !button("القائمة").waitForExistence(timeout: 2) {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
+            sleep(1)
+        }
         if tap(button("القائمة"), "reader menu") {
             sleep(1)
             shot("ui41-reader-menu")

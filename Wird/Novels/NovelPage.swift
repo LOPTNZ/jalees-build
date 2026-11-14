@@ -559,6 +559,13 @@ struct NovelPageView: View {
                     Label("صفحة الرواية في \(model.novel.siteName)", systemImage: "safari")
                 }
                 .buttonStyle(JButtonStyle(look: L, small: true))
+            // معلومات NovelUpdates (س50): its page for this novel (ratings, tags, related novels, the original's
+            // status), searched by the novel's name inside Jalees; NovelUpdates turns apps away, so it opens as a page
+            Button {
+                let q = model.novel.title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                NovelBridge.openSite("https://www.novelupdates.com/series-finder/?sf=1&sh=" + q + "&sort=sread&order=desc")
+            } label: { Label("الرواية في NovelUpdates", systemImage: "info.circle") }
+                .buttonStyle(JButtonStyle(look: L, small: true))
             }
         }
     }

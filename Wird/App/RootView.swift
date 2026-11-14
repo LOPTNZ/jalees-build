@@ -101,6 +101,7 @@ struct RootView: View {
             // back in the app: today's goal may be met now, and the reminders run three weeks ahead
             Reminder.sync()
             WidgetFeed.update()
+            Task { await ServerLink.backupIfDue() }
             // new chapters: at most once an hour when Jalees comes up
             Task { await NewChapters.checkIfDue() }
             // links shared from Safari while Jalees was closed

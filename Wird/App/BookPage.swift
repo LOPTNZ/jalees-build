@@ -416,7 +416,7 @@ struct BookPage: View {
                 Text("القراءة \(b.readNo)" + (b.status == .done ? "" : " (الحالية)")).font(JFont.body(15, .semibold)).foregroundStyle(Color(L.ink))
                 Text(readDates(b.start, b.finish)).font(JFont.body(13)).foregroundStyle(Color(L.ink2))
                 Button { Present.shared.open(.readDel(b.id, b.readNo)) } label: {
-                    Label(b.status == .done ? "حذف هذه القراءة" : "إلغاء هذه القراءة والرجوع للقراءة " + Words.ord(max(1, b.readNo - 1)), systemImage: "trash").font(JFont.body(13.5))
+                    Label(b.status == .done ? "حذف هذه القراءة" : "إلغاء هذه القراءة والرجوع للقراءة \(Words.ord(max(1, b.readNo - 1)))".tr, systemImage: "trash").font(JFont.body(13.5))
                 }
                 .buttonStyle(.plain).foregroundStyle(Color(L.danger))
             }

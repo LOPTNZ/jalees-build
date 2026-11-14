@@ -116,6 +116,7 @@ struct SettingsView: View {
                             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
                     }
                     note("البحث يشتغل بدونه من Goodreads وأبجد وOpen Library. Google Books بدون مفتاح يرفض أغلب الطلبات لأن حدّه المجاني المشترك يخلص بسرعة. لو تبي نتائجه، سوّ مفتاحًا مجانيًا لـ «Books API» من Google Cloud والصقه هنا.")
+                    ServerSettings().padding(.top, 8)
                                     }
                 }
 

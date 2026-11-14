@@ -52,7 +52,7 @@ button.go.prev .v{font-size:14.5px;font-weight:500;margin:0;color:var(--soft)}
 
 /* ---------- reader v2 ---------- */
 :root{--latin:"Thmanyah Serif Text";--cols:1}
-#page .body p.lt{font-family:var(--latin),var(--font),serif}
+#page .body p.lt{font-family:var(--latin),var(--font),serif;direction:ltr;unicode-bidi:isolate}
 html.kashida #page .body p.ar{letter-spacing:0}
 section.chap+section.chap{margin-top:.6em}
 .ch-gap{height:calc(var(--top) * .4)}

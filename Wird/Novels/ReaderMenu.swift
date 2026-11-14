@@ -186,55 +186,175 @@ final class ReaderMenuView: UIView {
         return g
     }
 
+    /// «شكل القائمة» (v2, the note on 1.6.0): the same items in three arrangements, chosen in the reading settings.
+    static var layout: String {
+        get { DB.shared.get("reader.menuLayout") ?? "list" }
+        set { DB.shared.set("reader.menuLayout", newValue) }
+    }
+
+    private struct Item { let title: String; let detail: String?; let symbol: String; let on: Bool; let action: () -> Void }
+    private var horizontal = false
+
+    private func items(_ r: ReaderViewController) -> (main: [Item], small: [Item]) {
+        var main = [
+            Item(title: "المحتويات", detail: r.progressText, symbol: "list.bullet", on: false) { [weak r] in r?.openContents() },
+            Item(title: "الوقفات والتمييزات", detail: r.markCount > 0 ? "\(r.markCount)" : nil, symbol: "bookmark", on: false) { [weak r] in r?.openMarks() },
+            Item(title: "بحث في الرواية", detail: nil, symbol: "magnifyingglass", on: false) { [weak r] in r?.openSearch() },
+            Item(title: "القراءة الصوتية", detail: nil, symbol: "speaker.wave.2", on: false) { [weak r] in r?.startReadAloud() }
+        ]
+        if !Novels.shared.mirrors(r.novel.id).isEmpty {
+            main.append(Item(title: "الفصل من مصدر ثاني", detail: nil, symbol: "arrow.triangle.2.circlepath", on: false) { [weak r] in r?.chapterFromMirror() })
+        }
+        main.append(Item(title: "السمات والإعدادات", detail: nil, symbol: "textformat.size", on: false) { [weak r] in r?.openThemes() })
+        let small = [
+            Item(title: "مشاركة", detail: nil, symbol: "square.and.arrow.up", on: false) { [weak r] in r?.share() },
+            Item(title: "قفل الاتجاه", detail: nil, symbol: r.isLocked ? "lock.rotation" : "lock.open.rotation", on: r.isLocked) { [weak r] in r?.toggleLock() },
+            Item(title: "دليل السطر", detail: nil, symbol: "text.line.first.and.arrowtriangle.forward", on: r.guideOn) { [weak r] in r?.toggleGuide() },
+            Item(title: "وقفة", detail: nil, symbol: r.bookmarkedHere ? "bookmark.fill" : "bookmark", on: r.bookmarkedHere) { [weak r] in r?.toggleBookmark() },
+            Item(title: "تمرير تلقائي", detail: nil, symbol: "play.circle", on: false) { [weak r] in r?.toggleAutoScroll() },
+            Item(title: "افتح الفصل في الموقع", detail: nil, symbol: "safari", on: false) { [weak r] in r?.openSite() }
+        ]
+        return (main, small)
+    }
+
+    /// A tile: its icon over its name (the grid and the bar).
+    private func tile(_ it: Item, width: CGFloat, height: CGFloat, glass: Bool = true) -> UIView {
+        let v = UIVisualEffectView(effect: glass ? Glass.effect() : nil)
+        v.clipsToBounds = true
+        v.layer.cornerRadius = 16
+        let icon = UIImageView(image: UIImage(systemName: it.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .medium)))
+        icon.tintColor = it.on ? UIColor(red: 1, green: 0.62, blue: 0.25, alpha: 1) : .white
+        icon.contentMode = .center
+        let name = UILabel()
+        name.text = it.title.tr
+        name.font = .systemFont(ofSize: 11.5, weight: .medium)
+        name.textColor = UIColor.white.withAlphaComponent(0.9)
+        name.textAlignment = .center
+        name.numberOfLines = 2
+        name.adjustsFontSizeToFitWidth = true
+        name.minimumScaleFactor = 0.8
+        let col = UIStackView(arrangedSubviews: [icon, name])
+        col.axis = .vertical
+        col.spacing = 4
+        col.alignment = .center
+        col.isUserInteractionEnabled = false
+        col.translatesAutoresizingMaskIntoConstraints = false
+        let b = UIButton(type: .system)
+        b.addAction(UIAction { [weak self] _ in it.action(); self?.reader?.closeOverlays() }, for: .touchUpInside)
+        b.accessibilityLabel = it.title.tr + (it.detail.map { "، " + $0 } ?? "")
+        b.translatesAutoresizingMaskIntoConstraints = false
+        v.contentView.addSubview(col)
+        v.contentView.addSubview(b)
+        NSLayoutConstraint.activate([
+            col.centerXAnchor.constraint(equalTo: v.contentView.centerXAnchor), col.centerYAnchor.constraint(equalTo: v.contentView.centerYAnchor),
+            name.widthAnchor.constraint(lessThanOrEqualToConstant: max(20, width - 8)),
+            b.topAnchor.constraint(equalTo: v.contentView.topAnchor), b.bottomAnchor.constraint(equalTo: v.contentView.bottomAnchor),
+            b.leftAnchor.constraint(equalTo: v.contentView.leftAnchor), b.rightAnchor.constraint(equalTo: v.contentView.rightAnchor),
+            v.widthAnchor.constraint(equalToConstant: width), v.heightAnchor.constraint(equalToConstant: height)
+        ])
+        return v
+    }
+
+    private func hstack(_ views: [UIView], spacing: CGFloat) -> UIStackView {
+        let h = UIStackView(arrangedSubviews: views)
+        h.axis = .horizontal
+        h.spacing = spacing
+        h.distribution = .equalSpacing
+        h.alignment = .center
+        h.semanticContentAttribute = .forceRightToLeft
+        return h
+    }
+
     func show(in host: UIView, above anchor: UIView) {
         guard let r = reader else { return }
         frame = host.bounds
         autoresizingMask = [.flexibleWidth, .flexibleHeight]
         host.addSubview(self)
+        let (main, small) = items(r)
+        let layout = Self.layout
 
         panel.axis = .vertical
         panel.spacing = 8
         panel.alignment = .trailing
         panel.translatesAutoresizingMaskIntoConstraints = false
-        panel.addArrangedSubview(row("المحتويات", r.progressText, "list.bullet") { [weak r] in r?.openContents() })
-        panel.addArrangedSubview(row("الوقفات والتمييزات", r.markCount > 0 ? "\(r.markCount)" : nil, "bookmark") { [weak r] in r?.openMarks() })
-        panel.addArrangedSubview(row("بحث في الرواية", nil, "magnifyingglass") { [weak r] in r?.openSearch() })
-        panel.addArrangedSubview(row("القراءة الصوتية", nil, "speaker.wave.2") { [weak r] in r?.startReadAloud() })
-        if !Novels.shared.mirrors(r.novel.id).isEmpty {
-            panel.addArrangedSubview(row("الفصل من مصدر ثاني", nil, "arrow.triangle.2.circlepath") { [weak r] in r?.chapterFromMirror() })
-        }
-        panel.addArrangedSubview(row("السمات والإعدادات", nil, "textformat.size") { [weak r] in r?.openThemes() })
-        // the small actions in one row of round buttons, right to left
-        let buttons = UIStackView(arrangedSubviews: [
-            round("square.and.arrow.up", "مشاركة") { [weak r] in r?.share() },
-            round(r.isLocked ? "lock.rotation" : "lock.open.rotation", "قفل الاتجاه", on: r.isLocked) { [weak r] in r?.toggleLock() },
-            round("text.line.first.and.arrowtriangle.forward", "دليل السطر", on: r.guideOn) { [weak r] in r?.toggleGuide() },
-            round(r.bookmarkedHere ? "bookmark.fill" : "bookmark", "وقفة", on: r.bookmarkedHere) { [weak r] in r?.toggleBookmark() },
-            round("play.circle", "تمرير تلقائي") { [weak r] in r?.toggleAutoScroll() },
-            round("safari", "افتح الفصل في الموقع") { [weak r] in r?.openSite() }
-        ])
-        buttons.spacing = 7
-        buttons.distribution = .equalSpacing
-        buttons.semanticContentAttribute = .forceRightToLeft
-        buttons.widthAnchor.constraint(equalToConstant: ReaderMenuView.width).isActive = true
-        panel.addArrangedSubview(buttons)
-        addSubview(panel)
-        NSLayoutConstraint.activate([
-            panel.rightAnchor.constraint(equalTo: anchor.rightAnchor),
-            panel.bottomAnchor.constraint(equalTo: anchor.topAnchor, constant: -10)
-        ])
-
-        // the scrubber: right beside the menu, as tall as it, wide enough for a thumb
         scrub.clipsToBounds = true
-        scrub.layer.cornerRadius = 26
         scrub.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(scrub)
-        NSLayoutConstraint.activate([
-            scrub.rightAnchor.constraint(equalTo: panel.leftAnchor, constant: -10),
-            scrub.topAnchor.constraint(equalTo: panel.topAnchor),
-            scrub.bottomAnchor.constraint(equalTo: panel.bottomAnchor),
-            scrub.widthAnchor.constraint(equalToConstant: 52)
-        ])
+        horizontal = layout == "bar"
+
+        switch layout {
+        case "grid":
+            // every item a tile, three to a row
+            let all = main + small
+            for i in stride(from: 0, to: all.count, by: 3) {
+                let row = hstack(all[i..<min(i + 3, all.count)].map { tile($0, width: 86, height: 74) }, spacing: 8)
+                row.distribution = .fill
+                panel.addArrangedSubview(row)
+            }
+        case "bar":
+            // one wide bar at the bottom: where you are, the chapters slider, the main items, then the small ones
+            panel.alignment = .fill
+            let bar = UIVisualEffectView(effect: Glass.effect())
+            bar.clipsToBounds = true
+            bar.layer.cornerRadius = 26
+            bar.translatesAutoresizingMaskIntoConstraints = false
+            let inner = UIStackView()
+            inner.axis = .vertical
+            inner.spacing = 6
+            inner.alignment = .fill
+            inner.translatesAutoresizingMaskIntoConstraints = false
+            scrub.effect = nil
+            scrub.backgroundColor = UIColor.white.withAlphaComponent(0.08)
+            scrub.layer.cornerRadius = 20
+            scrub.heightAnchor.constraint(equalToConstant: 40).isActive = true
+            let place = UILabel()
+            place.text = r.progressText
+            place.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+            place.textColor = UIColor.white.withAlphaComponent(0.7)
+            place.textAlignment = .center
+            inner.addArrangedSubview(place)
+            inner.addArrangedSubview(scrub)
+            let w = min(host.bounds.width - 24, 420)
+            let mainW = (w - 24 - CGFloat(max(0, main.count - 1)) * 4) / CGFloat(max(1, main.count))
+            inner.addArrangedSubview(hstack(main.map { tile($0, width: mainW, height: 62, glass: false) }, spacing: 4))
+            let smallW = (w - 24 - CGFloat(max(0, small.count - 1)) * 4) / CGFloat(max(1, small.count))
+            inner.addArrangedSubview(hstack(small.map { tile($0, width: smallW, height: 56, glass: false) }, spacing: 4))
+            bar.contentView.addSubview(inner)
+            NSLayoutConstraint.activate([
+                inner.topAnchor.constraint(equalTo: bar.contentView.topAnchor, constant: 10),
+                inner.bottomAnchor.constraint(equalTo: bar.contentView.bottomAnchor, constant: -10),
+                inner.leftAnchor.constraint(equalTo: bar.contentView.leftAnchor, constant: 12),
+                inner.rightAnchor.constraint(equalTo: bar.contentView.rightAnchor, constant: -12),
+                bar.widthAnchor.constraint(equalToConstant: w)
+            ])
+            panel.addArrangedSubview(bar)
+        default:
+            for it in main { panel.addArrangedSubview(row(it.title, it.detail, it.symbol, it.action)) }
+            // the small actions in one row of round buttons, right to left
+            let buttons = hstack(small.map { round($0.symbol, $0.title, on: $0.on, $0.action) }, spacing: 7)
+            buttons.widthAnchor.constraint(equalToConstant: ReaderMenuView.width).isActive = true
+            panel.addArrangedSubview(buttons)
+        }
+        addSubview(panel)
+        if horizontal {
+            NSLayoutConstraint.activate([
+                panel.centerXAnchor.constraint(equalTo: centerXAnchor),
+                panel.bottomAnchor.constraint(equalTo: anchor.topAnchor, constant: -10)
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                panel.rightAnchor.constraint(equalTo: anchor.rightAnchor),
+                panel.bottomAnchor.constraint(equalTo: anchor.topAnchor, constant: -10)
+            ])
+            // the scrubber: right beside the menu, as tall as it, wide enough for a thumb
+            scrub.layer.cornerRadius = 26
+            addSubview(scrub)
+            NSLayoutConstraint.activate([
+                scrub.rightAnchor.constraint(equalTo: panel.leftAnchor, constant: -10),
+                scrub.topAnchor.constraint(equalTo: panel.topAnchor),
+                scrub.bottomAnchor.constraint(equalTo: panel.bottomAnchor),
+                scrub.widthAnchor.constraint(equalToConstant: 52)
+            ])
+        }
         knob.backgroundColor = UIColor.white.withAlphaComponent(0.92)
         knob.layer.cornerRadius = 3
         scrub.contentView.addSubview(knob)
@@ -263,19 +383,29 @@ final class ReaderMenuView: UIView {
 
     @objc private func outside(_ g: UITapGestureRecognizer) {
         let p = g.location(in: self)
-        if !panel.frame.contains(p) && !scrub.frame.contains(p) { reader?.closeOverlays() }
+        if !panel.frame.contains(p) && !scrub.convert(scrub.bounds, to: self).contains(p) { reader?.closeOverlays() }
     }
 
     private func placeKnob() {
         guard let r = reader, r.chapters.count > 1 else { return }
+        let f = CGFloat(scrubIndex) / CGFloat(r.chapters.count - 1)
+        if horizontal {
+            // right to left: the first chapter at the right end
+            let w = scrub.bounds.width - 32
+            let x = scrub.bounds.width - 16 - w * f
+            knob.frame = CGRect(x: x - 3, y: 8, width: 6, height: scrub.bounds.height - 16)
+            return
+        }
         let h = scrub.bounds.height - 32
-        let y = 16 + h * CGFloat(scrubIndex) / CGFloat(r.chapters.count - 1)
+        let y = 16 + h * f
         knob.frame = CGRect(x: 12, y: y - 3, width: 28, height: 6)
     }
 
-    private func index(at y: CGFloat) -> Int {
+    private func index(at p: CGPoint) -> Int {
         guard let r = reader, r.chapters.count > 1 else { return 0 }
-        let f = max(0, min(1, (y - 16) / max(1, scrub.bounds.height - 32)))
+        let f = horizontal
+            ? max(0, min(1, (scrub.bounds.width - 16 - p.x) / max(1, scrub.bounds.width - 32)))
+            : max(0, min(1, (p.y - 16) / max(1, scrub.bounds.height - 32)))
         return Int((f * CGFloat(r.chapters.count - 1)).rounded())
     }
 
@@ -285,13 +415,19 @@ final class ReaderMenuView: UIView {
         tip.text = ch.numbered && !ch.title.isEmpty ? "\(ch.label)\n\(ch.title)" : ch.label
         let s = tip.systemLayoutSizeFitting(CGSize(width: ReaderMenuView.width - 20, height: 90))
         let w = min(ReaderMenuView.width - 20, s.width)
+        if horizontal {
+            let k = scrub.convert(knob.frame, to: self)
+            tip.frame = CGRect(x: max(12, min(bounds.width - w - 12, k.midX - w / 2)), y: panel.frame.minY - s.height - 10, width: w, height: s.height)
+            UIView.animate(withDuration: 0.12) { self.tip.alpha = 1 }
+            return
+        }
         tip.frame = CGRect(x: panel.frame.midX - w / 2, y: scrub.frame.minY + knob.frame.midY - s.height / 2, width: w, height: s.height)
         UIView.animate(withDuration: 0.12) { self.tip.alpha = 1; self.panel.alpha = 0.12 }
     }
 
     @objc private func scrubbed(_ g: UIPanGestureRecognizer) {
         guard let r = reader, r.chapters.count > 1 else { return }
-        let i = index(at: g.location(in: scrub).y)
+        let i = index(at: g.location(in: scrub))
         switch g.state {
         case .began, .changed:
             if i != scrubIndex { Haptics.play("sel") }
@@ -309,7 +445,7 @@ final class ReaderMenuView: UIView {
 
     @objc private func scrubTapped(_ g: UITapGestureRecognizer) {
         guard let r = reader else { return }
-        let i = index(at: g.location(in: scrub).y)
+        let i = index(at: g.location(in: scrub))
         r.closeOverlays()
         if i != r.index { r.goTo(chapterIndex: i) }
     }

@@ -58,6 +58,9 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
     private(set) var sleepAtChapterEnd = false
     private var commandsReady = false
     var onChange: (() -> Void)?
+    /// simulator checks (-JaleesSilent): the speech engine there can stall the app, so sentences are "said" in silence
+    /// at a reading pace, and the player, the highlight and going on to the next sentence are what gets checked
+    private let silent = ProcessInfo.processInfo.arguments.contains("-JaleesSilent")
 
     // MARK: settings (kept in the novels' database, like the reader's other choices)
 
@@ -107,8 +110,10 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
         active = true
         told = []
         setupCommands()
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [])
-        try? AVAudioSession.sharedInstance().setActive(true)
+        if !silent {
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [])
+            try? AVAudioSession.sharedInstance().setActive(true)
+        }
         load(i, from: para)
     }
 
@@ -432,7 +437,7 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
                 let u = utterance(chapterLine)
                 u.postUtteranceDelay = 0.4
                 utts[ObjectIdentifier(u)] = -1
-                synth.speak(u)
+                say(u)
             }
             speakPiece()
         }
@@ -448,7 +453,17 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
         let lastOfPara = !pieces.indices.contains(at + 1) || pieces[at + 1].para != pieces[at].para
         u.postUtteranceDelay = lastOfPara ? 0.28 : 0.06
         utts[ObjectIdentifier(u)] = at
-        synth.speak(u)
+        say(u)
+    }
+
+    private func say(_ u: AVSpeechUtterance) {
+        guard silent else { synth.speak(u); return }
+        let id = ObjectIdentifier(u), seconds = max(0.6, Double(u.speechString.count) / 15 / speed)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.spoke(id) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self = self, self.playing else { return }
+            self.said(id)
+        }
     }
 
     private func utterance(_ text: String) -> AVSpeechUtterance {
@@ -460,21 +475,25 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
         let id = ObjectIdentifier(utterance)
-        Task { @MainActor in
-            guard let k = self.utts[id], k >= 0, k == self.at else { return }
-            self.mark()
-        }
+        Task { @MainActor in self.spoke(id) }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         let id = ObjectIdentifier(utterance)
-        Task { @MainActor in
-            guard self.active, self.playing, let k = self.utts.removeValue(forKey: id) else { return }
-            if k < 0 { return } // the chapter's name; its first sentence is already queued
-            guard k == self.at else { return }
-            self.at += 1
-            if self.at >= self.pieces.count { self.nextChapter() } else { self.speakPiece() }
-        }
+        Task { @MainActor in self.said(id) }
+    }
+
+    private func spoke(_ id: ObjectIdentifier) {
+        guard let k = utts[id], k >= 0, k == at else { return }
+        mark()
+    }
+
+    private func said(_ id: ObjectIdentifier) {
+        guard active, playing, let k = utts.removeValue(forKey: id) else { return }
+        if k < 0 { return } // the chapter's name; its first sentence is already queued
+        guard k == at else { return }
+        at += 1
+        if at >= pieces.count { nextChapter() } else { speakPiece() }
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ p: AVAudioPlayer, successfully flag: Bool) {
