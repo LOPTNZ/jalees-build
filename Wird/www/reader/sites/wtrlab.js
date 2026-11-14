@@ -7,8 +7,8 @@
      text needs  POST https://wtr-lab.com/api/reader/get  with JSON {translate:"ai",language:"en",raw_id,chapter_no}
      -> {content_url:"/api/v2/reader/content/…signed…"}, then a GET of that signed URL (valid for days), which is JSON
      {data:{data:{title, body:[paragraphs], glossary_data:{terms:[[english, chinese], …]}}}}. chapter() reads that JSON
-     when it is handed it (names are written ※N⛬ in the text and are replaced by terms[N][0]); given the chapter
-     page itself it answers { error } that says so.
+     when it is handed it (names are written ※N⛬ in the text and are replaced by terms[N][0]). Given the chapter page
+     it answers { fetch: the POST }, given the POST's answer { fetch: the content URL } (the app's fetch steps).
    - Search is POST /api/search {text}; the site's GET pages cannot filter by text, so search is not available. */
 (function () {
   'use strict';
@@ -81,8 +81,14 @@
     chapter: function (doc, url) {
       var j = json(doc), body = j && j.data && j.data.data && j.data.data.body;
       if (!Array.isArray(body)) {
-        var pp = nextData(doc);
-        if (pp && pp.serie && pp.serie.chapter) return { error: 'needs-post: the chapter text is only given by POST https://wtr-lab.com/api/reader/get (then a GET of the content_url it returns)' };
+        /* step 2: the answer to the POST names the signed content address; the app fetches it and comes back */
+        var cu = j && (j.content_url || (j.data && (j.data.content_url || (j.data.data && j.data.data.content_url))));
+        if (cu) return { fetch: { url: abs(cu, ORIGIN) } };
+        if (j && j.error) return { error: String(j.error) };
+        /* step 1: from the chapter page (or its address), ask for the text the way the site's reader does */
+        var m = /\/novel\/(\d+)\/[^\/]+\/chapter-(\d+)/.exec(url || '');
+        if (m) return { fetch: { url: ORIGIN + '/api/reader/get', method: 'POST',
+                                 json: { translate: 'ai', language: 'en', raw_id: Number(m[1]), chapter_no: Number(m[2]) } } };
         return { error: 'no-content' };
       }
       var terms = (j.data.data.glossary_data && j.data.data.glossary_data.terms) || [];

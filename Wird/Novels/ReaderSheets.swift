@@ -103,7 +103,7 @@ struct ThemesSheet: View {
         .padding(.horizontal, 18)
         .padding(.top, 20)
         .frame(maxHeight: .infinity, alignment: .top)
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .environment(\.locale, arabicLatn)
         .preferredColorScheme(.dark)
     }
@@ -209,7 +209,7 @@ struct CustomizeSheet: View {
             } message: { Text("اكتب اسم الخط كما هو في fonts.google.com") }
             .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) { Button("تمام", role: .cancel) {} }
         }
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .environment(\.locale, arabicLatn)
         .preferredColorScheme(.dark)
     }
@@ -315,7 +315,7 @@ struct ReadingSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم", action: close) } }
         }
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .environment(\.locale, arabicLatn)
         .preferredColorScheme(.dark)
     }
@@ -396,7 +396,7 @@ struct ContentsSheet: View {
                 }
             }
         }
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .environment(\.locale, arabicLatn)
         .preferredColorScheme(.dark)
     }
@@ -517,7 +517,7 @@ struct MarksSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم") { dismiss() } } }
         }
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .environment(\.locale, arabicLatn)
         .preferredColorScheme(.dark)
     }
@@ -618,7 +618,7 @@ struct SearchSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("إغلاق") { dismiss() } } }
         }
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .environment(\.locale, arabicLatn)
         .preferredColorScheme(.dark)
     }
@@ -680,7 +680,7 @@ struct NoteSheet: View {
             }
             .onAppear { focused = true }
         }
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .preferredColorScheme(.dark)
     }
 }
@@ -764,7 +764,7 @@ struct NotebookSheet: View {
             }
             .task { if kind == "word" { await lookup() } }
         }
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .environment(\.locale, arabicLatn)
         .preferredColorScheme(.dark)
     }

@@ -100,11 +100,20 @@ enum Fetcher {
     }()
 
     /// The page as text. One quiet second try on a connection failure; never on a refusal.
-    static func html(_ address: String) async throws -> String {
+    static func html(_ address: String, method: String = "GET", json: Any? = nil, headers: [String: String] = [:]) async throws -> String {
         guard let url = URL(string: address) else { throw NovelError.network("رابط غير صالح") }
         var req = URLRequest(url: url)
         req.setValue(ua, forHTTPHeaderField: "User-Agent")
         req.setValue("text/html,application/xhtml+xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        // a site definition's fetch step (README «Fetch steps»): a POST with a JSON body, or extra headers
+        if method.uppercased() == "POST" {
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
+            if let j = json { req.httpBody = try? JSONSerialization.data(withJSONObject: j) }
+            if let host = url.host, let scheme = url.scheme { req.setValue("\(scheme)://\(host)", forHTTPHeaderField: "Origin") }
+        }
+        for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         var last: Error = NovelError.network("")
         var gated = false
         for attempt in 0..<3 {
@@ -564,8 +573,16 @@ final class Novels: ObservableObject {
             } else if source == "archive" {
                 throw NovelError.message("هذا الفصل مو في الأرشيف المستورد")
             } else {
-                let html = try await Fetcher.html(ch.url)
-                guard let d = try await SourceEngine.shared.run(source, "chapter", html: html, url: ch.url) as? [String: Any] else { throw NovelError.parse("chapter") }
+                var html = try await Fetcher.html(ch.url)
+                guard var d = try await SourceEngine.shared.run(source, "chapter", html: html, url: ch.url) as? [String: Any] else { throw NovelError.parse("chapter") }
+                // fetch steps: the definition asks for another address (or a POST) and reads its answer
+                var hops = 0
+                while let f = d["fetch"] as? [String: Any], let u = f["url"] as? String, hops < 3 {
+                    hops += 1
+                    html = try await Fetcher.html(u, method: (f["method"] as? String) ?? "GET", json: f["json"], headers: (f["headers"] as? [String: String]) ?? [:])
+                    guard let next = try await SourceEngine.shared.run(source, "chapter", html: html, url: ch.url) as? [String: Any] else { throw NovelError.parse("chapter") }
+                    d = next
+                }
                 let paras = (d["paras"] as? [String]) ?? []
                 guard !paras.isEmpty else { throw NovelError.empty }
                 t = ChapterText(title: (d["title"] as? String) ?? "", paras: paras, removed: (d["removed"] as? Int) ?? 0)

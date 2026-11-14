@@ -11,3 +11,9 @@ en-browse 10 -JaleesLang en -JaleesRoute tab-browse
 en-updates 8 -JaleesLang en -JaleesRoute tab-updates
 en-reader-menu 10 -JaleesLang en -JaleesRoute reader-menu
 en-form 8 -JaleesLang en -JaleesRoute form
+live-cenele 30 -JaleesRoute live https://cenele.com/cont/my-longe-simulati/ 500
+live-rewayat 30 -JaleesRoute live https://rewayat.club/novel/omniscient-reader-viewpoint 300
+live-realmnovel 30 -JaleesRoute live https://realmnovel.com/novel/68db5e531871e67f86edf60f 5
+live-layl 30 -JaleesRoute live https://layl.io/novels/necromancer-thief 5
+live-wetriedtls 30 -JaleesRoute live https://wetriedtls.com/series/a-regressors-tale-of-cultivation 1
+live-wtrlab 30 -JaleesRoute live https://wtr-lab.com/en/novel/114527/soul-land-koi-fish-martial-soul-luck-based-soul-master 1

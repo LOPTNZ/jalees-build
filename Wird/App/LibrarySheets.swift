@@ -170,7 +170,7 @@ struct LibOptions: View {
             if !cols.isEmpty {
                 Flow(spacing: 8) {
                     JChip(look: L, text: "كل المجموعات", on: f.str("col").isEmpty) { LibraryFilters.set("f.col", .string("")) }
-                    ForEach(cols, id: \.self) { c in JChip(look: L, text: c, on: f.str("col") == c) { LibraryFilters.set("f.col", .string(c)) } }
+                    ForEach(cols, id: \.self) { c in JChip(look: L, text: lib.state.colLabel(c), on: f.str("col") == c) { LibraryFilters.set("f.col", .string(c)) } }
                 }
             }
             let genres = Array(Set(lib.state.books.flatMap(\.genres))).sorted()
@@ -231,7 +231,7 @@ struct StatusMenu: View {
                 JLabel(text: "مجموعاتك").padding(.top, 4)
                 VStack(spacing: 0) {
                     ForEach(cols.keys.sorted(), id: \.self) { c in
-                        JMenuRow(icon: "folder", title: c, count: cols[c], checked: f.str("col") == c) {
+                        JMenuRow(icon: "folder", title: st.colLabel(c), count: cols[c], checked: f.str("col") == c) {
                             LibraryFilters.set("f.col", .string(c)); LibraryFilters.set("f.status", .string("all")); dismiss()
                         }
                     }
@@ -241,7 +241,7 @@ struct StatusMenu: View {
     }
 
     private func icon(_ k: String) -> String {
-        ["all": "books.vertical", "reading": "book", "want": "bookmark", "done": "checkmark.circle", "dnf": "pause.circle", "lent": "hand.raised"][k] ?? "book"
+        ["all": "books.vertical", "reading": "book", "want": "bookmark", "done": "checkmark.circle", "dnf": "xmark.circle", "paused": "pause.circle", "lent": "hand.raised"][k] ?? "book"
     }
 
     private func count(_ k: String, _ st: AppState) -> Int {

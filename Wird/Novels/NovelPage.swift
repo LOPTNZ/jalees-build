@@ -215,6 +215,7 @@ struct NovelPageView: View {
                     hero
                     if !model.novel.summary.isEmpty { summary }
                     statusAndProgress
+                    ListsRow(bookID: model.bookID)
                     if downloads.active { downloadsCard }
                     highlights
                     notebook
@@ -231,7 +232,7 @@ struct NovelPageView: View {
         }
         .background(Color(L.bg).ignoresSafeArea())
         .overlay(alignment: .bottom) { if model.selecting { selectionBar } }
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .environment(\.locale, Lang.locale)
         .preferredColorScheme(L.dark ? .dark : .light)
         .tint(Color(L.primary))
@@ -241,10 +242,10 @@ struct NovelPageView: View {
         .sheet(isPresented: $model.namingColors) { ColorNames(model: model) }
         .sheet(isPresented: $model.rules) {
             NavigationStack { ReplaceRulesView(scope: String(model.novel.id), title: model.novel.title) }
-                .environment(.layoutDirection, Lang.direction).preferredColorScheme(L.dark ? .dark : .light)
+                .environment(\.layoutDirection, Lang.direction).preferredColorScheme(L.dark ? .dark : .light)
         }
         .sheet(isPresented: $exportEpub) {
-            EpubExportSheet(novel: model.novel).environment(\.look, L).environment(.layoutDirection, Lang.direction)
+            EpubExportSheet(novel: model.novel).environment(\.look, L).environment(\.layoutDirection, Lang.direction)
                 .presentationDetents([.medium, .large])
         }
     }
@@ -317,10 +318,10 @@ struct NovelPageView: View {
     private var statusAndProgress: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 0) {
-                ForEach([("want", "أريد"), ("reading", "أقرأه"), ("done", "أنهيته"), ("dnf", "توقفت")], id: \.0) { k, t in
+                ForEach([("want", "أريد"), ("reading", "أقرأه"), ("paused", "وقفت"), ("done", "أنهيته"), ("dnf", "تركته")], id: \.0) { k, t in
                     let on = model.status == k
                     Button { model.setStatus(k) } label: {
-                        Text(t).font(JFont.body(15, on ? .medium : .regular))
+                        Text(t).font(JFont.body(14.5, on ? .medium : .regular)).lineLimit(1).minimumScaleFactor(0.8)
                             .foregroundStyle(Color(on ? L.onPrimary : L.ink))
                             .frame(maxWidth: .infinity, minHeight: 42)
                             .background(on ? Color(L.primary) : Color.clear)
@@ -346,7 +347,7 @@ struct NovelPageView: View {
                 }
             }
             .frame(height: 6)
-            .environment(.layoutDirection, Lang.direction)
+            .environment(\.layoutDirection, Lang.direction)
 
             HStack(spacing: 10) {
                 Button { model.read(nil) } label: {
@@ -839,7 +840,7 @@ struct ColorNames: View {
                 for l in model.labels { if let c = l["c"] as? String { names[c] = (l["name"] as? String) ?? "" } }
             }
         }
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .preferredColorScheme(L.dark ? .dark : .light)
         .tint(Color(L.primary))
     }

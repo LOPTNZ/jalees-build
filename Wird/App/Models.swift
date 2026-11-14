@@ -61,8 +61,9 @@ struct Goals: JSONBacked {
 // MARK: - a book
 
 enum BookStatus: String, CaseIterable {
-    case want, reading, done, dnf
-    var label: String { ["want": "أريد قراءته", "reading": "أقرأه الآن", "done": "أنهيته", "dnf": "توقفت عنه"][rawValue] ?? "" }
+    case want, reading, done, dnf, paused
+    /// «وقفت مؤقتًا» (س61): a break, to come back to; «تركته»: dropped
+    var label: String { ["want": "أريد قراءته", "reading": "أقرأه الآن", "done": "أنهيته", "dnf": "تركته", "paused": "وقفت مؤقتًا"][rawValue] ?? "" }
 }
 
 enum BookFormat: String, CaseIterable {

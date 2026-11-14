@@ -140,9 +140,9 @@ final class ReaderMenuView: UIView {
         v.layer.cornerRadius = ReaderMenuView.rowHeight / 2
         let b = UIButton(type: .system)
         b.addAction(UIAction { [weak self] _ in action(); self?.reader?.closeOverlays() }, for: .touchUpInside)
-        b.accessibilityLabel = title
+        b.accessibilityLabel = title.tr
         let name = UILabel()
-        name.text = title
+        name.text = title.tr
         name.font = .systemFont(ofSize: 16, weight: .medium)
         name.textColor = .white
         let extra = UILabel()
@@ -179,7 +179,7 @@ final class ReaderMenuView: UIView {
     private func round(_ symbol: String, _ label: String, on: Bool = false, _ action: @escaping () -> Void) -> UIView {
         let g = GlassButton(symbol: symbol, size: 15)
         if on { g.button.tintColor = UIColor(red: 1, green: 0.62, blue: 0.25, alpha: 1) }
-        g.button.accessibilityLabel = label
+        g.button.accessibilityLabel = label.tr
         g.button.addAction(UIAction { [weak self] _ in action(); self?.reader?.closeOverlays() }, for: .touchUpInside)
         g.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([g.widthAnchor.constraint(equalToConstant: 40), g.heightAnchor.constraint(equalToConstant: 40)])

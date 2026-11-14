@@ -864,7 +864,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     }
 
     func sheetHost<V: View>(_ v: V, large: Bool = false) -> UIViewController {
-        let host = UIHostingController(rootView: v.environment(.layoutDirection, Lang.direction).environment(\.locale, Lang.locale))
+        let host = UIHostingController(rootView: v.environment(\.layoutDirection, Lang.direction).environment(\.locale, Lang.locale))
         host.overrideUserInterfaceStyle = .dark
         host.modalPresentationStyle = .pageSheet
         if let s = host.sheetPresentationController {

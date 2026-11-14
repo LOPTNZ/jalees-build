@@ -97,7 +97,7 @@ struct BookWidgetView: View {
 
     var body: some View {
         content
-            .environment(.layoutDirection, Lang.direction)
+            .environment(\.layoutDirection, Lang.direction)
             .widgetURL(url)
     }
 
@@ -343,7 +343,7 @@ struct SessionLockView: View {
         }
         .foregroundColor(.white)
         .padding(16)
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
     }
 }
 
@@ -476,7 +476,7 @@ struct QuoteWidgetView: View {
                 .widgetBackground(LinearGradient(colors: [accent.opacity(0.95), accent.opacity(0.55)], startPoint: .topLeading, endPoint: .bottomTrailing).overlay(Color.black.opacity(0.28)))
             }
         }
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .widgetURL(url)
     }
 }
@@ -543,7 +543,7 @@ struct NovelsWidgetView: View {
                 .widgetBackground(LinearGradient(colors: [accent.opacity(0.55), Color(red: 0.04, green: 0.07, blue: 0.06)], startPoint: .topLeading, endPoint: .bottomTrailing))
             }
         }
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .widgetURL(URL(string: "wird://open?tab=updates"))
     }
 }

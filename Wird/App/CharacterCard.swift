@@ -66,7 +66,7 @@ struct CharacterCard: View {
                     VStack(spacing: 0) { ForEach(quotes) { QuoteRow(book: b, item: $0, kind: .quote, showBook: false) } }
                 }
             }
-            .sheet(item: $edit) { r in ItemForm(ref: r).environment(\.look, L).environment(.layoutDirection, Lang.direction) }
+            .sheet(item: $edit) { r in ItemForm(ref: r).environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
         }
     }
 

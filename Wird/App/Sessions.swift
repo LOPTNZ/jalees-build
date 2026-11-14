@@ -59,7 +59,7 @@ final class SessionModel: ObservableObject {
             st.timer = ["bookId": .string(id), "vi": .number(Double(b.vi)), "pos": .number(b.pos), "startedAt": .number(now), "acc": .number(0),
                         "sessionStart": .number(now), "cd": .null, "min": .bool(false)]
             if let i = st.index(of: id) {
-                if st.books[i].status == .want || st.books[i].status == .dnf { st.books[i].status = .reading }
+                if st.books[i].status == .want || st.books[i].status == .dnf || st.books[i].status == .paused { st.books[i].status = .reading }
                 if st.books[i].start == nil { st.books[i].start = now }
                 st.books[i].opened = now
             }
@@ -286,8 +286,8 @@ struct SessionScreen: View {
             }
         }
         .foregroundStyle(Color(L.stageInk))
-        .sheet(isPresented: $s.ending) { EndSessionSheet().environment(\.look, L).environment(.layoutDirection, Lang.direction) }
-        .sheet(item: $note) { r in ItemForm(ref: r).environment(\.look, L).environment(.layoutDirection, Lang.direction) }
+        .sheet(isPresented: $s.ending) { EndSessionSheet().environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
+        .sheet(item: $note) { r in ItemForm(ref: r).environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
     }
 
     private func content(_ b: Book) -> some View {

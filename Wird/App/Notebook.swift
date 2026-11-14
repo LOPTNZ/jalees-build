@@ -67,9 +67,9 @@ struct NotebookView: View {
         .onChange(of: nav.book) { _ in follow() }
         .onChange(of: nav.kind) { _ in follow() }
         .onChange(of: nav.character) { _ in follow() }
-        .sheet(item: $edit) { r in ItemForm(ref: r).environment(\.look, L).environment(.layoutDirection, Lang.direction) }
-        .sheet(item: $card) { r in CharacterCard(bookID: r.book, charID: r.item ?? "").environment(\.look, L).environment(.layoutDirection, Lang.direction) }
-        .sheet(isPresented: $review) { WordReview(bookID: bookFilter.isEmpty ? nil : bookFilter).environment(\.look, L).environment(.layoutDirection, Lang.direction) }
+        .sheet(item: $edit) { r in ItemForm(ref: r).environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
+        .sheet(item: $card) { r in CharacterCard(bookID: r.book, charID: r.item ?? "").environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
+        .sheet(isPresented: $review) { WordReview(bookID: bookFilter.isEmpty ? nil : bookFilter).environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
     }
 
     // MARK: the floating + (03-app's FAB): a fan of the four kinds and a photographed quote

@@ -66,7 +66,7 @@ struct LibraryView: View {
                 }
             }
             .environment(\.look, L)
-            .environment(.layoutDirection, Lang.direction)
+            .environment(\.layoutDirection, Lang.direction)
             .presentationDetents(s.id == "options" ? [.large] : [.medium, .large])
         }
     }
@@ -162,8 +162,8 @@ struct LibraryView: View {
 }
 
 enum LibraryFilters {
-    static let label: [String: String] = ["all": "كل الكتب", "reading": "أقرأه الآن", "want": "أريد قراءته", "done": "أنهيته", "dnf": "توقفت عنه", "lent": "المعارة والمستعارة"]
-    static let order = ["all", "reading", "want", "done", "dnf", "lent"]
+    static let label: [String: String] = ["all": "كل الكتب", "reading": "أقرأه الآن", "want": "أريد قراءته", "done": "أنهيته", "dnf": "تركته", "paused": "وقفت مؤقتًا", "lent": "المعارة والمستعارة"]
+    static let order = ["all", "reading", "paused", "want", "done", "dnf", "lent"]
 
     @MainActor static func clear() {
         Library.shared.change { $0.settings.filter = Settings.defaults().obj("f") }

@@ -49,7 +49,7 @@ struct BookPage: View {
                 }
             }
             .environment(\.look, L)
-            .environment(.layoutDirection, Lang.direction)
+            .environment(\.layoutDirection, Lang.direction)
         }
         .confirmationDialog("حذف الكتاب؟", isPresented: $askDelete, titleVisibility: .visible) {
             Button("حذف", role: .destructive) { deleteBook() }
@@ -63,6 +63,7 @@ struct BookPage: View {
                 hero(b)
                 VStack(alignment: .leading, spacing: 24) {
                     statusSection(b)
+                    ListsRow(bookID: b.id)
                     if b.status == .done || !b.review.isEmpty || !b.moods.isEmpty { reviewSection(b) }
                     notes(b, .quote, "الاقتباسات", 2, "ما فيه اقتباسات بعد.")
                     notes(b, .thought, "الأفكار", 2, "سجّل الأفكار اللي يلهمك فيها النص.")
@@ -140,7 +141,10 @@ struct BookPage: View {
         heroChip(Words.lang(b.lang) + (b.translated ? " · مترجم من " + Words.lang(b.origLang) : ""))
         ForEach(Array(b.genres.prefix(9)), id: \.self) { heroChip($0) }
         ForEach(b.cols, id: \.self) { c in
-            HStack(spacing: 4) { Image(systemName: "square.stack").font(.system(size: 10)); Text(c).font(JFont.body(12.5)) }
+            HStack(spacing: 4) {
+                if lib.state.colEmoji(c).isEmpty { Image(systemName: "square.stack").font(.system(size: 10)) }
+                Text(lib.state.colLabel(c)).font(JFont.body(12.5))
+            }
                 .foregroundStyle(Color(L.accentInk)).padding(.horizontal, 10).padding(.vertical, 3)
                 .background(Capsule().fill(Color(L.accentSoft)))
         }
@@ -160,7 +164,7 @@ struct BookPage: View {
     private func statusSection(_ b: Book) -> some View {
         let st = lib.state
         return VStack(alignment: .leading, spacing: 14) {
-            JSeg(options: [("want", "أريد"), ("reading", b.isAudio ? "أستمع له" : "أقرأه"), ("done", "أنهيته"), ("dnf", "توقفت")],
+            JSeg(options: [("want", "أريد"), ("reading", b.isAudio ? "أستمع له" : "أقرأه"), ("paused", "وقفت"), ("done", "أنهيته"), ("dnf", "تركته")],
                  value: Binding(get: { b.status.rawValue }, set: { setStatus($0) }))
             if b.status == .done || b.status == .dnf {
                 HStack {
@@ -197,7 +201,7 @@ struct BookPage: View {
                 Capsule().fill(Color(L.surface2))
                 Capsule().fill(Color(L.primary)).frame(width: g.size.width * p)
             }
-            .environment(.layoutDirection, Lang.direction)
+            .environment(\.layoutDirection, Lang.direction)
         }
         .frame(height: 6)
     }
@@ -749,9 +753,9 @@ struct ItemListSheet: View {
                 }
             }
             .sheet(item: Binding(get: { editSession.map { IDBox(id: $0) } }, set: { editSession = $0?.id })) { x in
-                SessionEditSheet(sessionID: x.id).presentationDetents([.medium]).environment(\.look, L).environment(.layoutDirection, Lang.direction)
+                SessionEditSheet(sessionID: x.id).presentationDetents([.medium]).environment(\.look, L).environment(\.layoutDirection, Lang.direction)
             }
-            .sheet(isPresented: $review) { WordReview(bookID: b.id).environment(\.look, L).environment(.layoutDirection, Lang.direction) }
+            .sheet(isPresented: $review) { WordReview(bookID: b.id).environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
         }
     }
 }

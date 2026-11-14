@@ -60,7 +60,7 @@ struct RootView: View {
         .overlay(alignment: .bottom) { VStack(spacing: 10) { ToastView(); if router.group == .novels { SessionChip() } }.padding(.bottom, 92) }
         .overlay { if splash { SplashView { splash = false }.environment(\.look, L) } }
         .fullScreenCover(isPresented: $session.showScreen) {
-            SessionScreen().environment(\.look, L).environment(.layoutDirection, Lang.direction).environment(\.locale, Lang.locale).environment(\.calendar, Calendar.greg)
+            SessionScreen().environment(\.look, L).environment(\.layoutDirection, Lang.direction).environment(\.locale, Lang.locale).environment(\.calendar, Calendar.greg)
         }
         .sheet(item: $present.modal) { m in
             Group {
@@ -80,11 +80,11 @@ struct RootView: View {
                 }
             }
             .environment(\.look, L)
-            .environment(.layoutDirection, Lang.direction)
+            .environment(\.layoutDirection, Lang.direction)
             .environment(\.locale, Lang.locale).environment(\.calendar, Calendar.greg)
         }
         .environment(\.look, L)
-        .environment(.layoutDirection, Lang.direction)
+        .environment(\.layoutDirection, Lang.direction)
         .environment(\.locale, Lang.locale).environment(\.calendar, Calendar.greg)
         .tint(Color(L.primary))
         .onAppear {

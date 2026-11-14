@@ -197,7 +197,7 @@ final class BookFormModel: ObservableObject {
         if x.status == .done { x.vi = max(0, x.volumes.count - 1); x.pos = x.volumes.last?.total ?? x.pos }
         if x.status == .want { x.pos = 0; x.vi = 0 }
         if x.status != .done && x.status != .dnf { x.rating = 0 }
-        if (x.status == .reading || x.status == .dnf) && x.start == nil { x.start = Millis.now }
+        if (x.status == .reading || x.status == .dnf || x.status == .paused) && x.start == nil { x.start = Millis.now }
         if x.format != .physical {
             x.purchase = Library.blankBook().obj("purchase")
             var l = x.loan; l.set("lent", false); l.set("borrowed", false); x.loan = l
@@ -315,13 +315,13 @@ struct BookFormView: View {
         }
         .sheet(item: $editions) { r in
             EditionsSheet(request: r) { e, keep in Task { await m.apply(e, coverOnly: false, keepCover: keep) } }
-                .environment(\.look, L).environment(.layoutDirection, Lang.direction)
+                .environment(\.look, L).environment(\.layoutDirection, Lang.direction)
         }
         .sheet(isPresented: $coverSearch) {
             CoverSearchSheet(query: m.b.isbn.isEmpty || !m.b.title.isEmpty ? (m.b.title + " " + m.b.author).trimmingCharacters(in: .whitespaces) : m.b.isbn) { e in
                 Task { await m.apply(e, coverOnly: true, keepCover: false) }
             }
-            .environment(\.look, L).environment(.layoutDirection, Lang.direction)
+            .environment(\.look, L).environment(\.layoutDirection, Lang.direction)
         }
         .onChange(of: m.askCoverPhoto) { on in
             guard on else { return }
@@ -341,7 +341,7 @@ struct BookFormView: View {
             }
         }
         .sheet(isPresented: $dims) {
-            DimsSheet(model: m).environment(\.look, L).environment(.layoutDirection, Lang.direction)
+            DimsSheet(model: m).environment(\.look, L).environment(\.layoutDirection, Lang.direction)
         }
         .fullScreenCover(item: $browse) { r in
             BrowserImport(request: r) { data in
@@ -547,7 +547,7 @@ struct BookFormView: View {
         return VStack(alignment: .leading, spacing: 10) {
             Text("قوائمك الخاصة، مثل «مكتبة البيت» أو «أقرأها قريبًا».").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
             if !all.isEmpty {
-                Flow(spacing: 8) { ForEach(all, id: \.self) { c in JChip(look: L, text: c, on: m.b.cols.contains(c)) { toggle(&m.b.cols, c) } } }
+                Flow(spacing: 8) { ForEach(all, id: \.self) { c in JChip(look: L, text: Library.shared.state.colLabel(c), on: m.b.cols.contains(c)) { toggle(&m.b.cols, c) } } }
             }
             addTag("مجموعة جديدة", $m.newCol) { m.b.cols.append($0) }
         }
@@ -572,8 +572,8 @@ struct BookFormView: View {
     }
 
     @ViewBuilder private var status: some View {
-        JSeg(options: [(BookStatus.want, "أريد قراءته"), (.reading, m.b.isAudio ? "أستمع له" : "أقرأه الآن"), (.done, "أنهيته"), (.dnf, "توقفت")], value: $m.b.status)
-        if m.b.status == .reading || m.b.status == .dnf {
+        JSeg(options: [(BookStatus.want, "أريد"), (.reading, m.b.isAudio ? "أستمع له" : "أقرأه"), (.paused, "وقفت"), (.done, "أنهيته"), (.dnf, "تركته")], value: $m.b.status)
+        if m.b.status == .reading || m.b.status == .dnf || m.b.status == .paused {
             if m.b.series {
                 Picker("المجلد الحالي", selection: $m.b.vi) {
                     ForEach(m.b.volumes.indices, id: \.self) { i in Text("المجلد \(i + 1)" + (m.b.volumes[i].title.isEmpty ? "" : " · " + m.b.volumes[i].title)).tag(i) }

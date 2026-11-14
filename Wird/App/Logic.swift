@@ -306,7 +306,8 @@ extension AppState {
         switch b.status {
         case .want: return "لم تبدأ بعد"
         case .done: return "أنهيته" + (b.rating > 0 ? " · " + Words.stars(b.rating) : "")
-        case .dnf: return "توقفت عنه"
+        case .dnf: return "تركته"
+        case .paused: return "وقفت مؤقتًا" + (b.pct.map { " · \(Int(($0 * 100).rounded()))%" } ?? "")
         case .reading:
             return (b.isAudio ? "تستمع له" : "تقرأه") + (b.pct.map { " · \(Int(($0 * 100).rounded()))%" } ?? "") + (b.readNo > 1 ? " · القراءة " + Words.ord(b.readNo) : "")
         }

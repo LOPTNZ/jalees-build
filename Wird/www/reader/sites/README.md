@@ -33,3 +33,9 @@ Sources.mysite = {
 Rules: `list` returns the newest chapter first (the app reverses). `listPages[0]` is the page already read (the app
 fetches the rest). Chapter `paras` hold no HTML, no site ads, no hidden decoy paragraphs. Images inside a chapter go
 as `'￼img:' + absoluteURL`. Never throw: return `{ error: '…' }` when the page is not what was expected.
+
+**Fetch steps.** When a chapter's text needs more than its page (a POST, or a second address the page names),
+`chapter` may answer `{ fetch: { url, method /* 'GET' (default) or 'POST' */, json /* POST body, sent as JSON */,
+headers } }`. The app fetches that and calls `chapter(doc, url)` again with the answer (`url` stays the chapter's
+address), up to three times.
+

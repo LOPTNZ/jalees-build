@@ -165,8 +165,8 @@ struct SettingsView: View {
         .statusBarBackdrop(Color(L.bg))
         .background(Color(L.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $shelfStyle) { ShelfStyleSheet().environment(\.look, L).environment(.layoutDirection, Lang.direction) }
-        .sheet(isPresented: $askReset) { ResetSheet().environment(\.look, L).environment(.layoutDirection, Lang.direction).presentationDetents([.medium]) }
+        .sheet(isPresented: $shelfStyle) { ShelfStyleSheet().environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
+        .sheet(isPresented: $askReset) { ResetSheet().environment(\.look, L).environment(\.layoutDirection, Lang.direction).presentationDetents([.medium]) }
         .onReceive(NotificationCenter.default.publisher(for: .settingsDebug)) { n in
             if (n.object as? String) == "reset" { askReset = true }
         }
