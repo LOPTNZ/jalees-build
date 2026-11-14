@@ -203,6 +203,41 @@ final class FlowTests: XCTestCase {
         }
     }
 
+    /// A novel in the reader: the menu, reading aloud from it, the next paragraph, stopping, closing.
+    func test08ReaderAloud() {
+        app.terminate()
+        app.launchArguments += ["-JaleesRoute", "page"]
+        app.launch()
+        sleep(5)
+        let go = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "ابدأ القراءة", "تابع القراءة")).firstMatch
+        guard tap(go, "open the reader", timeout: 10) else { shot("ui40-no-reader"); return }
+        sleep(3)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(1)
+        if tap(button("القائمة"), "reader menu") {
+            sleep(1)
+            shot("ui41-reader-menu")
+            tap(buttonStarting("القراءة الصوتية"), "read aloud")
+            sleep(4)
+            shot("ui42-read-aloud")
+            tap(button("الفقرة التالية"), "next paragraph")
+            sleep(3)
+            shot("ui43-read-aloud-next")
+            tap(button("خيارات القراءة الصوتية"), "read aloud options")
+            sleep(1)
+            shot("ui44-read-aloud-options")
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+            sleep(1)
+            tap(button("إيقاف القراءة الصوتية"), "stop reading aloud")
+            sleep(1)
+        }
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(1)
+        tap(button("إغلاق"), "close the reader")
+        sleep(2)
+        shot("ui45-after-reader")
+    }
+
     /// إنجازاتي: goals with the achievements, then stats with the charts.
     func test06Progress() {
         tab("إنجازاتي")

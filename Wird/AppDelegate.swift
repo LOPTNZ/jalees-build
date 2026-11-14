@@ -6,6 +6,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         JFont.register()
+        NewChapters.register()
         return true
     }
 
@@ -23,6 +24,15 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        // a new chapters' alert: that novel's page
+        let info = response.notification.request.content.userInfo
+        if let id = info["novel"] as? Int {
+            let book = info["book"] as? String ?? ""
+            Task { @MainActor in
+                Present.shared.modal = nil
+                Router.shared.openNovel(id, book: book)
+            }
+        }
         completionHandler()
     }
 }

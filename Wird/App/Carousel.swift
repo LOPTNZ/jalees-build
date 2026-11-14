@@ -354,6 +354,7 @@ struct CarouselBand: View {
 @MainActor
 enum Actions {
     static func read(_ b: Book) {
+        if PDFBooks.isPDF(b) { PDFBooks.open(b.id); return }
         if let n = b.novel {
             NovelBridge.openReader(novel: n.novelID, book: b.id, index: nil, chapter: nil, paragraph: nil)
         } else {

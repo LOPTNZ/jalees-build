@@ -26,14 +26,44 @@ enum WidgetFeed {
             "accent": (Theme.accents[st.settings.accent] ?? Theme.accents["teal"]!).dark[0], "quotes": quotes(st),
         ]
         if let id = st.lastBookId(), let b = st.book(id) {
-            snap["book"] = ["id": b.id, "title": b.title, "author": b.author, "pct": b.pct.map { $0 as Any } ?? NSNull(), "pos": b.posLabel,
-                            "status": b.status.rawValue, "audio": b.isAudio, "cover": b.cover ?? "", "color": b.colorHex] as [String: Any]
+            var o: [String: Any] = ["id": b.id, "title": b.title, "author": b.author, "pct": b.pct.map { $0 as Any } ?? NSNull(), "pos": b.posLabel,
+                                    "status": b.status.rawValue, "audio": b.isAudio, "cover": b.cover ?? "", "color": b.colorHex]
+            if let n = b.novel, n.site != "epub" {
+                o["novel"] = true
+                o["chapter"] = n.curLabel
+                o["unread"] = n.unread
+                o["fresh"] = fresh(n.novelID)
+            }
+            snap["book"] = o
         } else {
             snap["book"] = NSNull()
         }
+        snap["novels"] = novels(st)
         guard let d = try? JSONSerialization.data(withJSONObject: snap, options: [.sortedKeys]), let j = String(data: d, encoding: .utf8), j != last else { return }
         last = j
         WidgetSync.write(snap)
+    }
+
+    /// New chapters of a novel not seen in the updates list yet.
+    private static func fresh(_ novel: Int) -> Int {
+        let seen = Double(DB.shared.get("updates.seen") ?? "") ?? 0
+        return DB.shared.query("SELECT COUNT(*) AS c FROM chapters WHERE novel=? AND read=0 AND found IS NOT NULL AND found>?", [novel, seen]).first?.int("c") ?? 0
+    }
+
+    /// Up to four novels with chapters waiting, the ones that got chapters last first.
+    private static func novels(_ st: AppState) -> [[String: Any]] {
+        let rows = DB.shared.query("""
+            SELECT n.id, n.title, n.book, MAX(COALESCE(c.found, 0)) AS last,
+                   SUM(CASE WHEN c.read=0 THEN 1 ELSE 0 END) AS unread
+            FROM novels n JOIN chapters c ON c.novel=n.id
+            WHERE n.source NOT IN ('sample','epub','archive')
+            GROUP BY n.id HAVING unread > 0 ORDER BY last DESC, n.opened DESC LIMIT 4
+            """)
+        return rows.map { r in
+            let id = r.int("id")
+            let latest = DB.shared.query("SELECT num FROM chapters WHERE novel=? ORDER BY idx DESC LIMIT 1", [id]).first?.str("num") ?? ""
+            return ["id": r.str("book"), "t": r.str("title"), "unread": r.int("unread"), "fresh": fresh(id), "last": latest]
+        }
     }
 
     /// Favourites first, then the newest; short ones only (up to 240 characters).

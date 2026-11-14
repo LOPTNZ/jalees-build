@@ -1,5 +1,6 @@
 import UIKit
 
+@MainActor
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
 
@@ -11,6 +12,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.backgroundColor = UIColor(named: "LaunchBG")
         window.makeKeyAndVisible()
         self.window = window
+        AppLock.shared.launched(windowScene)
         Task { @MainActor in
             NovelBridge.host = vc
             _ = Library.shared
@@ -29,8 +31,13 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if url.isFileURL { NovelBridge.importEpub(url) } else { DeepLink.open(url) }
     }
 
+    func sceneWillEnterForeground(_ scene: UIScene) {
+        if let s = scene as? UIWindowScene { AppLock.shared.cameBack(s) }
+    }
+
     func sceneDidEnterBackground(_ scene: UIScene) {
-        Task { @MainActor in Library.shared.saveNow() }
+        if let s = scene as? UIWindowScene { AppLock.shared.wentAway(s) }
+        Task { @MainActor in Library.shared.saveNow(); NewChapters.schedule() }
     }
 }
 
@@ -43,6 +50,11 @@ enum DeepLink {
         var q: [String: String] = [:]
         URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.forEach { q[$0.name] = $0.value ?? "" }
         let r = Router.shared
+        if url.host == "add" {
+            // a link shared from Safari
+            SharedAdd.process(q["url"])
+            return
+        }
         Present.shared.modal = nil
         if url.host == "session" || q["session"] != nil {
             if SessionModel.shared.timer != nil { SessionModel.shared.open() }

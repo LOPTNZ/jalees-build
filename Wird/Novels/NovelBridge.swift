@@ -188,3 +188,29 @@ final class Downloads: ObservableObject {
         NovelBridge.pageNeedsReload()
     }
 }
+
+/// Links shared from Safari (WirdShare): each becomes a novel, added and opened, as with + ← «رواية من موقع».
+@MainActor
+enum SharedAdd {
+    private static var busy = false
+
+    static func process(_ extra: String? = nil) {
+        var links = SharedLinks.take()
+        if let e = extra, !e.isEmpty, !links.contains(e) { links.append(e) }
+        guard !links.isEmpty, !busy else { return }
+        busy = true
+        Task { @MainActor in
+            for l in links {
+                Toaster.show("أضيف الرواية من الرابط…")
+                let r = await NovelBridge.add(l) { _ in }
+                if let e = r["error"] as? String { Toaster.show(e); continue }
+                let book = (r["book"] as? String) ?? ""
+                Present.shared.modal = nil
+                Router.shared.openNovel(NovelBridge.num(r["id"]), book: book)
+                if let i = r["open"] { NovelBridge.showPage(novel: NovelBridge.num(r["id"]), book: book, openIndex: NovelBridge.num(i)) }
+                Toaster.show("انضافت «\((r["title"] as? String) ?? "")»")
+            }
+            busy = false
+        }
+    }
+}

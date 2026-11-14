@@ -60,6 +60,25 @@ struct SettingsView: View {
                     }
                 }
 
+                section("الروايات") {
+                    VStack(spacing: 0) {
+                        JSwitchRow(title: "أفحص الفصول الجديدة بالخلفية", sub: "iOS يحدد الوقت، مرة بالساعة بالأكثر. لو حسيت إنه ياكل بطارية طفّه، ويبقى الفحص لما تفتح جليس أو تسحب قائمة التحديثات", on: Binding(get: { NewChapters.background }, set: { NewChapters.background = $0; lib.objectWillChange.send() }))
+                        JSwitchRow(title: "عدد الفصول الجديدة على أيقونة جليس", on: Binding(get: { NewChapters.badge }, set: { NewChapters.badge = $0; lib.objectWillChange.send() }))
+                    }
+                    note("التنبيه لكل رواية من جرس صفحتها: مع كل فصل، أو لما يتجمع عدد تختاره.")
+                }
+
+                section("الخصوصية") {
+                    JSwitchRow(title: "قفل جليس بـ " + AppLock.method, sub: "يتغطى أول ما تطلع منه، ويفتح بوجهك أو رمز الجوال",
+                               on: Binding(get: { AppLock.shared.enabled }, set: { AppLock.shared.turnOn($0); lib.objectWillChange.send() }))
+                    if AppLock.shared.enabled {
+                        field("يتقفل") {
+                            JSeg(options: [(0.0, "فورًا"), (60.0, "بعد دقيقة"), (300.0, "بعد 5 دقائق")],
+                                 value: Binding(get: { AppLock.shared.grace }, set: { AppLock.shared.grace = $0; lib.objectWillChange.send() }))
+                        }
+                    }
+                }
+
                 section("البحث عن الكتب") {
                     field("مفتاح Google Books (اختياري)") {
                         TextField("AIza…", text: str("gbKey", ""))

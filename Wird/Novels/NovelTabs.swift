@@ -422,6 +422,7 @@ struct UpdatesTab: View {
         .preferredColorScheme(look.dark ? .dark : .light)
         .onAppear {
             load()
+            NewChapters.seen()
             let last = Double(DB.shared.get("updates.checked") ?? "") ?? 0
             if Date().timeIntervalSince1970 - last > 3600 { Task { await check() } }
         }
@@ -471,6 +472,8 @@ struct UpdatesTab: View {
         let k = await Novels.shared.checkAll { s in status = s }
         checking = false
         load()
+        NewChapters.afterCheck()
+        NewChapters.seen()
         if k > 0 { Haptics.play("soft") }
     }
 

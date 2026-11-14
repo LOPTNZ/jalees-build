@@ -72,7 +72,8 @@ final class NovelPageModel: ObservableObject {
 
     var currentIndex: Int? { chapters.firstIndex { $0.id == novel.curChapter } }
     /// an EPUB book rather than a web novel
-    var isBook: Bool { novel.source == "epub" }
+    /// EPUB books and archives imported from the tool: no site to check or comment on
+    var isBook: Bool { novel.source == "epub" || novel.source == "archive" }
     var readCount: Int { chapters.filter(\.read).count }
     var markedChapters: Set<Int> { Set(marks.compactMap { NovelBridge.num($0["ch"]) }) }
 
@@ -112,6 +113,7 @@ final class NovelPageModel: ObservableObject {
                 let f = try await Novels.shared.refresh(novel)
                 note = f == 0 ? "ما فيه فصول جديدة" : (f == 1 ? "وصل فصل جديد" : "وصلت \(f) فصول جديدة")
                 NovelBridge.sync(novel.id)
+                NewChapters.afterCheck()
             } catch {
                 note = error.localizedDescription
             }
@@ -203,6 +205,10 @@ struct NovelPageView: View {
         .sheet(isPresented: $model.rules) {
             NavigationStack { ReplaceRulesView(scope: String(model.novel.id), title: model.novel.title) }
                 .environment(\.layoutDirection, .rightToLeft).preferredColorScheme(L.dark ? .dark : .light)
+        }
+        .sheet(isPresented: $exportEpub) {
+            EpubExportSheet(novel: model.novel).environment(\.look, L).environment(\.layoutDirection, .rightToLeft)
+                .presentationDetents([.medium, .large])
         }
     }
 
@@ -317,10 +323,36 @@ struct NovelPageView: View {
                     }
                     .buttonStyle(JButtonStyle(look: L))
                     .accessibilityLabel("تحقق من فصول جديدة")
+                    alertMenu
                 }
             }
         }
     }
+
+    /// «نبهني»: a notification for this novel once this many new chapters have gathered (س45.1، س60).
+    @State private var alertN = -1
+
+    private var alertMenu: some View {
+        let id = model.novel.id
+        let n = alertN >= 0 ? alertN : NewChapters.threshold(id)
+        return Menu {
+            Picker("نبهني بالفصول الجديدة", selection: Binding(get: { n }, set: { v in NewChapters.setThreshold(id, v); alertN = v; Haptics.play("sel") })) {
+                Text("بدون تنبيه").tag(0)
+                ForEach(NewChapters.thresholds, id: \.self) { k in
+                    Text(k == 1 ? "مع كل فصل جديد" : "لما يتجمع \(k) فصول").tag(k)
+                }
+            }
+        } label: {
+            Image(systemName: n > 0 ? "bell.fill" : "bell").font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color(n > 0 ? L.primary : L.ink))
+                .frame(width: 48, height: 46)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(L.surface)))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
+        }
+        .accessibilityLabel(n > 0 ? "التنبيه شغال" : "نبهني بالفصول الجديدة")
+    }
+
+    @State private var exportEpub = false
 
     private var downloadsCard: some View {
         HStack(spacing: 12) {
@@ -438,6 +470,8 @@ struct NovelPageView: View {
                 Button { model.edit() } label: { Label("تعديل الاسم والغلاف", systemImage: "pencil") }.buttonStyle(JButtonStyle(look: L, small: true))
                 Button { model.rules = true } label: { Label("قواعد الاستبدال", systemImage: "textformat.alt") }.buttonStyle(JButtonStyle(look: L, small: true))
             }
+            Button { exportEpub = true } label: { Label("تصدير EPUB لكيندل", systemImage: "square.and.arrow.up.on.square") }
+                .buttonStyle(JButtonStyle(look: L, small: true))
             Button { NovelBridge.openSite(model.novel.url) } label: {
                     Label("صفحة الرواية في \(model.novel.siteName)", systemImage: "safari")
                 }

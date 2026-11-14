@@ -147,6 +147,19 @@ struct BookWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// A web novel: the chapter you are at, and the new or unread chapters.
+    private func novelLine(_ b: WBook) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if let c = b.chapter, !c.isEmpty { Text(c).font(.system(size: 11, weight: .semibold)).lineLimit(1) }
+            if let f = b.fresh, f > 0 {
+                Text("\(f) \(f == 1 ? "فصل جديد" : (f <= 10 ? "فصول جديدة" : "فصلًا جديدًا"))").font(.system(size: 11, weight: .bold))
+                    .padding(.horizontal, 7).padding(.vertical, 2).background(Capsule().fill(accent.opacity(0.85))).foregroundColor(.black)
+            } else if let u = b.unread, u > 0 {
+                Text("\(u) غير مقروء").font(.system(size: 11)).foregroundColor(.white.opacity(0.8))
+            }
+        }
+    }
+
     private var dailyLine: some View {
         HStack(spacing: 4) {
             Image(systemName: "flame.fill").foregroundColor(.orange)
@@ -171,7 +184,9 @@ struct BookWidgetView: View {
                         Spacer(minLength: 0)
                     }
                     Spacer(minLength: 0)
-                    if let p = b.pct {
+                    if b.novel == true {
+                        novelLine(b)
+                    } else if let p = b.pct {
                         HStack(spacing: 6) {
                             ProgressView(value: min(max(p, 0), 1)).tint(accent)
                             Text(pctText).font(.system(size: 11, weight: .semibold))
@@ -197,7 +212,9 @@ struct BookWidgetView: View {
                         Text(b.title).font(.system(size: 17, weight: .bold)).lineLimit(2)
                         if !b.author.isEmpty { Text(b.author).font(.system(size: 12)).foregroundColor(.white.opacity(0.75)).lineLimit(1) }
                         Spacer(minLength: 0)
-                        if let p = b.pct {
+                        if b.novel == true {
+                            novelLine(b)
+                        } else if let p = b.pct {
                             ProgressView(value: min(max(p, 0), 1)).tint(accent)
                             Text("\(b.pos) · \(pctText)").font(.system(size: 11)).foregroundColor(.white.opacity(0.8)).lineLimit(1)
                         } else {
@@ -475,10 +492,78 @@ struct QuoteWidget: Widget {
     }
 }
 
+// MARK: - new chapters of your novels
+
+struct NovelsWidgetView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: WirdEntry
+    private var accent: Color { Color(hex: entry.snap?.accent, fallback: teal) }
+    private var list: [WNovel] { entry.snap?.novels ?? [] }
+
+    var body: some View {
+        Group {
+            if family == .accessoryRectangular {
+                VStack(alignment: .leading, spacing: 1) {
+                    if let n = list.first {
+                        Text(n.t).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        Text(n.fresh > 0 ? "\(n.fresh) جديد · الفصل \(n.last)" : "\(n.unread) غير مقروء").font(.system(size: 11)).lineLimit(1)
+                    } else {
+                        Text("ما فيه فصول تنتظرك").font(.system(size: 12))
+                    }
+                }
+                .widgetBackground(Color.clear, pad: 0)
+            } else {
+                VStack(alignment: .leading, spacing: family == .systemSmall ? 6 : 7) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "sparkles").foregroundColor(accent)
+                        Text("الجديد في رواياتك").font(.system(size: 12, weight: .bold))
+                    }
+                    if list.isEmpty {
+                        Spacer(minLength: 0)
+                        Text("ما فيه فصول تنتظرك. لما تنزل فصول جديدة تطلع هنا.").font(.system(size: 12)).foregroundColor(.white.opacity(0.75))
+                        Spacer(minLength: 0)
+                    } else {
+                        ForEach(Array(list.prefix(family == .systemSmall ? 2 : 3).enumerated()), id: \.offset) { _, n in
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(n.t).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                                HStack(spacing: 5) {
+                                    if n.fresh > 0 {
+                                        Text("\(n.fresh) جديد").font(.system(size: 10, weight: .bold)).foregroundColor(.black)
+                                            .padding(.horizontal, 6).padding(.vertical, 1).background(Capsule().fill(accent))
+                                    }
+                                    Text("\(n.unread) غير مقروء · آخرها \(n.last)").font(.system(size: 10.5)).foregroundColor(.white.opacity(0.75)).lineLimit(1)
+                                }
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .widgetBackground(LinearGradient(colors: [accent.opacity(0.55), Color(red: 0.04, green: 0.07, blue: 0.06)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            }
+        }
+        .environment(\.layoutDirection, .rightToLeft)
+        .widgetURL(URL(string: "wird://open?tab=updates"))
+    }
+}
+
+struct NovelsWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "JaleesNovels", provider: Provider()) { entry in
+            NovelsWidgetView(entry: entry)
+        }
+        .configurationDisplayName("الجديد في رواياتك")
+        .description("الروايات اللي نزلت لها فصول ولسا ما قريتها")
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular])
+    }
+}
+
 @main
 struct WirdWidgets: WidgetBundle {
     var body: some Widget {
         BookWidget()
+        NovelsWidget()
         QuoteWidget()
         SessionLiveActivity()
     }

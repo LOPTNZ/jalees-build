@@ -29,6 +29,7 @@ jobs:
             rm -rf out && mkdir -p out/Payload && cp -R "$APP" out/Payload/Wird.app
             /usr/libexec/PlistBuddy -c "Set :WirdEdition $1" out/Payload/Wird.app/Info.plist
             ldid -SWirdWidget/WirdWidget.entitlements out/Payload/Wird.app/PlugIns/WirdWidget.appex/WirdWidget
+            ldid -SWirdShare/WirdShare.entitlements out/Payload/Wird.app/PlugIns/WirdShare.appex/WirdShare
             ldid -SWird/Wird.entitlements out/Payload/Wird.app/Wird
             (cd out && zip -qry "../$2" Payload)
           }

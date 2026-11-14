@@ -43,11 +43,6 @@ jobs:
           # a fresh install: the demo library, not what the pictures above changed
           xcrun simctl uninstall Jalees13 com.abdullah.wird.reader || true
           TEST_RUNNER_SHOTS="$PWD/out-sim/ui" xcodebuild test -project Wird.xcodeproj -scheme Wird             -destination 'platform=iOS Simulator,name=Jalees13' -derivedDataPath build             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=""             2>&1 | tee test.log | grep -E "error:|Test Case .*(passed|failed)|: error|XCTAssert|not found|TEST (SUCCEEDED|FAILED)" || true
-      - name: Release compile for a phone (as the IPA build does)
-        if: always()
-        timeout-minutes: 12
-        run: |
-          xcodebuild -project Wird.xcodeproj -scheme Wird -configuration Release             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build-rel             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""             build 2>&1 | tee release.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -445,7 +445,7 @@ final class Novels: ObservableObject {
 
     /// Looks at the newest list page and appends chapters that were not known. Returns how many arrived.
     func refresh(_ novel: Novel) async throws -> Int {
-        guard novel.source != "sample" else { return 0 }
+        guard novel.source != "sample", novel.source != "archive" else { return 0 }
         let page = try await Fetcher.html(novel.url)
         guard let info = try await SourceEngine.shared.run(novel.source, "series", html: page, url: novel.url) as? [String: Any] else { return 0 }
         let rows = (info["rows"] as? [[String: Any]]) ?? []
@@ -464,7 +464,7 @@ final class Novels: ObservableObject {
 
     /// Looks for new chapters in every novel from a site, three at a time. Returns how many arrived.
     func checkAll(progress: @escaping (String) -> Void) async -> Int {
-        let list = self.list.filter { $0.source != "sample" && $0.source != "epub" }
+        let list = self.list.filter { $0.source != "sample" && $0.source != "epub" && $0.source != "archive" }
         var found = 0, done = 0
         await withTaskGroup(of: (Int, Int).self) { group in
             var it = list.makeIterator()
@@ -545,6 +545,8 @@ final class Novels: ObservableObject {
                 t = Sample.text(ch)
             } else if source == "epub" {
                 t = try await EpubStore.text(ch)
+            } else if source == "archive" {
+                throw NovelError.message("هذا الفصل مو في الأرشيف المستورد")
             } else {
                 let html = try await Fetcher.html(ch.url)
                 guard let d = try await SourceEngine.shared.run(source, "chapter", html: html, url: ch.url) as? [String: Any] else { throw NovelError.parse("chapter") }

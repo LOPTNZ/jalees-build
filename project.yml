@@ -58,10 +58,14 @@ targets:
                 UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate
         UIBackgroundModes:
           - audio
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.abdullah.wird.reader.check
         NSSupportsLiveActivities: true
         NSCameraUsageDescription: "لتصوير أغلفة الكتب، ومسح الباركود، وقراءة النص من الصفحات"
         NSPhotoLibraryUsageDescription: "لاختيار صور الأغلفة والشخصيات"
         NSPhotoLibraryAddUsageDescription: "لحفظ بطاقات الكتب والاقتباسات في صورك"
+        NSFaceIDUsageDescription: "لقفل جليس وفتحه بوجهك"
         CFBundleURLTypes:
           - CFBundleURLName: com.abdullah.wird.reader
             CFBundleURLSchemes:
@@ -88,6 +92,37 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     dependencies:
       - target: WirdWidget
+      - target: WirdShare
+  WirdShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: WirdShare
+      - path: Shared
+    info:
+      path: WirdShare/Info.plist
+      properties:
+        CFBundleDisplayName: جليس
+        CFBundleName: WirdShare
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    entitlements:
+      path: WirdShare/WirdShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.abdullah.wird.reader
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.abdullah.wird.reader.share
+        PRODUCT_NAME: WirdShare
+        SKIP_INSTALL: "YES"
   WirdWidget:
     type: app-extension
     platform: iOS

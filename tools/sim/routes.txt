@@ -1,5 +1,5 @@
 # name  seconds  launch arguments
+reader-tts 18 -JaleesRoute reader-tts
 reader-menu 10 -JaleesRoute reader-menu
-reader-tts 16 -JaleesRoute reader-tts
-notebook 8 -JaleesRoute tab-notebook
-goals 8 -JaleesRoute prog-goals
+page 10 -JaleesRoute page
+settings 8 -JaleesRoute settings

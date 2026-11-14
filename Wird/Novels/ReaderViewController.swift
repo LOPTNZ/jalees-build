@@ -648,6 +648,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     /// The player shows while this reader reads aloud.
     func readAloudChanged() {
         let on = ReadAloud.shared.active && ReadAloud.shared.reader === self
+        NSLog("jalees read aloud: %@, bar %@", on ? "on" : "off", readBar == nil ? "none" : "shown")
         if on {
             if readBar == nil {
                 let b = ReadAloudBar()
@@ -1241,6 +1242,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     // MARK: test hooks (launch argument -JaleesRoute)
 
     func debug(_ what: String) {
+        NSLog("jalees debug: %@ (in window: %@)", what, view.window == nil ? "no" : "yes")
         switch what {
         case "chrome": setChrome(true)
         case "menu": setChrome(true); menuTapped()

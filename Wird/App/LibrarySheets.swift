@@ -13,6 +13,14 @@ struct AddMenu: View {
             VStack(spacing: 0) {
                 JMenuRow(icon: "book", title: "كتاب واحد", sub: "بحث بالإنترنت أو يدويًا") { dismiss(); Flows.addBook() }
                 JMenuRow(icon: "globe", title: "رواية من موقع", sub: "الصق رابطها، وتنضاف بفصولها لمكتبتك") { novel = true }
+                JMenuRow(icon: "folder", title: "رواية من أداتك", sub: "مجلد الرواية من Novel Scraper، وفصولها تنحفظ كلها") {
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { NovelArchive.pick() }
+                }
+                JMenuRow(icon: "doc.text", title: "كتاب PDF من ملفاتك", sub: "ينقرأ من مكانه، وصفحتك تنحفظ") {
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { PDFBooks.pick() }
+                }
                 JMenuRow(icon: "doc.richtext", title: "كتاب EPUB من ملفاتك", sub: "ينقرأ من مكانه، بدون نسخة ثانية") {
                     dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { EpubPick.run() }
