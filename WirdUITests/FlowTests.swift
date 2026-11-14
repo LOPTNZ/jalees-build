@@ -170,6 +170,15 @@ final class FlowTests: XCTestCase {
             shot("ui25c-thought-form")
             tap(button("إغلاق"), "close the form")
         }
+        // a long press on + adds to the list you are on (quotes here)
+        let plus = button("إضافة للدفتر")
+        if plus.waitForExistence(timeout: 4) {
+            plus.press(forDuration: 0.9)
+            sleep(1)
+            shot("ui25c2-fab-hold")
+            XCTAssertTrue(app.staticTexts["إضافة اقتباس"].waitForExistence(timeout: 3) || app.navigationBars["إضافة اقتباس"].exists, "hold opens a new quote")
+            tap(button("إغلاق"), "close the held form")
+        }
     }
 
     /// A book page's card and PDF summary.

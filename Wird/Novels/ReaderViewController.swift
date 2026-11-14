@@ -345,6 +345,12 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         case "tap":
             activity()
             if markBar != nil || menu != nil { closeOverlays(); return }
+            // reading aloud: a tap on a paragraph goes on from it
+            if ReadAloud.shared.active, ReadAloud.shared.reader === self, o["pp"] != nil, !(o["pp"] is NSNull) {
+                ReadAloud.shared.jump(chapterID: NovelBridge.num(o["pid"]), para: NovelBridge.num(o["pp"]))
+                Haptics.play("sel")
+                return
+            }
             let x = (o["x"] as? Double) ?? 0.5
             if paged && (x < 0.28 || x > 0.72) {
                 turnPage(x < 0.28 ? 1 : -1)
@@ -531,6 +537,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     }
 
     @objc func closeTapped() {
+        if ReadAloud.shared.reader === self { ReadAloud.shared.stop() }
         endSession()
         onClose?()
         dismiss(animated: true)
@@ -605,7 +612,76 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
             UIAction(title: "شخصية", image: UIImage(systemName: "person")) { [weak self] _ in self?.fromSelection("char") },
             UIAction(title: "معلومة", image: UIImage(systemName: "info.circle")) { [weak self] _ in self?.fromSelection("info") }
         ])
-        return UIMenu(title: "", options: .displayInline, children: [hl, note, nb])
+        let aloud = UIAction(title: "اقرأ من هنا", image: UIImage(systemName: "speaker.wave.2")) { [weak self] _ in
+            self?.ask("JR.selection()") { v in
+                guard let self = self, let s = v as? [String: Any], let i = self.chapters.firstIndex(where: { $0.id == NovelBridge.num(s["ch"]) }) else { return }
+                self.call("JR.clearSelection()")
+                self.startReadAloud(chapter: i, para: NovelBridge.num(s["p"]))
+            }
+        }
+        return UIMenu(title: "", options: .displayInline, children: [hl, note, nb, aloud])
+    }
+
+    // MARK: reading aloud (ReadAloud.swift)
+
+    private var readBar: ReadAloudBar?
+
+    /// From where the reader is now.
+    func startReadAloud() {
+        ask("JR.where()") { [weak self] v in
+            guard let self = self else { return }
+            let w = v as? [String: Any]
+            let id = NovelBridge.num(w?["id"])
+            let i = self.chapters.firstIndex { $0.id == id } ?? self.index
+            self.startReadAloud(chapter: i, para: NovelBridge.num(w?["p"]))
+        }
+    }
+
+    func startReadAloud(chapter i: Int, para: Int) {
+        closeOverlays()
+        setChrome(false)
+        ReadAloud.shared.onChange = { [weak self] in self?.readAloudChanged() }
+        ReadAloud.shared.start(self, chapter: i, para: para)
+        readAloudChanged()
+    }
+
+    /// The player shows while this reader reads aloud.
+    func readAloudChanged() {
+        let on = ReadAloud.shared.active && ReadAloud.shared.reader === self
+        if on {
+            if readBar == nil {
+                let b = ReadAloudBar()
+                b.translatesAutoresizingMaskIntoConstraints = false
+                b.alpha = 0
+                view.addSubview(b)
+                let g = view.safeAreaLayoutGuide
+                NSLayoutConstraint.activate([
+                    b.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                    b.bottomAnchor.constraint(equalTo: g.bottomAnchor, constant: -56),
+                    b.widthAnchor.constraint(equalToConstant: min(view.bounds.width - 28, 360)),
+                    b.heightAnchor.constraint(greaterThanOrEqualToConstant: 56)
+                ])
+                readBar = b
+                UIView.animate(withDuration: 0.22) { b.alpha = 1 }
+            }
+            readBar?.refresh()
+        } else if let b = readBar {
+            readBar = nil
+            UIView.animate(withDuration: 0.18, animations: { b.alpha = 0 }, completion: { _ in b.removeFromSuperview() })
+        }
+    }
+
+    func markReadForReadAloud(_ i: Int) { markRead(i) }
+    func readAloudActivity() { activity() }
+
+    /// Reading aloud went on to the next chapter: the page follows (when it is on screen).
+    func followReadAloud(to i: Int) {
+        guard chapters.indices.contains(i), viewIfLoaded?.window != nil else { return }
+        let id = chapters[i].id
+        ask("JR.toChapter(id)", ["id": id]) { [weak self] done in
+            guard let self = self else { return }
+            if NovelBridge.num(done) == 1 { self.index = i; self.refreshBookmarks() } else { self.show(i, place: ["p": 0, "o": 0]) }
+        }
     }
 
     private func fromSelection(_ what: String) {
@@ -1196,6 +1272,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
                 a.addAction(UIAlertAction(title: "تمام", style: .cancel))
                 self.present(a, animated: true)
             }
+        case "tts":
+            // reading aloud from the top of the chapter, with the player
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.startReadAloud(chapter: self.index, para: 0) }
         case "swipe":
             // continuous reading: the next chapter, from its heading
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.turn(1) }

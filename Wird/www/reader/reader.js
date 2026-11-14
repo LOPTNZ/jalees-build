@@ -503,6 +503,44 @@
   };
 
   /* ---------- auto scroll ---------- */
+  /* ---------- reading aloud: the sentence being read, marked and kept in view ---------- */
+  /* plain offsets (without tatweel, which the page may add for letter spacing) to a range in the paragraph */
+  function rangeAt(el, s, e) {
+    var w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), n, count = 0, r = document.createRange(), started = false;
+    while ((n = w.nextNode())) {
+      var t = n.nodeValue;
+      for (var i = 0; i < t.length; i++) {
+        if (t[i] === 'ـ') continue;
+        if (!started && count === s) { r.setStart(n, i); started = true; }
+        count++;
+        if (started && count >= e) { r.setEnd(n, i + 1); return r; }
+      }
+    }
+    if (started) { r.setEnd(el, el.childNodes.length); return r; }
+    return null;
+  }
+  function ttsUnmark() {
+    if (window.CSS && CSS.highlights) CSS.highlights.delete('tts');
+    var old = document.querySelectorAll('.tts-p'); for (var i = 0; i < old.length; i++) old[i].classList.remove('tts-p');
+  }
+  JR.ttsMark = function (id, p, s, e) {
+    var sec = secById(id); if (!sec) return 0;
+    var el = sec.paras[p]; if (!el) return 0;
+    ttsUnmark();
+    var r = null; try { r = rangeAt(el, s, e); } catch (x) { r = null; }
+    if (r && window.CSS && CSS.highlights && window.Highlight) CSS.highlights.set('tts', new Highlight(r));
+    else el.classList.add('tts-p');
+    var rc = (r || el).getBoundingClientRect();
+    if (paged()) {
+      var pg = Math.max(0, Math.floor((Math.abs(window.scrollX) + (pageW() - rc.right)) / pageW()));
+      if (pg !== curPage()) pageTo(pg);
+    } else if (rc.top < anchorY() + 24 || rc.bottom > window.innerHeight - 170) {
+      window.scrollBy({ top: rc.top - window.innerHeight * 0.32, behavior: 'smooth' });
+    }
+    return 1;
+  };
+  JR.ttsClear = function () { ttsUnmark(); return 1; };
+
   JR.autoScroll = function (pxPerSec) {
     if (auto) { cancelAnimationFrame(auto.raf); auto = null; }
     if (!pxPerSec || paged()) return 0;
@@ -534,7 +572,9 @@
       post({ t: 'markTap', id: id, ch: sec ? +sec.getAttribute('data-id') : 0, rect: { x: r.left, y: r.top, w: r.width, h: r.height } });
       return;
     }
-    post({ t: 'tap', x: +(e.clientX / window.innerWidth).toFixed(3), y: +(e.clientY / window.innerHeight).toFixed(3) });
+    var tp = paraOf(e.target), tsec = tp && tp.closest('section.chap');
+    post({ t: 'tap', x: +(e.clientX / window.innerWidth).toFixed(3), y: +(e.clientY / window.innerHeight).toFixed(3),
+           pid: tsec ? +tsec.getAttribute('data-id') : null, pp: tp ? +tp.getAttribute('data-i') : null });
   });
   document.addEventListener('selectionchange', function () {
     var s = window.getSelection && window.getSelection(), on = !!(s && !s.isCollapsed);

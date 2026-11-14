@@ -108,3 +108,7 @@ html.nm-glow .nm{color:color-mix(in srgb,var(--fg) 60%,#ffd27a);text-shadow:0 0 
 .cms,.cm,.cm p{max-width:100%;min-width:0;overflow-wrap:anywhere;word-break:break-word}
 .cm p{white-space:pre-wrap}
 button.go.cm.site{background:transparent;border-color:transparent}
+
+/* reading aloud: the sentence being read (a paragraph tint where the highlight API is missing) */
+::highlight(tts){background-color:rgba(255,204,0,.34);color:inherit}
+.body p.tts-p{background:rgba(255,204,0,.16);border-radius:6px;box-shadow:0 0 0 4px rgba(255,204,0,.16)}

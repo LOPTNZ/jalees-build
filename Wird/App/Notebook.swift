@@ -106,16 +106,25 @@ struct NotebookView: View {
                     }
                     .padding(.leading, 6)
                 }
-                Button { fabMenu(!fabOpen) } label: {
-                    Image(systemName: "plus").font(.system(size: 24, weight: .semibold))
-                        .rotationEffect(.degrees(fabOpen ? 135 : 0))
-                        .foregroundStyle(Color(L.onPrimary))
-                        .frame(width: 58, height: 58)
-                        .background(Circle().fill(Color(L.primary)))
-                        .shadow(color: .black.opacity(0.4), radius: 12, y: 10)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(fabOpen ? "إغلاق القائمة" : "إضافة للدفتر")
+                // tap: the menu; hold half a second: add to the list you are on (1.8.0)
+                Image(systemName: "plus").font(.system(size: 24, weight: .semibold))
+                    .rotationEffect(.degrees(fabOpen ? 135 : 0))
+                    .foregroundStyle(Color(L.onPrimary))
+                    .frame(width: 58, height: 58)
+                    .background(Circle().fill(Color(L.primary)))
+                    .shadow(color: .black.opacity(0.4), radius: 12, y: 10)
+                    .contentShape(Circle())
+                    .onTapGesture { fabMenu(!fabOpen) }
+                    .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 14) {
+                        Haptics.play("soft")
+                        if fabOpen { fabMenu(false) }
+                        fabPick(tab == "mark" ? "quote" : tab)
+                    }
+                    .accessibilityElement()
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel(fabOpen ? "إغلاق القائمة" : "إضافة للدفتر")
+                    .accessibilityHint("اضغط مطوّلًا لإضافة " + (NoteKind(rawValue: tab)?.name ?? "اقتباس"))
+                    .accessibilityAction { fabMenu(!fabOpen) }
                 .opacity(fabDim && !fabOpen ? 0.38 : 1)
                 .scaleEffect(fabDim && !fabOpen ? 0.88 : 1)
             }
