@@ -6,8 +6,8 @@ options:
   developmentLanguage: ar
 settings:
   base:
-    MARKETING_VERSION: "2.1.0"
-    CURRENT_PROJECT_VERSION: "20"
+    MARKETING_VERSION: "2.1.1"
+    CURRENT_PROJECT_VERSION: "21"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1"
     IPHONEOS_DEPLOYMENT_TARGET: "16.1"
@@ -50,6 +50,10 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         UIRequiresFullScreen: true
         UIViewControllerBasedStatusBarAppearance: true
+        # your own server answers over plain http inside Tailscale (100.x addresses), and some novel sites are http
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
           UISceneConfigurations:
