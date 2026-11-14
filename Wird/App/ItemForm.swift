@@ -316,6 +316,7 @@ struct ItemForm: View {
             if m.x.str("speakerId") == "__o" { JLabel(text: "اسم القائل"); box(m.str("speakerName")) }
         }
         JSwitchRow(title: "من المفضّلة", on: m.bool("fav"))
+        JSwitchRow(title: "فيه حرق", sub: "يتغطى في دفتري وصفحة الكتاب لين تضغط عليه", on: m.bool("spoiler"))
         if m.editing {
             Button {
                 let b = m.bookID, q = m.x.str("id")
@@ -331,6 +332,7 @@ struct ItemForm: View {
         JLabel(text: "الفكرة *")
         editor(m.str("text"), quoteFont: false, placeholder: "")
         location(m.book?.unit == .page ? "الصفحة التي ألهمتك" : "الفصل الذي ألهمك")
+        JSwitchRow(title: "فيها حرق", sub: "تتغطى في دفتري وصفحة الكتاب لين تضغط عليها", on: m.bool("spoiler"))
         JSwitchRow(title: "أضف النص اللي ألهمك (اختياري)", on: $m.showPassage)
         if m.showPassage { JLabel(text: "النص"); editor(m.str("passage"), quoteFont: true, placeholder: "") }
     }

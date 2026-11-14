@@ -114,7 +114,7 @@ enum PDFSummary {
 
     private static func stars(_ r: Double) -> String {
         var t = ""
-        for i in 1...5 { t += Double(i) <= r ? "★" : "☆" }
+        t = Words.starsOf5(r)
         return "<span class=\"st\">" + t + "</span>"
     }
 

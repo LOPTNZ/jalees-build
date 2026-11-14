@@ -200,6 +200,9 @@ final class ReaderMenuView: UIView {
         panel.addArrangedSubview(row("الوقفات والتمييزات", r.markCount > 0 ? "\(r.markCount)" : nil, "bookmark") { [weak r] in r?.openMarks() })
         panel.addArrangedSubview(row("بحث في الرواية", nil, "magnifyingglass") { [weak r] in r?.openSearch() })
         panel.addArrangedSubview(row("القراءة الصوتية", nil, "speaker.wave.2") { [weak r] in r?.startReadAloud() })
+        if !Novels.shared.mirrors(r.novel.id).isEmpty {
+            panel.addArrangedSubview(row("الفصل من مصدر ثاني", nil, "arrow.triangle.2.circlepath") { [weak r] in r?.chapterFromMirror() })
+        }
         panel.addArrangedSubview(row("السمات والإعدادات", nil, "textformat.size") { [weak r] in r?.openThemes() })
         // the small actions in one row of round buttons, right to left
         let buttons = UIStackView(arrangedSubviews: [

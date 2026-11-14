@@ -32,10 +32,6 @@ struct SettingsView: View {
                 section("المكتبة") {
                     field("العرض الافتراضي") { JSeg(options: [("carousel", "دائري"), ("shelf", "رفوف"), ("grid", "شبكة")], value: str("view", "carousel")) }
                     field("شكل الدوران") { JSeg(options: [("stack", "مكدّس"), ("flow", "أغلفة مائلة")], value: str("carStyle", "stack")) }
-                    field("تعديل أبعاد الكتاب") {
-                        JSeg(options: [("handles", "سحب المقابض"), ("sliders", "أشرطة تمرير")], value: str("dimMode", "handles"))
-                        note("القياسات بالسنتيمتر متاحة في الحالتين.")
-                    }
                     Button { shelfStyle = true } label: { Label("شكل الرف والإضاءة", systemImage: "paintpalette") }
                         .buttonStyle(JButtonStyle(look: L, small: true))
                 }
@@ -61,11 +57,11 @@ struct SettingsView: View {
                 }
 
                 section("الروايات") {
-                    VStack(spacing: 0) {
-                        JSwitchRow(title: "أفحص الفصول الجديدة بالخلفية", sub: "iOS يحدد الوقت، مرة بالساعة بالأكثر. لو حسيت إنه ياكل بطارية طفّه، ويبقى الفحص لما تفتح جليس أو تسحب قائمة التحديثات", on: Binding(get: { NewChapters.background }, set: { NewChapters.background = $0; lib.objectWillChange.send() }))
-                        JSwitchRow(title: "عدد الفصول الجديدة على أيقونة جليس", on: Binding(get: { NewChapters.badge }, set: { NewChapters.badge = $0; lib.objectWillChange.send() }))
-                    }
                     note("التنبيه لكل رواية من جرس صفحتها: مع كل فصل، أو لما يتجمع عدد تختاره.")
+                }
+
+                section("القراءة الصوتية") {
+                    ReadAloudSettings()
                 }
 
                 section("الخصوصية") {
@@ -79,7 +75,28 @@ struct SettingsView: View {
                     }
                 }
 
-                section("البحث عن الكتب") {
+                section("الكلمات والشخصيات") {
+                    JSwitchRow(title: "إخفاء الحرق", sub: "موت الشخصية، والاقتباسات والأفكار والمراجعات اللي علّمتها «فيها حرق»، تظهر مغطّاة حتى تضغط عليها", on: flag("spoilers", true))
+                }
+
+                // «متقدمة» (the third round of answers): what most never need, shown when asked for
+                section("متقدمة") {
+                    JSwitchRow(title: "أظهر الإعدادات المتقدمة", sub: "أبعاد الكتب، مفتاح Google Books، طريقة مراجعة الكلمات، والفحص بالخلفية", on: flag("advanced", false))
+                    if lib.state.settings.raw.bool("advanced") {
+                    field("تعديل أبعاد الكتاب") {
+                        JSeg(options: [("handles", "سحب المقابض"), ("sliders", "أشرطة تمرير")], value: str("dimMode", "handles"))
+                        note("القياسات بالسنتيمتر متاحة في الحالتين.")
+                    }
+                    field("طريقة المراجعة") {
+                        JSeg(options: [("simple", "عادية"), ("srs", "تكرار متباعد")], value: str("review", "srs"))
+                        note(lib.state.settings.raw.str("review", "srs") == "srs"
+                             ? "كل كلمة ترجع لك بعد مدة تطول كلما عرفتها، وتقصر كلما صعبت عليك."
+                             : "تمر على كل الكلمات بترتيب عشوائي وتعلّم اللي عرفتها.")
+                    }
+                    VStack(spacing: 0) {
+                        JSwitchRow(title: "أفحص الفصول الجديدة بالخلفية", sub: "iOS يحدد الوقت، مرة بالساعة بالأكثر. لو حسيت إنه ياكل بطارية طفّه، ويبقى الفحص لما تفتح جليس أو تسحب قائمة التحديثات", on: Binding(get: { NewChapters.background }, set: { NewChapters.background = $0; lib.objectWillChange.send() }))
+                        JSwitchRow(title: "عدد الفصول الجديدة على أيقونة جليس", on: Binding(get: { NewChapters.badge }, set: { NewChapters.badge = $0; lib.objectWillChange.send() }))
+                    }
                     field("مفتاح Google Books (اختياري)") {
                         TextField("AIza…", text: str("gbKey", ""))
                             .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.asciiCapable)
@@ -91,16 +108,7 @@ struct SettingsView: View {
                             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
                     }
                     note("البحث يشتغل بدونه من Goodreads وأبجد وOpen Library. Google Books بدون مفتاح يرفض أغلب الطلبات لأن حدّه المجاني المشترك يخلص بسرعة. لو تبي نتائجه، سوّ مفتاحًا مجانيًا لـ «Books API» من Google Cloud والصقه هنا.")
-                }
-
-                section("الكلمات والشخصيات") {
-                    field("طريقة المراجعة") {
-                        JSeg(options: [("simple", "عادية"), ("srs", "تكرار متباعد")], value: str("review", "srs"))
-                        note(lib.state.settings.raw.str("review", "srs") == "srs"
-                             ? "كل كلمة ترجع لك بعد مدة تطول كلما عرفتها، وتقصر كلما صعبت عليك."
-                             : "تمر على كل الكلمات بترتيب عشوائي وتعلّم اللي عرفتها.")
-                    }
-                    JSwitchRow(title: "إخفاء الحرق في الشخصيات", sub: "موت الشخصية يظهر مغطّى حتى تضغط عليه", on: flag("spoilers", true))
+                                    }
                 }
 
                 section("البيانات") {

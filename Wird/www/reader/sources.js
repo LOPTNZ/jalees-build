@@ -165,6 +165,8 @@
 
   /* ---------- entry points used by the app ---------- */
   window.Sources = S;
+  /* the helpers, for the sites that live in their own files (www/reader/sites/<id>.js) */
+  window.SourceKit = { txt: txt, abs: abs, meta: meta, digits: digits, paragraphs: paragraphs, tidy: tidy };
   window.SourceFor = function (url) {
     var h = ''; try { h = new URL(url).hostname.toLowerCase(); } catch (e) { return null; }
     for (var k in S) if (S[k].hosts.indexOf(h) >= 0) return k;

@@ -55,8 +55,11 @@ struct BrowseTab: View {
                         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color(look.line), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button { SiteGate.signIn(s["home"] as? String ?? "") } label: { Label("دخول للموقع", systemImage: "person.crop.circle") }
+                    }
                 }
-                Text("باقي مواقعك (cenele وrewayat وغيرها) تنضاف في المرحلة الثانية.").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
+                Text("اضغط مطوّلًا على موقع لتسجيل الدخول فيه، لو كان يطلب حساب أو يتحقق إنك مو روبوت.").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
             }
             .padding(16)
         }

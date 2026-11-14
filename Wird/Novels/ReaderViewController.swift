@@ -622,6 +622,25 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         return UIMenu(title: "", options: .displayInline, children: [hl, note, nb, aloud])
     }
 
+    /// «الفصل من مصدر ثاني»: this chapter again from a backup source, kept as its text (س56).
+    func chapterFromMirror() {
+        ask("JR.here()") { [weak self] v in
+            guard let self = self else { return }
+            let id = NovelBridge.num((v as? [String: Any])?["id"])
+            guard let i = self.chapters.firstIndex(where: { $0.id == id }) else { return }
+            self.toast("أجيب الفصل من مصدر ثاني…")
+            Task { @MainActor in
+                do {
+                    _ = try await Novels.shared.textFromMirror(self.chapters[i], novel: self.novel.id)
+                    self.show(i, place: ["p": 0, "o": 0])
+                    self.toast("الفصل الحين من " + (Novels.siteNames[DB.shared.get("chapter.source.\(id)") ?? ""] ?? "المصدر الثاني"))
+                } catch {
+                    self.toast(error.localizedDescription)
+                }
+            }
+        }
+    }
+
     // MARK: reading aloud (ReadAloud.swift)
 
     private var readBar: ReadAloudBar?

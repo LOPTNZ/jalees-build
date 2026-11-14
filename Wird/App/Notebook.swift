@@ -385,6 +385,7 @@ struct QuoteRow: View {
             }
             if !r.str("text").isEmpty {
                 Text(kind == .quote && item.img == nil ? "«" + r.str("text") + "»" : r.str("text")).font(JFont.quote(19)).foregroundStyle(Color(L.ink)).lineSpacing(5)
+                    .spoiler(r.bool("spoiler"))
             }
             if kind == .thought && !r.str("passage").isEmpty {
                 Text(r.str("passage")).font(JFont.quote(16)).foregroundStyle(Color(L.ink2)).padding(.leading, 10)

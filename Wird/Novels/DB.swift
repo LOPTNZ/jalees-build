@@ -82,6 +82,12 @@ final class DB {
             run("CREATE TABLE IF NOT EXISTS commenters(novel INTEGER NOT NULL, author TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY(novel, author))")
             run("PRAGMA user_version=6")
         }
+        if v < 7 {
+            // chapters the site keeps for subscribers (a lock in the list, س26), and a novel's backup sources (س29)
+            run("ALTER TABLE chapters ADD COLUMN locked INTEGER DEFAULT 0")
+            run("CREATE TABLE IF NOT EXISTS mirrors(novel INTEGER NOT NULL, source TEXT NOT NULL, url TEXT NOT NULL, PRIMARY KEY(novel, url))")
+            run("PRAGMA user_version=7")
+        }
     }
 
     // MARK: statements

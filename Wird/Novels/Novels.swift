@@ -22,7 +22,10 @@ struct Novel: Identifiable, Equatable {
 
     /// «مكتملة» on the site means no new chapters will come.
     var complete: Bool { status.contains("مكتمل") }
-    var siteName: String { source == "kolnovel" ? "ملوك الروايات" : (source == "sample" ? "جليس" : source) }
+    var siteName: String { Self.siteNames[source] ?? source }
+    static let siteNames = ["kolnovel": "ملوك الروايات", "cenele": "فضاء الروايات", "rewayat": "نادي الروايات", "realmnovel": "realmnovel",
+                            "layl": "Layl", "wetriedtls": "We Tried TLs", "wtrlab": "WTR-LAB", "ranobes": "Ranobes",
+                            "archive": "أرشيف أداتك", "epub": "ملف EPUB", "sample": "جليس"]
 
     init(row: [String: Any]) {
         id = row.int("id"); source = row.str("source"); url = row.str("url"); title = row.str("title")
@@ -44,10 +47,13 @@ struct ChapterRow: Identifiable, Equatable {
     let date: String
     var read: Bool
     var saved: Bool
+    /// kept by the site for subscribers
+    var locked: Bool = false
 
     init(row: [String: Any]) {
         id = row.int("id"); novel = row.int("novel"); idx = row.int("idx"); num = row.str("num"); title = row.str("title")
         url = row.str("url"); volume = row.str("volume"); date = row.str("date"); read = row.int("read") != 0; saved = row.int("saved") != 0
+        locked = row.int("locked") != 0
     }
 
     /// «الفصل 680» when the site numbers it, otherwise its place in the list.
@@ -100,12 +106,21 @@ enum Fetcher {
         req.setValue(ua, forHTTPHeaderField: "User-Agent")
         req.setValue("text/html,application/xhtml+xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
         var last: Error = NovelError.network("")
-        for attempt in 0..<2 {
+        var gated = false
+        for attempt in 0..<3 {
             if attempt > 0 { try? await Task.sleep(nanoseconds: 900_000_000) }
             do {
                 let (data, resp) = try await session.data(for: req)
                 let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-                if code == 403 || code == 429 || code == 503 { throw NovelError.blocked }
+                if code == 403 || code == 429 || code == 503 {
+                    // Cloudflare's check (only when the page really is its check): once, inside Jalees, then the same
+                    // request again with its cookies. A plain refusal (a locked chapter) stays a refusal.
+                    let head = String(decoding: data.prefix(6000), as: UTF8.self).lowercased()
+                    let challenge = head.contains("just a moment") || head.contains("cf-chl") || head.contains("challenge-platform") || head.contains("attention required")
+                    if challenge, !gated, code != 429, await SiteGate.pass(url) { gated = true; continue }
+                    if code == 403, !challenge { throw NovelError.message("الفصل مقفل في الموقع (للمشتركين أو لتطبيق الموقع)") }
+                    throw NovelError.blocked
+                }
                 guard (200..<300).contains(code) else { throw NovelError.network("الموقع ردّ بالرمز \(code)") }
                 return String(decoding: data, as: UTF8.self)
             } catch let e as NovelError {
@@ -264,7 +279,7 @@ final class Novels: ObservableObject {
 
     // MARK: adding and refreshing
 
-    private func clean(_ raw: String) -> String {
+    func clean(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if !s.lowercased().hasPrefix("http") { s = "https://" + s }
         if let hash = s.firstIndex(of: "#") { s = String(s[..<hash]) }
@@ -405,13 +420,14 @@ final class Novels: ObservableObject {
         db.query("SELECT c.*, (SELECT 1 FROM texts t WHERE t.chapter = c.id) AS saved FROM chapters c WHERE c.id=?", [id]).first.map(ChapterRow.init(row:))
     }
 
-    private func insert(_ r: [String: Any], novel: Int, idx: Int, found: Double? = nil) {
-        db.run("INSERT OR IGNORE INTO chapters(novel,idx,num,title,url,volume,date,found) VALUES(?,?,?,?,?,?,?,?)",
-               [novel, idx, r["num"] as? String, r["title"] as? String, (r["url"] as? String) ?? "", r["volume"] as? String, r["date"] as? String, found])
+    func insert(_ r: [String: Any], novel: Int, idx: Int, found: Double? = nil) {
+        db.run("INSERT OR IGNORE INTO chapters(novel,idx,num,title,url,volume,date,found,locked) VALUES(?,?,?,?,?,?,?,?,?)",
+               [novel, idx, r["num"] as? String, r["title"] as? String, (r["url"] as? String) ?? "", r["volume"] as? String, r["date"] as? String, found,
+                (r["locked"] as? Bool) == true ? 1 : 0])
     }
 
     /// Every list page, four at a time, returned oldest chapter first.
-    private func allRows(site: String, first: [[String: Any]], pages: [String], progress: @escaping (String) -> Void) async throws -> [[String: Any]] {
+    func allRows(site: String, first: [[String: Any]], pages: [String], progress: @escaping (String) -> Void) async throws -> [[String: Any]] {
         var newestFirst = first
         var seen = Set(first.compactMap { $0["url"] as? String })
         var next = 1
@@ -528,7 +544,7 @@ final class Novels: ObservableObject {
 
     // MARK: chapter text
 
-    private func stored(_ chapter: Int) -> ChapterText? {
+    func stored(_ chapter: Int) -> ChapterText? {
         guard let row = db.query("SELECT title,paras,removed FROM texts WHERE chapter=?", [chapter]).first,
               let data = row.str("paras").data(using: .utf8),
               let paras = (try? JSONSerialization.jsonObject(with: data)) as? [String], !paras.isEmpty else { return nil }
@@ -562,7 +578,14 @@ final class Novels: ObservableObject {
         }
         loading[ch.id] = task
         defer { loading[ch.id] = nil }
-        return try await task.value
+        do {
+            return try await task.value
+        } catch {
+            // missing or broken on the main site: the same chapter from a backup source, when there is one (س63)
+            if source != "epub", source != "archive", source != "sample", !mirrors(ch.novel).isEmpty,
+               let t = try? await textFromMirror(ch, novel: ch.novel) { return t }
+            throw error
+        }
     }
 
     /// Quietly gets the next few chapters ready so turning to them is instant.

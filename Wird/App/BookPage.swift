@@ -320,7 +320,7 @@ struct BookPage: View {
             if b.review.isEmpty {
                 Text("ما كتبت مراجعة لهذا الكتاب بعد.").font(JFont.body(14)).foregroundStyle(Color(L.ink2))
             } else {
-                Text(b.review).font(JFont.quote(18)).foregroundStyle(Color(L.ink)).lineSpacing(6)
+                Text(b.review).font(JFont.quote(18)).foregroundStyle(Color(L.ink)).lineSpacing(6).spoiler(b.raw.bool("reviewSpoiler"))
             }
         }
     }
@@ -591,7 +591,7 @@ struct NoteRow: View {
                         if let img = item.img, let i = Library.shared.image(img) {
                             Image(uiImage: i).resizable().scaledToFit().frame(maxHeight: 320).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
-                        if !r.str("text").isEmpty { Text(r.str("text")).font(JFont.quote(19)).foregroundStyle(Color(L.ink)).lineSpacing(5) }
+                        if !r.str("text").isEmpty { Text(r.str("text")).font(JFont.quote(19)).foregroundStyle(Color(L.ink)).lineSpacing(5).spoiler(r.bool("spoiler")) }
                         if !r.str("passage").isEmpty {
                             Text(r.str("passage")).font(JFont.quote(16)).foregroundStyle(Color(L.ink2))
                                 .padding(.leading, 10).overlay(alignment: .leading) { Rectangle().fill(Color(L.line)).frame(width: 3) }

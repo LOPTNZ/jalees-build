@@ -236,7 +236,7 @@ struct JPanel<Content: View>: View {
     }
 }
 
-/// Five stars to tap (tap the same star again to clear).
+/// Five stars to tap: a star, its half, or none.
 struct JStars: View {
     @Binding var value: Double
     var size: CGFloat = 26
@@ -244,9 +244,14 @@ struct JStars: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(1...5, id: \.self) { i in
-                Button { value = Double(i) == value ? 0 : Double(i); Haptics.play("sel") } label: {
-                    Image(systemName: Double(i) <= value ? "star.fill" : "star").font(.system(size: size * 0.8))
-                        .foregroundStyle(Color(Double(i) <= value ? L.star : L.line)).frame(width: size, height: size)
+                // a tap: that many stars; the same star again: half of it; once more: none (half stars, س64)
+                Button {
+                    let d = Double(i)
+                    value = value == d ? d - 0.5 : (value == d - 0.5 ? 0 : d)
+                    Haptics.play("sel")
+                } label: {
+                    Image(systemName: Double(i) <= value ? "star.fill" : (Double(i) - 0.5 <= value ? "star.leadinghalf.filled" : "star")).font(.system(size: size * 0.8))
+                        .foregroundStyle(Color(Double(i) - 0.5 <= value ? L.star : L.line)).frame(width: size, height: size)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(i) نجوم")
@@ -417,4 +422,32 @@ struct SplashView: View {
 @MainActor func afterEditing(_ f: @escaping () -> Void) {
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { f() }
+}
+
+/// Spoilers in your own notes and reviews (answers-round2 س64): blurred, with a line saying so, until tapped; only when
+/// «إخفاء الحرق» is on in the settings.
+private struct SpoilerCover: ViewModifier {
+    let on: Bool
+    @State private var shown = false
+    @Environment(\.look) private var L
+    func body(content: Content) -> some View {
+        if on && !shown && Library.shared.state.settings.raw.bool("spoilers", true) {
+            content
+                .blur(radius: 8)
+                .overlay {
+                    Label("فيه حرق، اضغط لتشوفه", systemImage: "eye.slash").font(JFont.body(13.5, .medium)).foregroundStyle(Color(L.ink))
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Capsule().fill(Color(L.surface2)))
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { shown = true } }
+                .accessibilityAddTraits(.isButton)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    func spoiler(_ on: Bool) -> some View { modifier(SpoilerCover(on: on)) }
 }

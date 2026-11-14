@@ -138,7 +138,7 @@ private struct BookCardArt: View {
             }
             if book.rating > 0 {
                 let n = Int(book.rating.rounded())
-                Text(String(repeating: "★", count: n) + String(repeating: "☆", count: max(0, 5 - n)))
+                Text(Words.starsOf5(book.rating))
                     .font(.system(size: 44)).foregroundColor(Color(hex: "#ffd36b")).padding(.top, 12)
                     .environment(\.layoutDirection, .leftToRight)
             }

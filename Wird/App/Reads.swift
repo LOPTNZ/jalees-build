@@ -18,6 +18,7 @@ struct FinishSheet: View {
     @State private var finish = Date()
     @State private var err = ""
     @State private var loaded = false
+    @State private var spoiler = false
 
     var body: some View {
         if let b = lib.state.book(bookID) {
@@ -48,6 +49,7 @@ struct FinishSheet: View {
                     .overlay(alignment: .topLeading) {
                         if review.isEmpty { Text("وش عجبك؟ وش ما عجبك؟ لمن تنصح فيه؟").font(JFont.quote(17)).foregroundStyle(Color(L.ink2).opacity(0.7)).padding(14).allowsHitTesting(false) }
                     }
+                if !review.isEmpty { JSwitchRow(title: "المراجعة فيها حرق", sub: "تتغطى لين تضغط عليها", on: $spoiler) }
                 if vi == nil {
                     DatePicker("تاريخ الانتهاء", selection: $finish, displayedComponents: .date).font(JFont.body(15)).environment(\.locale, Locale(identifier: "ar@numbers=latn"))
                 }
@@ -62,7 +64,7 @@ struct FinishSheet: View {
                     let rv = b.volReviews[v]?.object ?? [:]
                     rating = rv.num("rating"); review = rv.str("review")
                 } else {
-                    rating = b.rating; review = b.review; moods = b.moods; pace = b.pace
+                    rating = b.rating; review = b.review; moods = b.moods; pace = b.pace; spoiler = b.raw.bool("reviewSpoiler")
                     finish = Millis.date(b.finish ?? Millis.now)
                 }
             }
@@ -82,6 +84,7 @@ struct FinishSheet: View {
             lib.changeBook(b.id) { x in
                 x.rating = rating
                 x.review = review.trimmingCharacters(in: .whitespacesAndNewlines)
+                x.raw.set("reviewSpoiler", spoiler && !x.review.isEmpty)
                 x.moods = moods
                 x.pace = pace
                 if x.status == .done { x.finish = fi }

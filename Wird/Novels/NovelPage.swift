@@ -21,6 +21,9 @@ final class NovelPageModel: ObservableObject {
     @Published var allMarks = false
     @Published var namingColors = false
     @Published var rules = false
+    /// backup sources (other sites' pages of this novel) and their names
+    @Published var mirrors: [Novels.Mirror] = []
+    @Published var mirrorBusy: String?
     /// volumes folded away in the chapter list (all but the one being read, at first)
     @Published var folded: Set<String> = []
     private var foldedOnce = false
@@ -105,6 +108,39 @@ final class NovelPageModel: ObservableObject {
         NovelBridge.openReader(novel: novel.id, book: bookID, index: idx, chapter: nil, paragraph: nil)
     }
 
+    func loadMirrors() { mirrors = Novels.shared.mirrors(novel.id) }
+
+    func addMirror(_ url: String) {
+        let u = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !u.isEmpty else { return }
+        mirrorBusy = "أقرأ المصدر"
+        Task {
+            do {
+                let name = try await Novels.shared.addMirror(novel, url: u) { s in self.mirrorBusy = s }
+                note = "انضاف «\(name)» مصدر احتياطي. لو فصل ما انفتح من الأساسي، أجيبه منه."
+            } catch { note = error.localizedDescription }
+            mirrorBusy = nil
+            loadMirrors()
+        }
+    }
+
+    func move(_ url: String) {
+        let u = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !u.isEmpty else { return }
+        mirrorBusy = "أنقل الرواية"
+        Task {
+            do {
+                try await Novels.shared.move(novel, to: u) { s in self.mirrorBusy = s }
+                if let n = Novels.shared.novel(novel.id) { novel = n }
+                NovelBridge.sync(novel.id)
+                note = "انتقلت الرواية. اللي قريته وحمّلته وظللته باقي، والموقع القديم صار مصدر احتياطي."
+            } catch { note = error.localizedDescription }
+            mirrorBusy = nil
+            loadMirrors()
+            reload()
+        }
+    }
+
     func check() {
         guard !checking else { return }
         checking = true
@@ -184,6 +220,7 @@ struct NovelPageView: View {
                     notebook
                     sessions
                     about
+                    if model.novel.source != "epub" && model.novel.source != "sample" { sourcesSection }
                     chaptersHeader(proxy)
                     chapterRows
                     Color.clear.frame(height: model.selecting ? 120 : 24)
@@ -353,6 +390,51 @@ struct NovelPageView: View {
     }
 
     @State private var exportEpub = false
+    @State private var askMirror = false
+    @State private var askMove = false
+    @State private var linkText = ""
+
+    /// «المصادر»: the main site, backup sources, and moving the novel (س29).
+    private var sourcesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            JHeading(look: L, title: "المصادر")
+            HStack {
+                Image(systemName: "star.fill").font(.system(size: 11)).foregroundStyle(Color(L.primary))
+                Text(model.novel.siteName).font(JFont.body(14.5, .semibold)).foregroundStyle(Color(L.ink))
+                Text("الأساسي").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
+                Spacer()
+            }
+            ForEach(model.mirrors, id: \.url) { m in
+                HStack {
+                    Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 12)).foregroundStyle(Color(L.ink2))
+                    Text(URL(string: m.url)?.host ?? m.source).font(JFont.body(14)).foregroundStyle(Color(L.ink))
+                    Text("احتياطي").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
+                    Spacer()
+                    Button { Novels.shared.removeMirror(model.novel.id, url: m.url); model.loadMirrors() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Color(L.ink2)) }
+                        .buttonStyle(.plain).accessibilityLabel("شيل المصدر")
+                }
+            }
+            if let b = model.mirrorBusy {
+                HStack(spacing: 8) { ProgressView(); Text(b).font(JFont.body(13)).foregroundStyle(Color(L.ink2)) }
+            }
+            HStack(spacing: 8) {
+                Button { linkText = ""; askMirror = true } label: { Label("أضف مصدر احتياطي", systemImage: "plus") }.buttonStyle(JButtonStyle(look: L, small: true))
+                Button { linkText = ""; askMove = true } label: { Label("انقلها لموقع ثاني", systemImage: "arrow.right.arrow.left") }.buttonStyle(JButtonStyle(look: L, small: true))
+            }
+            Text("الاحتياطي يجيب الفصل لو ما انفتح من الأساسي، أو لما تختار «الفصل من مصدر ثاني» في القارئ.").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
+        }
+        .onAppear { model.loadMirrors() }
+        .alert("مصدر احتياطي", isPresented: $askMirror) {
+            TextField("رابط نفس الرواية في موقع ثاني", text: $linkText).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Button("أضف") { model.addMirror(linkText) }
+            Button("إلغاء", role: .cancel) {}
+        } message: { Text("الصق رابط صفحة الرواية (أو أي فصل منها) في الموقع الثاني.") }
+        .alert("انقل الرواية لموقع ثاني", isPresented: $askMove) {
+            TextField("رابط الرواية في الموقع الجديد", text: $linkText).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Button("انقلها") { model.move(linkText) }
+            Button("إلغاء", role: .cancel) {}
+        } message: { Text("تقدّمك وتحميلك وتظليلك يبقون، والفصول تتطابق بأرقامها.") }
+    }
 
     private var downloadsCard: some View {
         HStack(spacing: 12) {
@@ -655,6 +737,7 @@ struct ChapterRowView: View {
             }
             Spacer(minLength: 8)
             if marked { Circle().fill(Color(look.primary)).frame(width: 7, height: 7).accessibilityLabel("فيه تظليل") }
+            if ch.locked && !ch.saved { Image(systemName: "lock.fill").font(.system(size: 12)).foregroundStyle(Color(look.ink2)).accessibilityLabel("مقفل في الموقع") }
             if ch.saved { Image(systemName: "arrow.down.circle.fill").font(.system(size: 13)).foregroundStyle(Color(look.ink2)).accessibilityLabel("محمّل") }
             if !ch.date.isEmpty { Text(ChapterRowView.shortDate(ch.date)).font(JFont.body(12)).foregroundStyle(Color(look.ink2)).monospacedDigit() }
         }

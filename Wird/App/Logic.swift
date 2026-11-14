@@ -78,7 +78,16 @@ enum Words {
         return f.string(from: NSNumber(value: x.rounded())) ?? String(Int(x.rounded()))
     }
 
-    static func stars(_ r: Double) -> String { String(repeating: "★", count: max(0, min(5, Int(r.rounded())))) }
+    /// "★★★½": half stars as ½ (ratings go in halves, answers-round2 س64)
+    static func stars(_ r: Double) -> String {
+        let h = (min(5, max(0, r)) * 2).rounded() / 2
+        return String(repeating: "★", count: Int(h)) + (h - Double(Int(h)) >= 0.5 ? "½" : "")
+    }
+    /// five places: full, half and empty stars, for cards and the summary
+    static func starsOf5(_ r: Double) -> String {
+        let h = (min(5, max(0, r)) * 2).rounded() / 2, full = Int(h), half = h - Double(full) >= 0.5
+        return String(repeating: "★", count: full) + (half ? "½" : "") + String(repeating: "☆", count: max(0, 5 - full - (half ? 1 : 0)))
+    }
 
     /// The web app's search form: lowercase, no marks or tatweel, one form for alef, ya, ta marbuta, hamza seats.
     static func norm(_ s: String) -> String {
