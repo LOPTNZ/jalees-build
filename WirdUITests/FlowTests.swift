@@ -153,7 +153,9 @@ final class FlowTests: XCTestCase {
         tap(button("اقتباس"), "new quote")
         sleep(1)
         // from the notebook the form asks which book (it no longer guesses the last one read)
-        if tap(buttonStarting("اختر كتاب"), "choose the book") {
+        // SwiftUI's Menu is not always a «button» to the test: found by its words among everything on screen
+        let pick = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "اختر كتاب")).firstMatch
+        if tap(pick, "choose the book") {
             sleep(1)
             tap(button("لكنود"), "the book لكنود")
             sleep(1)
