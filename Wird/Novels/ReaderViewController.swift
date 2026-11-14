@@ -633,7 +633,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
                 do {
                     _ = try await Novels.shared.textFromMirror(self.chapters[i], novel: self.novel.id)
                     self.show(i, place: ["p": 0, "o": 0])
-                    self.toast("الفصل الحين من " + (Novels.siteNames[DB.shared.get("chapter.source.\(id)") ?? ""] ?? "المصدر الثاني"))
+                    self.toast("الفصل الحين من " + (Novel.siteNames[DB.shared.get("chapter.source.\(id)") ?? ""] ?? "المصدر الثاني"))
                 } catch {
                     self.toast(error.localizedDescription)
                 }
