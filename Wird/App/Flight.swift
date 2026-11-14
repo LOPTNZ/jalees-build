@@ -90,8 +90,8 @@ final class Flight: ObservableObject {
             }
             move.addCompletion { _ in
                 self.hiddenHero = nil
-                // the real cover is drawn first, then the copy goes
-                DispatchQueue.main.async {
+                // the real cover shows under the copy, which fades away (no pop where they differ, like the badges)
+                UIView.animate(withDuration: 0.16, delay: 0.02, options: [.curveEaseOut], animations: { cover.alpha = 0 }) { _ in
                     layer.removeFromSuperview()
                     self.arriving = nil
                     self.running = false
@@ -134,13 +134,14 @@ final class Flight: ObservableObject {
             guard let self = self else { return }
             let to = CoverFrames.shared.spots[id]?.rect ?? home
             UIView.animate(withDuration: Self.closeDuration * 0.6, delay: 0, options: [.curveEaseOut]) { shot.alpha = 0 }
-            let move = UIViewPropertyAnimator(duration: Self.closeDuration, controlPoint1: CGPoint(x: 0.22, y: 0.9), controlPoint2: CGPoint(x: 0.3, y: 1)) {
+            // a soft start (the web's EASE_OUT starts so fast it looks like a jump), a gentle landing
+            let move = UIViewPropertyAnimator(duration: Self.closeDuration, controlPoint1: CGPoint(x: 0.3, y: 0.55), controlPoint2: CGPoint(x: 0.2, y: 1)) {
                 cover.frame = to
                 cover.layer.cornerRadius = 10
             }
             move.addCompletion { _ in
                 self.hiddenSource = nil
-                DispatchQueue.main.async {
+                UIView.animate(withDuration: 0.16, delay: 0.02, options: [.curveEaseOut], animations: { cover.alpha = 0 }) { _ in
                     layer.removeFromSuperview()
                     self.running = false
                 }

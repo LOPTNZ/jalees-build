@@ -18,6 +18,9 @@ struct NotebookView: View {
     @State private var review = false
     @State private var fabOpen = false
     @State private var fabDim = false
+    /// the + held down: when the finger went down, and the hold that opens the form at 0.3 s (while still held)
+    @State private var holdWork: DispatchWorkItem?
+    @State private var holdDone = false
     @State private var lastY: CGFloat = 0
 
     private static let tabs: [(String, String)] = [("quote", "اقتباسات"), ("thought", "أفكار"), ("word", "كلمات"), ("char", "شخصيات"), ("mark", "معلومات")]
@@ -117,11 +120,28 @@ struct NotebookView: View {
                     .background(Circle().fill(Color(L.primary)))
                     .shadow(color: .black.opacity(0.4), radius: 12, y: 10)
                     .contentShape(Circle())
-                    .onTapGesture { fabMenu(!fabOpen) }
-                    .onLongPressGesture(minimumDuration: 0.3, maximumDistance: 14) {
-                        Haptics.play("soft")
-                        fabPick(tab == "mark" ? "quote" : tab)
-                    }
+                    // one touch: a tap opens the menu; held 0.3 s, the form for the list you are on opens right then,
+                    // with the finger still down (SwiftUI's tap + long press pair fired late or not at all)
+                    .gesture(DragGesture(minimumDistance: 0)
+                        .onChanged { g in
+                            if holdWork == nil && !holdDone {
+                                let w = DispatchWorkItem {
+                                    holdDone = true
+                                    Haptics.play("soft")
+                                    fabPick(tab == "mark" ? "quote" : tab)
+                                }
+                                holdWork = w
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: w)
+                            } else if hypot(g.translation.width, g.translation.height) > 14 {
+                                holdWork?.cancel()
+                            }
+                        }
+                        .onEnded { g in
+                            holdWork?.cancel()
+                            holdWork = nil
+                            if !holdDone && hypot(g.translation.width, g.translation.height) <= 14 { fabMenu(!fabOpen) }
+                            holdDone = false
+                        })
                     .accessibilityElement()
                     .accessibilityAddTraits(.isButton)
                     .accessibilityLabel(fabOpen ? "إغلاق القائمة" : "إضافة للدفتر")

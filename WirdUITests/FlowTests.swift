@@ -111,7 +111,7 @@ final class FlowTests: XCTestCase {
         if tap(button("تحديث التقدم"), "quick progress") {
             sleep(1)
             shot("ui13-quick-progress")
-            app.swipeDown(velocity: .fast)
+            tap(button("إغلاق"), "close quick progress")
             sleep(1)
         }
         let car = app.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "مكتبتك")).firstMatch
@@ -152,6 +152,12 @@ final class FlowTests: XCTestCase {
         tab("دفتري")
         tap(button("اقتباس"), "new quote")
         sleep(1)
+        // from the notebook the form asks which book (it no longer guesses the last one read)
+        if tap(buttonStarting("اختر كتاب"), "choose the book") {
+            sleep(1)
+            tap(button("لكنود"), "the book لكنود")
+            sleep(1)
+        }
         let text = app.textViews.firstMatch
         if tap(text, "quote text") {
             text.typeText("نص اقتباس من اختبار الواجهة")
@@ -309,7 +315,7 @@ final class FlowTests: XCTestCase {
         sleep(1)
         mark("fab-hold")
         let plus = app.buttons["إضافة للدفتر"].firstMatch
-        if plus.waitForExistence(timeout: 4) { plus.press(forDuration: 0.35) } else { XCTFail("no + in the notebook") }
+        if plus.waitForExistence(timeout: 4) { plus.press(forDuration: 0.6) } else { XCTFail("no + in the notebook") }
         sleep(2)
         shot("ui54-fab-hold-form")
     }

@@ -53,6 +53,8 @@ struct RootView: View {
                 }
             }
         }
+        // the web's soft change of tab (animMain('fade')): a short cross-fade, not a cut
+        .animation(.easeInOut(duration: 0.18), value: router.tab)
         // a new language: every page is drawn again in it
         .id(lang.english)
         .safeAreaInset(edge: .bottom, spacing: 0) { TabBar().id(lang.english) }
