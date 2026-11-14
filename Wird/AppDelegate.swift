@@ -1,5 +1,6 @@
 import UIKit
 import UserNotifications
+import AVFoundation
 
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -7,6 +8,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         UNUserNotificationCenter.current().delegate = self
         JFont.register()
         NewChapters.register()
+        // the phone's voices, read once in the background, so reading aloud starts without a wait
+        DispatchQueue.global(qos: .utility).async { _ = AVSpeechSynthesisVoice.speechVoices() }
         // simulator pictures: -JaleesLang en shows the English interface; other checks run in Arabic
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-JaleesLang"), i + 1 < args.count { Lang.set(english: args[i + 1] == "en") }

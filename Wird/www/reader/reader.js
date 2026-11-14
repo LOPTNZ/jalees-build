@@ -119,7 +119,11 @@
   /* ---------- building a chapter ---------- */
   function secHTML(ch) {
     var h = '';
-    if (!P.hideHead) h += '<header class="ch">' + (ch.label ? '<div class="n">' + esc(ch.label) + '</div>' : '') + (ch.title ? '<div class="t">' + esc(ch.title) + '</div>' : '') + '</header>';
+    /* an English chapter (its title and first lines in Latin letters) gets an English heading */
+    var label = ch.label;
+    var latin = label && /^الفصل\s+/.test(label) && !/[؀-ۿ]/.test((ch.title || '') + ' ' + (ch.paras[0] || '') + ' ' + (ch.paras[1] || ''));
+    if (latin) label = label.replace(/^الفصل\s+/, 'Chapter ');
+    if (!P.hideHead) h += '<header class="ch' + (latin ? ' lt' : '') + '">' + (label ? '<div class="n">' + esc(label) + '</div>' : '') + (ch.title ? '<div class="t">' + esc(ch.title) + '</div>' : '') + '</header>';
     else h += '<div class="ch-gap"></div>';
     h += '<article class="body">';
     for (var i = 0; i < ch.paras.length; i++) {
@@ -526,14 +530,22 @@
     if (started) { r.setEnd(el, el.childNodes.length); return r; }
     return null;
   }
+  /* WebKit can leave a removed highlight painted: the paragraph that had it is drawn again */
+  var ttsEl = null;
   function ttsUnmark() {
     if (window.CSS && CSS.highlights) CSS.highlights.delete('tts');
+    if (ttsEl) {
+      var was = ttsEl; ttsEl = null;
+      was.classList.add('tts-rp');
+      requestAnimationFrame(function () { requestAnimationFrame(function () { was.classList.remove('tts-rp'); }); });
+    }
     var old = document.querySelectorAll('.tts-p'); for (var i = 0; i < old.length; i++) old[i].classList.remove('tts-p');
   }
   JR.ttsMark = function (id, p, s, e) {
     var sec = secById(id); if (!sec) return 0;
     var el = sec.paras[p]; if (!el) return 0;
     ttsUnmark();
+    ttsEl = el;
     var r = null; try { r = rangeAt(el, s, e); } catch (x) { r = null; }
     if (r && window.CSS && CSS.highlights && window.Highlight) CSS.highlights.set('tts', new Highlight(r));
     else el.classList.add('tts-p');

@@ -75,22 +75,31 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
     }
     /// the chosen phone voice for each language family ("ar", "en", …); empty means the phone's best voice for it
     func voiceID(for lang: String) -> String { DB.shared.get("tts.voice." + lang) ?? "" }
-    func setVoice(_ id: String, for lang: String) { DB.shared.set("tts.voice." + lang, id); if playing && player == nil { skipSame() }; onChange?() }
+    func setVoice(_ id: String, for lang: String) { DB.shared.set("tts.voice." + lang, id); chosen = [:]; if playing && player == nil { skipSame() }; onChange?() }
 
     func setEngine(_ e: GeminiVoice.Engine) { GeminiVoice.engine = e; restartChunks() }
     func setGeminiVoice(_ v: String) { GeminiVoice.voice = v; restartChunks() }
 
-    /// Voices for a language family, the better ones first.
+    /// Voices for a language family, the better ones first. The phone's list is read once: reading it can take a
+    /// long moment, and every sentence asks for its voice.
+    private static var voiceLists: [String: [AVSpeechSynthesisVoice]] = [:]
     static func voices(_ lang: String) -> [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(lang) }
+        if let v = voiceLists[lang] { return v }
+        let v = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(lang) }
             .sorted { ($0.quality.rawValue, $0.name) > ($1.quality.rawValue, $1.name) }
+        voiceLists[lang] = v
+        return v
     }
 
+    private var chosen: [String: AVSpeechSynthesisVoice] = [:]
     private func voice(for text: String) -> AVSpeechSynthesisVoice? {
         let lang = Self.isArabic(text) ? "ar" : "en"
+        if let v = chosen[lang] { return v }
         let id = voiceID(for: lang)
-        if !id.isEmpty, let v = AVSpeechSynthesisVoice(identifier: id) { return v }
-        return Self.voices(lang).first ?? AVSpeechSynthesisVoice(language: lang == "ar" ? "ar-SA" : "en-US")
+        let v = (!id.isEmpty ? AVSpeechSynthesisVoice(identifier: id) : nil)
+            ?? Self.voices(lang).first ?? AVSpeechSynthesisVoice(language: lang == "ar" ? "ar-SA" : "en-US")
+        chosen[lang] = v
+        return v
     }
 
     static func isArabic(_ s: String) -> Bool { s.range(of: "[\\u0600-\\u06FF]", options: .regularExpression) != nil }

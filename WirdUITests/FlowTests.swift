@@ -210,8 +210,11 @@ final class FlowTests: XCTestCase {
         app.launchArguments += ["-JaleesRoute", "page"]
         app.launch()
         sleep(5)
-        let go = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "ابدأ القراءة", "تابع القراءة")).firstMatch
-        guard tap(go, "open the reader", timeout: 10) else { shot("ui40-no-reader"); return }
+        // the visible one: the library tab underneath has the same book's button
+        let all = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "ابدأ القراءة", "تابع القراءة"))
+        _ = all.firstMatch.waitForExistence(timeout: 10)
+        guard let go = all.allElementsBoundByIndex.first(where: { $0.isHittable }) else { XCTFail("no visible read button"); shot("ui40-no-reader"); return }
+        go.tap()
         sleep(4)
         shot("ui40-reader-open")
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 6), "the reader's page is not there")
