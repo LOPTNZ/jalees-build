@@ -67,7 +67,7 @@ private final class GateController: UIViewController, WKNavigationDelegate {
         navigationItem.leftBarButtonItem = UIBarButtonItem(title: mode == .check ? "إلغاء" : "تم", style: mode == .check ? .plain : .done, target: self, action: #selector(close))
         if mode == .check {
             let l = UILabel()
-            l.text = "الموقع يتحقق إنك مو روبوت. إذا طلع لك تحقق حلّه، وأكمل لحالي."
+            l.text = "الموقع يتحقق إنك مو روبوت. إذا طلع لك تحقق حلّه، وأكمل لحالي.".tr
             l.numberOfLines = 0
             l.font = .systemFont(ofSize: 13)
             l.textColor = .secondaryLabel

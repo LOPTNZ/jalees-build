@@ -190,9 +190,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
             ribbon.widthAnchor.constraint(equalToConstant: 18), ribbon.heightAnchor.constraint(equalToConstant: 22)
         ])
         closeButton.button.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        closeButton.button.accessibilityLabel = "إغلاق"
+        closeButton.button.accessibilityLabel = "إغلاق".tr
         menuButton.button.addTarget(self, action: #selector(menuTapped), for: .touchUpInside)
-        menuButton.button.accessibilityLabel = "القائمة"
+        menuButton.button.accessibilityLabel = "القائمة".tr
     }
 
     // MARK: talking to the page and to the library
@@ -319,6 +319,14 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         switch t {
         case "ready":
             pageReady = true
+            if Lang.english {
+                // the page's own words in English (reader.js T())
+                var d: [String: Any] = ["__en": true]
+                for k in ["ملاحظة", "عدد الكلمات {}", "التعليقات", "الفصل التالي", "وصلت لآخر فصل منشور", "نظّفنا {} من إضافات الموقع",
+                          "حاول مرة ثانية", "قارئ", "تعليقات أقدم ({})", "افتحها في الموقع بأسماء أصحابها", "أجيب التعليقات",
+                          "ما فيه تعليقات على هالفصل.", "حرّك دليل السطر", "أجيب الأقدم"] { d[k] = k.tr }
+                call("JR.lang(d)", ["d": d])
+            }
             applyTheme()
             show(index, place: startPlace)
             startPlace = nil
@@ -486,14 +494,14 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         guard chapters.indices.contains(index) else { return }
         let ch = chapters[index]
         if paged, lastPos["pages"] != nil {
-            topPill.text = "الصفحة \(NovelBridge.num(lastPos["page"]) + 1) من \(NovelBridge.num(lastPos["pages"]))"
+            topPill.text = "الصفحة \(NovelBridge.num(lastPos["page"]) + 1) من \(NovelBridge.num(lastPos["pages"]))".tr
         } else {
             topPill.text = !known ? ch.label : (pagesLeft == 0 ? "الصفحة الأخيرة في الفصل" : "الصفحات المتبقية في الفصل: \(pagesLeft)")
         }
         if ch.numbered, let last = chapters.last(where: { $0.numbered }) {
-            bottomPill.text = "\(ch.num) من \(last.num)"
+            bottomPill.text = "\(ch.num) من \(last.num)".tr
         } else {
-            bottomPill.text = "\(index + 1) من \(chapters.count)"
+            bottomPill.text = "\(index + 1) من \(chapters.count)".tr
         }
     }
 
@@ -603,16 +611,16 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
 
     func selectionMenu() -> UIMenu {
         let color = MarkBar.colors.first { $0.id == lastColor } ?? MarkBar.colors[0]
-        let hl = UIAction(title: "تظليل", image: UIImage(systemName: "highlighter")?.withTintColor(color.ui, renderingMode: .alwaysOriginal)) { [weak self] _ in self?.fromSelection("highlight") }
-        let note = UIAction(title: "ملاحظة", image: UIImage(systemName: "note.text")) { [weak self] _ in self?.fromSelection("note") }
-        let nb = UIMenu(title: "للدفتر", image: UIImage(systemName: "book.closed"), children: [
-            UIAction(title: "اقتباس", image: UIImage(systemName: "text.quote")) { [weak self] _ in self?.fromSelection("quote") },
-            UIAction(title: "خاطرة", image: UIImage(systemName: "lightbulb")) { [weak self] _ in self?.fromSelection("thought") },
-            UIAction(title: "كلمة", image: UIImage(systemName: "character.book.closed")) { [weak self] _ in self?.fromSelection("word") },
-            UIAction(title: "شخصية", image: UIImage(systemName: "person")) { [weak self] _ in self?.fromSelection("char") },
-            UIAction(title: "معلومة", image: UIImage(systemName: "info.circle")) { [weak self] _ in self?.fromSelection("info") }
+        let hl = UIAction(title: "تظليل".tr, image: UIImage(systemName: "highlighter")?.withTintColor(color.ui, renderingMode: .alwaysOriginal)) { [weak self] _ in self?.fromSelection("highlight") }
+        let note = UIAction(title: "ملاحظة".tr, image: UIImage(systemName: "note.text")) { [weak self] _ in self?.fromSelection("note") }
+        let nb = UIMenu(title: "للدفتر".tr, image: UIImage(systemName: "book.closed"), children: [
+            UIAction(title: "اقتباس".tr, image: UIImage(systemName: "text.quote")) { [weak self] _ in self?.fromSelection("quote") },
+            UIAction(title: "خاطرة".tr, image: UIImage(systemName: "lightbulb")) { [weak self] _ in self?.fromSelection("thought") },
+            UIAction(title: "كلمة".tr, image: UIImage(systemName: "character.book.closed")) { [weak self] _ in self?.fromSelection("word") },
+            UIAction(title: "شخصية".tr, image: UIImage(systemName: "person")) { [weak self] _ in self?.fromSelection("char") },
+            UIAction(title: "معلومة".tr, image: UIImage(systemName: "info.circle")) { [weak self] _ in self?.fromSelection("info") }
         ])
-        let aloud = UIAction(title: "اقرأ من هنا", image: UIImage(systemName: "speaker.wave.2")) { [weak self] _ in
+        let aloud = UIAction(title: "اقرأ من هنا".tr, image: UIImage(systemName: "speaker.wave.2")) { [weak self] _ in
             self?.ask("JR.selection()") { v in
                 guard let self = self, let s = v as? [String: Any], let i = self.chapters.firstIndex(where: { $0.id == NovelBridge.num(s["ch"]) }) else { return }
                 self.call("JR.clearSelection()")
@@ -796,14 +804,14 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         if let ro = role { lines.append(ro) }
         if let d = c["desc"] as? String, !d.isEmpty { lines.append(d) }
         let a = UIAlertController(title: name, message: lines.dropFirst().joined(separator: "\n"), preferredStyle: .actionSheet)
-        a.addAction(UIAlertAction(title: "افتح بطاقتها في دفتري", style: .default) { [weak self] _ in
+        a.addAction(UIAlertAction(title: "افتح بطاقتها في دفتري".tr, style: .default) { [weak self] _ in
             guard let self = self, let b = self.bookID else { return }
             self.closeTapped()
             NotebookNav.shared.show(book: b, kind: "char", character: id)
             Router.shared.openNotebook(book: b, kind: "char")
             NotebookNav.shared.character = id
         })
-        a.addAction(UIAlertAction(title: "تمام", style: .cancel))
+        a.addAction(UIAlertAction(title: "تمام".tr, style: .cancel))
         a.popoverPresentationController?.sourceView = view
         a.popoverPresentationController?.sourceRect = r
         present(a, animated: true)
@@ -856,7 +864,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     }
 
     func sheetHost<V: View>(_ v: V, large: Bool = false) -> UIViewController {
-        let host = UIHostingController(rootView: v.environment(\.layoutDirection, .rightToLeft).environment(\.locale, Locale(identifier: "ar@numbers=latn")))
+        let host = UIHostingController(rootView: v.environment(.layoutDirection, Lang.direction).environment(\.locale, Lang.locale))
         host.overrideUserInterfaceStyle = .dark
         host.modalPresentationStyle = .pageSheet
         if let s = host.sheetPresentationController {
@@ -1052,7 +1060,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
             ])
             b.button.showsMenuAsPrimaryAction = true
             b.button.menu = guideMenu()
-            b.button.accessibilityLabel = "دليل السطر"
+            b.button.accessibilityLabel = "دليل السطر".tr
             guideButton = b
         } else {
             guideButton?.removeFromSuperview()
@@ -1064,13 +1072,13 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     private func guideMenu() -> UIMenu {
         let p = settings.prefs
         let dims: [(String, Double)] = [("مرتفع", 0.82), ("متوسط", 0.62), ("منخفض", 0.4), ("لا شيء", 0)]
-        let dim = UIMenu(title: "تعتيم الخلفية", options: .displayInline, children: dims.map { item in
+        let dim = UIMenu(title: "تعتيم الخلفية".tr, options: .displayInline, children: dims.map { item in
             UIAction(title: item.0, state: abs(p.guideDim - item.1) < 0.05 ? .on : .off) { [weak self] _ in self?.settings.prefs.guideDim = item.1; self?.regGuide() }
         })
-        let lines = UIMenu(title: "ارتفاع الشريط", options: .displayInline, children: [1, 2, 3].map { n in
+        let lines = UIMenu(title: "ارتفاع الشريط".tr, options: .displayInline, children: [1, 2, 3].map { n in
             UIAction(title: n == 1 ? "سطر واحد" : (n == 2 ? "سطرين" : "3 أسطر"), state: p.guideLines == n ? .on : .off) { [weak self] _ in self?.settings.prefs.guideLines = n; self?.regGuide() }
         })
-        let off = UIAction(title: "إيقاف دليل السطر", image: UIImage(systemName: "xmark")) { [weak self] _ in self?.toggleGuide() }
+        let off = UIAction(title: "إيقاف دليل السطر".tr, image: UIImage(systemName: "xmark")) { [weak self] _ in self?.toggleGuide() }
         return UIMenu(children: [dim, lines, off])
     }
 
@@ -1290,7 +1298,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 let f = await Novels.shared.firstMention(self.novel.id, names: ["سالم"])
                 let a = UIAlertController(title: f.map { "أول ذكر لسالم: الفصل \($0.num)" + ($0.sure ? " (أكيد)" : " (من المحفوظ)") } ?? "ما لقيت سالم", message: nil, preferredStyle: .alert)
-                a.addAction(UIAlertAction(title: "تمام", style: .cancel))
+                a.addAction(UIAlertAction(title: "تمام".tr, style: .cancel))
                 self.present(a, animated: true)
             }
         case "tts":

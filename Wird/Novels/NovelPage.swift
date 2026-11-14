@@ -231,8 +231,8 @@ struct NovelPageView: View {
         }
         .background(Color(L.bg).ignoresSafeArea())
         .overlay(alignment: .bottom) { if model.selecting { selectionBar } }
-        .environment(\.layoutDirection, .rightToLeft)
-        .environment(\.locale, Locale(identifier: "ar@numbers=latn"))
+        .environment(.layoutDirection, Lang.direction)
+        .environment(\.locale, Lang.locale)
         .preferredColorScheme(L.dark ? .dark : .light)
         .tint(Color(L.primary))
         .alert(model.note ?? "", isPresented: Binding(get: { model.note != nil }, set: { if !$0 { model.note = nil } })) {
@@ -241,10 +241,10 @@ struct NovelPageView: View {
         .sheet(isPresented: $model.namingColors) { ColorNames(model: model) }
         .sheet(isPresented: $model.rules) {
             NavigationStack { ReplaceRulesView(scope: String(model.novel.id), title: model.novel.title) }
-                .environment(\.layoutDirection, .rightToLeft).preferredColorScheme(L.dark ? .dark : .light)
+                .environment(.layoutDirection, Lang.direction).preferredColorScheme(L.dark ? .dark : .light)
         }
         .sheet(isPresented: $exportEpub) {
-            EpubExportSheet(novel: model.novel).environment(\.look, L).environment(\.layoutDirection, .rightToLeft)
+            EpubExportSheet(novel: model.novel).environment(\.look, L).environment(.layoutDirection, Lang.direction)
                 .presentationDetents([.medium, .large])
         }
     }
@@ -346,7 +346,7 @@ struct NovelPageView: View {
                 }
             }
             .frame(height: 6)
-            .environment(\.layoutDirection, .rightToLeft)
+            .environment(.layoutDirection, Lang.direction)
 
             HStack(spacing: 10) {
                 Button { model.read(nil) } label: {
@@ -710,7 +710,7 @@ struct NovelPageView: View {
     private func dateText(_ ms: Int) -> String {
         let d = Date(timeIntervalSince1970: Double(ms) / 1000)
         let f = DateFormatter()
-        f.locale = Locale(identifier: "ar@numbers=latn")
+        f.locale = Lang.locale
         f.dateFormat = "d MMMM"
         return f.string(from: d)
     }
@@ -839,7 +839,7 @@ struct ColorNames: View {
                 for l in model.labels { if let c = l["c"] as? String { names[c] = (l["name"] as? String) ?? "" } }
             }
         }
-        .environment(\.layoutDirection, .rightToLeft)
+        .environment(.layoutDirection, Lang.direction)
         .preferredColorScheme(L.dark ? .dark : .light)
         .tint(Color(L.primary))
     }

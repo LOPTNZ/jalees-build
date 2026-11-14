@@ -286,8 +286,8 @@ struct SessionScreen: View {
             }
         }
         .foregroundStyle(Color(L.stageInk))
-        .sheet(isPresented: $s.ending) { EndSessionSheet().environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
-        .sheet(item: $note) { r in ItemForm(ref: r).environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
+        .sheet(isPresented: $s.ending) { EndSessionSheet().environment(\.look, L).environment(.layoutDirection, Lang.direction) }
+        .sheet(item: $note) { r in ItemForm(ref: r).environment(\.look, L).environment(.layoutDirection, Lang.direction) }
     }
 
     private func content(_ b: Book) -> some View {
@@ -409,7 +409,7 @@ struct EndSessionSheet: View {
 
     var body: some View {
         if let b = s.book, let t = s.timer {
-            JSheet(title: "إنهاء الجلسة", subtitle: b.title + " · " + Words.fmtMin(s.elapsed / 60_000)) {
+            JSheet(title: "إنهاء الجلسة".tr, subtitle: b.title + " · " + Words.fmtMin(s.elapsed / 60_000)) {
                 if b.series {
                     Picker("المجلد", selection: $vi) {
                         ForEach(b.volumes.indices, id: \.self) { i in Text("المجلد \(i + 1)" + (b.volumes[i].title.isEmpty ? "" : " · " + b.volumes[i].title)).tag(i) }

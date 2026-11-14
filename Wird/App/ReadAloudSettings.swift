@@ -100,7 +100,7 @@ struct ReadAloudSettings: View {
 
     private var resetTime: String {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "ar@numbers=latn")
+        f.locale = Lang.locale
         f.dateFormat = "h:mm a"
         return f.string(from: Date(timeIntervalSince1970: GeminiVoice.nextReset()))
     }

@@ -31,6 +31,7 @@ struct RootView: View {
     @ObservedObject private var present = Present.shared
     @ObservedObject private var session = SessionModel.shared
     @ObservedObject private var backup = BackupImport.shared
+    @ObservedObject private var lang = LangState.shared
     @Environment(\.colorScheme) private var scheme
     /// tabs opened at least once stay alive, so each keeps its place
     @State private var opened: Set<Router.Tab> = [.library]
@@ -53,11 +54,13 @@ struct RootView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { TabBar() }
+        // a new language: every page is drawn again in it
+        .id(lang.english)
+        .safeAreaInset(edge: .bottom, spacing: 0) { TabBar().id(lang.english) }
         .overlay(alignment: .bottom) { VStack(spacing: 10) { ToastView(); if router.group == .novels { SessionChip() } }.padding(.bottom, 92) }
         .overlay { if splash { SplashView { splash = false }.environment(\.look, L) } }
         .fullScreenCover(isPresented: $session.showScreen) {
-            SessionScreen().environment(\.look, L).environment(\.layoutDirection, .rightToLeft).environment(\.locale, Locale(identifier: "ar@numbers=latn")).environment(\.calendar, Calendar.greg)
+            SessionScreen().environment(\.look, L).environment(.layoutDirection, Lang.direction).environment(\.locale, Lang.locale).environment(\.calendar, Calendar.greg)
         }
         .sheet(item: $present.modal) { m in
             Group {
@@ -77,12 +80,12 @@ struct RootView: View {
                 }
             }
             .environment(\.look, L)
-            .environment(\.layoutDirection, .rightToLeft)
-            .environment(\.locale, Locale(identifier: "ar@numbers=latn")).environment(\.calendar, Calendar.greg)
+            .environment(.layoutDirection, Lang.direction)
+            .environment(\.locale, Lang.locale).environment(\.calendar, Calendar.greg)
         }
         .environment(\.look, L)
-        .environment(\.layoutDirection, .rightToLeft)
-        .environment(\.locale, Locale(identifier: "ar@numbers=latn")).environment(\.calendar, Calendar.greg)
+        .environment(.layoutDirection, Lang.direction)
+        .environment(\.locale, Lang.locale).environment(\.calendar, Calendar.greg)
         .tint(Color(L.primary))
         .onAppear {
             appearance.update(systemDark: scheme == .dark)

@@ -370,14 +370,14 @@ struct HistoryTab: View {
         if Calendar.current.isDateInToday(d) { return "اليوم" }
         if Calendar.current.isDateInYesterday(d) { return "أمس" }
         let f = DateFormatter()
-        f.locale = Locale(identifier: "ar@numbers=latn")
+        f.locale = Lang.locale
         f.dateFormat = "d MMMM"
         return f.string(from: d)
     }
 
     private func time(_ t: Double) -> String {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "ar@numbers=latn")
+        f.locale = Lang.locale
         f.dateFormat = "h:mm a"
         return f.string(from: Date(timeIntervalSince1970: t))
     }
@@ -464,7 +464,7 @@ struct UpdatesTab: View {
     private var lastCheck: String {
         guard let t = Double(DB.shared.get("updates.checked") ?? ""), t > 0 else { return "ما فحصت بعد" }
         let f = RelativeDateTimeFormatter()
-        f.locale = Locale(identifier: "ar@numbers=latn")
+        f.locale = Lang.locale
         return "آخر فحص " + f.localizedString(for: Date(timeIntervalSince1970: t), relativeTo: Date())
     }
 
@@ -509,7 +509,7 @@ struct UpdatesTab: View {
         if Calendar.current.isDateInToday(d) { return "اليوم" }
         if Calendar.current.isDateInYesterday(d) { return "أمس" }
         let f = DateFormatter()
-        f.locale = Locale(identifier: "ar@numbers=latn")
+        f.locale = Lang.locale
         f.dateFormat = "d MMMM"
         return f.string(from: d)
     }

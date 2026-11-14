@@ -315,13 +315,13 @@ struct BookFormView: View {
         }
         .sheet(item: $editions) { r in
             EditionsSheet(request: r) { e, keep in Task { await m.apply(e, coverOnly: false, keepCover: keep) } }
-                .environment(\.look, L).environment(\.layoutDirection, .rightToLeft)
+                .environment(\.look, L).environment(.layoutDirection, Lang.direction)
         }
         .sheet(isPresented: $coverSearch) {
             CoverSearchSheet(query: m.b.isbn.isEmpty || !m.b.title.isEmpty ? (m.b.title + " " + m.b.author).trimmingCharacters(in: .whitespaces) : m.b.isbn) { e in
                 Task { await m.apply(e, coverOnly: true, keepCover: false) }
             }
-            .environment(\.look, L).environment(\.layoutDirection, .rightToLeft)
+            .environment(\.look, L).environment(.layoutDirection, Lang.direction)
         }
         .onChange(of: m.askCoverPhoto) { on in
             guard on else { return }
@@ -341,7 +341,7 @@ struct BookFormView: View {
             }
         }
         .sheet(isPresented: $dims) {
-            DimsSheet(model: m).environment(\.look, L).environment(\.layoutDirection, .rightToLeft)
+            DimsSheet(model: m).environment(\.look, L).environment(.layoutDirection, Lang.direction)
         }
         .fullScreenCover(item: $browse) { r in
             BrowserImport(request: r) { data in
@@ -590,11 +590,11 @@ struct BookFormView: View {
         }
         if m.b.status != .want {
             DatePicker("تاريخ البدء", selection: Binding(get: { m.start ?? Date() }, set: { m.start = $0 }), displayedComponents: .date)
-                .font(JFont.body(15)).environment(\.locale, Locale(identifier: "ar@numbers=latn"))
+                .font(JFont.body(15)).environment(\.locale, Lang.locale)
         }
         if m.b.status == .done {
             DatePicker("تاريخ الانتهاء", selection: Binding(get: { m.finish ?? Date() }, set: { m.finish = $0 }), displayedComponents: .date)
-                .font(JFont.body(15)).environment(\.locale, Locale(identifier: "ar@numbers=latn"))
+                .font(JFont.body(15)).environment(\.locale, Lang.locale)
         }
         if m.b.status == .done || m.b.status == .dnf {
             HStack { Text("تقييمك").font(JFont.body(15)); Spacer(); JStars(value: $m.b.rating) }

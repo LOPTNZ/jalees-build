@@ -82,7 +82,7 @@ final class AppLock: ObservableObject {
         if window == nil {
             let w = UIWindow(windowScene: scene)
             w.windowLevel = .alert + 1
-            let host = UIHostingController(rootView: LockView().environment(\.look, Appearance.shared.look).environment(\.layoutDirection, .rightToLeft))
+            let host = UIHostingController(rootView: LockView().environment(\.look, Appearance.shared.look).environment(.layoutDirection, Lang.direction))
             host.view.backgroundColor = .clear
             w.rootViewController = host
             window = w

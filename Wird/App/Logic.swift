@@ -4,10 +4,10 @@ import Foundation
 
 enum Unit: String {
     case page, chapter, min
-    var abbr: String { ["page": "ص", "chapter": "ف", "min": ""][rawValue]! }
-    var name: String { ["page": "الصفحة", "chapter": "الفصل", "min": "الدقيقة"][rawValue]! }
-    var pl: String { ["page": "صفحة", "chapter": "فصل", "min": "دقيقة"][rawValue]! }
-    var plu: String { ["page": "الصفحات", "chapter": "الفصول", "min": "الوقت"][rawValue]! }
+    var abbr: String { (Lang.english ? ["page": "p", "chapter": "ch", "min": ""] : ["page": "ص", "chapter": "ف", "min": ""])[rawValue]! }
+    var name: String { (Lang.english ? ["page": "page", "chapter": "chapter", "min": "minute"] : ["page": "الصفحة", "chapter": "الفصل", "min": "الدقيقة"])[rawValue]! }
+    var pl: String { (Lang.english ? ["page": "pages", "chapter": "chapters", "min": "minutes"] : ["page": "صفحة", "chapter": "فصل", "min": "دقيقة"])[rawValue]! }
+    var plu: String { (Lang.english ? ["page": "pages", "chapter": "chapters", "min": "time"] : ["page": "الصفحات", "chapter": "الفصول", "min": "الوقت"])[rawValue]! }
     var time: Bool { self == .min }
     /// plural forms for cnt: one, two, 3–10, 11+
     var forms: [String] {
@@ -22,9 +22,15 @@ enum Unit: String {
 /// The words that change between reading and listening.
 struct Verbs {
     let doing, now, start, cont, again, time, sess, act: String
-    static let read = Verbs(doing: "تقرأ", now: "تقرأ الآن", start: "ابدأ القراءة", cont: "تابع القراءة", again: "ابدأ قراءة جديدة",
+    static var read: Verbs { Lang.english ? readEn : readAr }
+    static var listen: Verbs { Lang.english ? listenEn : listenAr }
+    static let readEn = Verbs(doing: "reading", now: "Reading now", start: "Start reading", cont: "Continue reading", again: "Start a new read",
+                              time: "Reading time", sess: "Reading session", act: "reading")
+    static let listenEn = Verbs(doing: "listening", now: "Listening now", start: "Start listening", cont: "Continue listening", again: "Start a new listen",
+                                time: "Listening time", sess: "Listening session", act: "listening")
+    static let readAr = Verbs(doing: "تقرأ", now: "تقرأ الآن", start: "ابدأ القراءة", cont: "تابع القراءة", again: "ابدأ قراءة جديدة",
                             time: "وقت القراءة", sess: "جلسة قراءة", act: "القراءة")
-    static let listen = Verbs(doing: "تستمع", now: "تستمع الآن", start: "ابدأ الاستماع", cont: "تابع الاستماع", again: "ابدأ استماعًا جديدًا",
+    static let listenAr = Verbs(doing: "تستمع", now: "تستمع الآن", start: "ابدأ الاستماع", cont: "تابع الاستماع", again: "ابدأ استماعًا جديدًا",
                               time: "وقت الاستماع", sess: "جلسة استماع", act: "الاستماع")
 }
 
@@ -37,11 +43,30 @@ enum Words {
     static let sessions = ["جلسة واحدة", "جلستان", "جلسات", "جلسة"]
     static let vols = ["مجلد واحد", "مجلدان", "مجلدات", "مجلدًا"]
 
-    static func ord(_ n: Int) -> String { n >= 1 && n <= 10 ? ordinals[n - 1] : "رقم \(n)" }
+    static let monthsEn = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    static let ordinalsEn = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"]
+
+    static func ord(_ n: Int) -> String {
+        if Lang.english { return n >= 1 && n <= 10 ? ordinalsEn[n - 1] : "number \(n)" }
+        return n >= 1 && n <= 10 ? ordinals[n - 1] : "رقم \(n)"
+    }
+
+    /// The English nouns for the Arabic counting forms (by their 11+ form).
+    static let nounsEn: [String: (String, String)] = [
+        "جلسة": ("session", "sessions"), "دقيقة": ("minute", "minutes"), "صفحة": ("page", "pages"),
+        "فصلًا ما قرأته": ("unread chapter", "unread chapters"), "فصلًا": ("chapter", "chapters"), "كتابًا": ("book", "books"),
+        "كلمة": ("word", "words"), "مجلدًا": ("volume", "volumes"), "مرة": ("time", "times"), "نتيجة": ("result", "results"),
+        "يومًا": ("day", "days")
+    ]
 
     /// Arabic counting: 0 → "0 كتاب", 1 → "كتاب واحد", 2 → "كتابان", 3–10 → "3 كتب", 11+ → "11 كتابًا".
     static func cnt(_ n: Double, _ f: [String]) -> String {
         let n = Int(n.rounded())
+        if Lang.english {
+            let w = f.count > 3 ? nounsEn[f[3]] : nil
+            let one = w?.0 ?? f[0].tr, many = w?.1 ?? (f.count > 2 ? f[2] : f[0]).tr
+            return "\(n) " + (n == 1 ? one : many)
+        }
         if n == 0 { return "0 " + f[3] }
         if n == 1 { return f[0] }
         if n == 2 { return f[1] }
@@ -50,10 +75,12 @@ enum Words {
     }
 
     static func fmtMin(_ m: Double) -> String {
-        if m > 0 && m < 1 { return "أقل من دقيقة" }
+        if m > 0 && m < 1 { return Lang.english ? "under a minute" : "أقل من دقيقة" }
         let m = Int(m.rounded())
-        if m < 60 { return "\(m) د" }
+        let en = Lang.english
+        if m < 60 { return en ? "\(m) min" : "\(m) د" }
         let h = m / 60, r = m % 60
+        if en { return r > 0 ? "\(h) h \(r) min" : "\(h) h" }
         return r > 0 ? "\(h) س \(r) د" : "\(h) س"
     }
 
@@ -67,7 +94,9 @@ enum Words {
         guard let ms = ms, ms > 0 else { return "" }
         let c = Calendar.greg.dateComponents([.day, .month, .year], from: Millis.date(ms))
         let thisYear = Calendar.greg.component(.year, from: Date())
-        return "\(c.day ?? 1) \(months[(c.month ?? 1) - 1])" + (year || c.year != thisYear ? " \(c.year ?? thisYear)" : "")
+        let withYear = year || c.year != thisYear
+        if Lang.english { return "\(monthsEn[(c.month ?? 1) - 1]) \(c.day ?? 1)" + (withYear ? ", \(c.year ?? thisYear)" : "") }
+        return "\(c.day ?? 1) \(months[(c.month ?? 1) - 1])" + (withYear ? " \(c.year ?? thisYear)" : "")
     }
 
     static func n0(_ x: Double) -> String {

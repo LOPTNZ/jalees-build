@@ -172,7 +172,7 @@ enum Comments {
         f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS'Z'"
         guard let d = f.date(from: s) else { return "" }
         let r = RelativeDateTimeFormatter()
-        r.locale = Locale(identifier: "ar@numbers=latn")
+        r.locale = Lang.locale
         r.unitsStyle = .full
         return r.localizedString(for: d, relativeTo: Date())
     }

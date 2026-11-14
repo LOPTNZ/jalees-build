@@ -7,6 +7,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         UNUserNotificationCenter.current().delegate = self
         JFont.register()
         NewChapters.register()
+        // simulator pictures: -JaleesLang en shows the English interface; other checks run in Arabic
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-JaleesLang"), i + 1 < args.count { Lang.set(english: args[i + 1] == "en") }
+        else if args.contains("-JaleesRoute") { Lang.set(english: false) }
         return true
     }
 

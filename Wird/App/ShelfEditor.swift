@@ -216,7 +216,7 @@ struct ShelfEditBar: View {
                 Button { style = true } label: { Label("الشكل", systemImage: "paintpalette") }.buttonStyle(JButtonStyle(look: L, small: true))
             }
         }
-        .sheet(isPresented: $style) { ShelfStyleSheet().presentationDetents([.medium, .large]).environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
+        .sheet(isPresented: $style) { ShelfStyleSheet().presentationDetents([.medium, .large]).environment(\.look, L).environment(.layoutDirection, Lang.direction) }
     }
 }
 

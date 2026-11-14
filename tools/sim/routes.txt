@@ -1,5 +1,13 @@
 # name  seconds  launch arguments
 reader-tts 18 -JaleesRoute reader-tts
 reader-menu 10 -JaleesRoute reader-menu
-page 10 -JaleesRoute page
 settings 8 -JaleesRoute settings
+en-library 8 -JaleesLang en -JaleesRoute tab-library
+en-notebook 8 -JaleesLang en -JaleesRoute tab-notebook
+en-progress 8 -JaleesLang en -JaleesRoute tab-progress
+en-settings 8 -JaleesLang en -JaleesRoute tab-settings
+en-page 10 -JaleesLang en -JaleesRoute page
+en-browse 10 -JaleesLang en -JaleesRoute tab-browse
+en-updates 8 -JaleesLang en -JaleesRoute tab-updates
+en-reader-menu 10 -JaleesLang en -JaleesRoute reader-menu
+en-form 8 -JaleesLang en -JaleesRoute form

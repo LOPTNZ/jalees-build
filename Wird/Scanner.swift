@@ -45,7 +45,7 @@ final class BarcodeScanner: NSObject, DataScannerViewControllerDelegate, UIAdapt
 
     private func addChrome(to vc: DataScannerViewController) {
         var cfg = UIButton.Configuration.filled()
-        cfg.title = "إلغاء"
+        cfg.title = "إلغاء".tr
         cfg.baseBackgroundColor = UIColor.black.withAlphaComponent(0.5)
         cfg.baseForegroundColor = .white
         cfg.cornerStyle = .capsule
@@ -78,12 +78,12 @@ final class BarcodeScanner: NSObject, DataScannerViewControllerDelegate, UIAdapt
             return
         }
         // the running count and «إنهاء», under the hint
-        counter.text = "ما مسحت شي بعد"
+        counter.text = "ما مسحت شي بعد".tr
         counter.textColor = .white
         counter.font = .systemFont(ofSize: 16, weight: .bold)
         counter.textAlignment = .center
         var fc = UIButton.Configuration.filled()
-        fc.title = "إنهاء"
+        fc.title = "إنهاء".tr
         fc.baseBackgroundColor = UIColor(red: 0.36, green: 0.76, blue: 0.68, alpha: 1)
         fc.baseForegroundColor = UIColor(red: 0.03, green: 0.13, blue: 0.11, alpha: 1)
         fc.cornerStyle = .capsule
@@ -132,7 +132,7 @@ final class BarcodeScanner: NSObject, DataScannerViewControllerDelegate, UIAdapt
                 if codes.contains(value) { continue }
                 codes.append(value)
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                counter.text = "مسحت " + countText(codes.count)
+                counter.text = "مسحت ".tr + countText(codes.count)
                 finishButton?.isEnabled = true
                 UIView.animate(withDuration: 0.12, animations: { self.counter.transform = CGAffineTransform(scaleX: 1.15, y: 1.15) }) { _ in
                     UIView.animate(withDuration: 0.2) { self.counter.transform = .identity }

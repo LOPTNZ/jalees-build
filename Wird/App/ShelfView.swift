@@ -147,9 +147,9 @@ struct ShelfBoard: View {
         .padding(.top, 10)
         .background(LinearGradient(colors: theme.wall, startPoint: .top, endPoint: .bottom))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .environment(\.layoutDirection, .rightToLeft)
+        .environment(.layoutDirection, Lang.direction)
         .sheet(item: Binding(get: { editor.picked.map { IDBox(id: $0) } }, set: { editor.picked = $0?.id })) { x in
-            ShelfItemSheet(bookID: x.id).presentationDetents([.medium]).environment(\.look, L).environment(\.layoutDirection, .rightToLeft)
+            ShelfItemSheet(bookID: x.id).presentationDetents([.medium]).environment(\.look, L).environment(.layoutDirection, Lang.direction)
         }
     }
 

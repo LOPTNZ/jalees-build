@@ -628,7 +628,7 @@ final class ReadAloudBar: UIVisualEffectView {
         NSLayoutConstraint.activate([spinner.centerXAnchor.constraint(equalTo: play.centerXAnchor), spinner.centerYAnchor.constraint(equalTo: play.centerYAnchor)])
         options.setImage(UIImage(systemName: "ellipsis.circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)), for: .normal)
         options.tintColor = .white
-        options.accessibilityLabel = "خيارات القراءة الصوتية"
+        options.accessibilityLabel = "خيارات القراءة الصوتية".tr
         options.showsMenuAsPrimaryAction = true
         options.widthAnchor.constraint(equalToConstant: 44).isActive = true
         caption.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
@@ -690,27 +690,27 @@ final class ReadAloudBar: UIVisualEffectView {
 
     private func menu() -> UIMenu {
         let a = ReadAloud.shared
-        let speeds = UIMenu(title: "السرعة", image: UIImage(systemName: "speedometer"), options: .singleSelection, children: ReadAloud.speeds.map { s in
+        let speeds = UIMenu(title: "السرعة".tr, image: UIImage(systemName: "speedometer"), options: .singleSelection, children: ReadAloud.speeds.map { s in
             UIAction(title: Self.speedLabel(s), state: a.speed == s ? .on : .off) { _ in a.speed = s }
         })
         func voiceMenu(_ lang: String, _ title: String) -> UIMenu {
             let cur = a.voiceID(for: lang)
-            var items: [UIMenuElement] = [UIAction(title: "الأفضل في الجوال", state: cur.isEmpty ? .on : .off) { _ in a.setVoice("", for: lang) }]
+            var items: [UIMenuElement] = [UIAction(title: "الأفضل في الجوال".tr, state: cur.isEmpty ? .on : .off) { _ in a.setVoice("", for: lang) }]
             items += ReadAloud.voices(lang).prefix(24).map { v in
                 let q = v.quality == .premium ? " · ممتاز" : (v.quality == .enhanced ? " · محسّن" : "")
                 return UIAction(title: v.name + q, subtitle: v.language, state: cur == v.identifier ? .on : .off) { _ in a.setVoice(v.identifier, for: lang) }
             }
             return UIMenu(title: title, image: UIImage(systemName: "person.wave.2"), options: .singleSelection, children: items)
         }
-        let sleep = UIMenu(title: "مؤقت النوم", image: UIImage(systemName: "moon.zzz"), options: .singleSelection, children: [
-            UIAction(title: "بدون", state: a.sleepEnd == nil && !a.sleepAtChapterEnd ? .on : .off) { _ in a.sleep(minutes: nil) },
-            UIAction(title: "آخر الفصل", state: a.sleepAtChapterEnd ? .on : .off) { _ in a.sleep(minutes: 0) }
-        ] + [15, 30, 45, 60].map { m in UIAction(title: "\(m) دقيقة") { _ in a.sleep(minutes: m) } })
+        let sleep = UIMenu(title: "مؤقت النوم".tr, image: UIImage(systemName: "moon.zzz"), options: .singleSelection, children: [
+            UIAction(title: "بدون".tr, state: a.sleepEnd == nil && !a.sleepAtChapterEnd ? .on : .off) { _ in a.sleep(minutes: nil) },
+            UIAction(title: "آخر الفصل".tr, state: a.sleepAtChapterEnd ? .on : .off) { _ in a.sleep(minutes: 0) }
+        ] + [15, 30, 45, 60].map { m in UIAction(title: "\(m) دقيقة".tr) { _ in a.sleep(minutes: m) } })
 
         var top: [UIMenuElement] = []
         if GeminiVoice.hasKey {
             let eng = GeminiVoice.engine
-            top.append(UIMenu(title: "القارئ", subtitle: eng.title, image: UIImage(systemName: "waveform"), options: .singleSelection,
+            top.append(UIMenu(title: "القارئ".tr, subtitle: eng.title, image: UIImage(systemName: "waveform"), options: .singleSelection,
                               children: GeminiVoice.Engine.allCases.map { e in
                                   UIAction(title: e.title, state: eng == e ? .on : .off) { _ in a.setEngine(e) }
                               }))
@@ -721,15 +721,15 @@ final class ReadAloudBar: UIVisualEffectView {
                         UIAction(title: v.id, subtitle: v.tone, state: cur == v.id ? .on : .off) { _ in a.setGeminiVoice(v.id) }
                     })
                 }
-                top.append(UIMenu(title: "صوت Gemini", subtitle: cur, image: UIImage(systemName: "person.wave.2.fill"), options: .singleSelection, children: [group(true), group(false)]))
+                top.append(UIMenu(title: "صوت Gemini".tr, subtitle: cur, image: UIImage(systemName: "person.wave.2.fill"), options: .singleSelection, children: [group(true), group(false)]))
             }
         } else {
-            top.append(UIAction(title: "لقراءة عربية دقيقة: أضف مفتاح Gemini المجاني من الإعدادات ← القراءة الصوتية", image: UIImage(systemName: "sparkles"), attributes: .disabled) { _ in })
+            top.append(UIAction(title: "لقراءة عربية دقيقة: أضف مفتاح Gemini المجاني من الإعدادات ← القراءة الصوتية".tr, image: UIImage(systemName: "sparkles"), attributes: .disabled) { _ in })
         }
-        let phone = UIMenu(title: "صوت الجوال", image: UIImage(systemName: "iphone"), children: [
+        let phone = UIMenu(title: "صوت الجوال".tr, image: UIImage(systemName: "iphone"), children: [
             voiceMenu("ar", "الصوت العربي"), voiceMenu("en", "الصوت الإنجليزي"),
             UIMenu(title: "", options: .displayInline, children: [
-                UIAction(title: "أصوات أحسن: الإعدادات ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات", attributes: .disabled) { _ in }
+                UIAction(title: "أصوات أحسن: الإعدادات ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات".tr, attributes: .disabled) { _ in }
             ])
         ])
         return UIMenu(title: "", children: [UIMenu(title: "", options: .displayInline, children: top), speeds, phone, sleep])

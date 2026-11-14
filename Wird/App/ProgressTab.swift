@@ -170,7 +170,7 @@ private struct GoalStepper: View {
             key("+", 1, "زد")
         }
         .frame(maxWidth: 280)
-        .environment(\.layoutDirection, .rightToLeft)
+        .environment(.layoutDirection, Lang.direction)
     }
 
     private func key(_ t: String, _ d: Int, _ a: String) -> some View {

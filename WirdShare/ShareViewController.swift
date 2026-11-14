@@ -21,23 +21,23 @@ final class ShareViewController: UIViewController {
         card.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(card)
 
-        titleLabel.text = "أضف لجليس"
+        titleLabel.text = "أضف لجليس".tr
         titleLabel.font = .systemFont(ofSize: 19, weight: .bold)
         titleLabel.textColor = .white
         titleLabel.textAlignment = .right
-        linkLabel.text = "أدوّر على الرابط…"
+        linkLabel.text = "أدوّر على الرابط…".tr
         linkLabel.font = .systemFont(ofSize: 13)
         linkLabel.textColor = UIColor.white.withAlphaComponent(0.7)
         linkLabel.numberOfLines = 3
         linkLabel.textAlignment = .right
-        add.setTitle("أضف الرواية", for: .normal)
+        add.setTitle("أضف الرواية".tr, for: .normal)
         add.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
         add.backgroundColor = UIColor(red: 0.36, green: 0.76, blue: 0.68, alpha: 1)
         add.setTitleColor(UIColor(red: 0.03, green: 0.13, blue: 0.11, alpha: 1), for: .normal)
         add.layer.cornerRadius = 14
         add.isEnabled = false
         add.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
-        cancel.setTitle("إلغاء", for: .normal)
+        cancel.setTitle("إلغاء".tr, for: .normal)
         cancel.tintColor = .white
         cancel.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
 
@@ -77,7 +77,7 @@ final class ShareViewController: UIViewController {
 
     private func found(_ s: String?) {
         guard let s = s, s.hasPrefix("http") else {
-            linkLabel.text = "ما لقيت رابط في اللي شاركته"
+            linkLabel.text = "ما لقيت رابط في اللي شاركته".tr
             return
         }
         link = s
@@ -93,8 +93,8 @@ final class ShareViewController: UIViewController {
         c.host = "add"
         c.queryItems = [URLQueryItem(name: "url", value: l)]
         if let u = c.url { openApp(u) }
-        titleLabel.text = "تم"
-        linkLabel.text = "افتح جليس وتلقى الرواية انضافت."
+        titleLabel.text = "تم".tr
+        linkLabel.text = "افتح جليس وتلقى الرواية انضافت.".tr
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.extensionContext?.completeRequest(returningItems: nil) }
     }
 

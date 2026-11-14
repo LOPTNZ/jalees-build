@@ -66,7 +66,7 @@ struct LibraryView: View {
                 }
             }
             .environment(\.look, L)
-            .environment(\.layoutDirection, .rightToLeft)
+            .environment(.layoutDirection, Lang.direction)
             .presentationDetents(s.id == "options" ? [.large] : [.medium, .large])
         }
     }

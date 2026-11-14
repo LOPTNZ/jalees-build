@@ -19,7 +19,13 @@
   }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function num(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
-  function minutesLabel(m) { return m <= 1 ? 'دقيقة' : m === 2 ? 'دقيقتان' : m <= 10 ? m + ' دقائق' : m + ' دقيقة'; }
+  /* the English interface: the app hands over its words (JR.lang) */
+  var TR = {};
+  function T(s, v) { var t = TR[s] || s; return v == null ? t : t.replace('{}', v); }
+  function minutesLabel(m) {
+    if (TR.__en) return m <= 1 ? '1 minute' : m + ' minutes';
+    return m <= 1 ? 'دقيقة' : m === 2 ? 'دقيقتان' : m <= 10 ? m + ' دقائق' : m + ' دقيقة';
+  }
   function plain(s) { return String(s || '').replace(/ـ/g, ''); }
   function paged() { return P.mode === 'paged'; }
   function safeTop() {
@@ -73,7 +79,7 @@
     for (var z = 0; z < active.length; z++) out += '</mark>';
     /* notes sit in the margin beside the paragraph, like Apple Books */
     var ids = Object.keys(notes);
-    if (ids.length) out = ids.map(function (id, j) { return '<span class="nt" data-m="' + esc(id) + '" style="top:' + (j * 1.1) + 'em" aria-label="ملاحظة"></span>'; }).join('') + out;
+    if (ids.length) out = ids.map(function (id, j) { return '<span class="nt" data-m="' + esc(id) + '" style="top:' + (j * 1.1) + 'em" aria-label="' + T('ملاحظة') + '"></span>'; }).join('') + out;
     return out;
   }
   function paintPara(sec, i) {
@@ -124,16 +130,16 @@
     }
     h += '</article><footer class="end"><div class="rule"></div>';
     var meta = [];
-    if (ch.words) meta.push('عدد الكلمات ' + num(ch.words));
+    if (ch.words) meta.push(T('عدد الكلمات {}', num(ch.words)));
     if (ch.minutes) meta.push(minutesLabel(ch.minutes));
     if (meta.length) h += '<div class="meta">' + meta.join(' · ') + '</div>';
-    if (P.comments && ch.comments != null) h += '<button class="go cm" data-act="comments" data-id="' + ch.id + '"><span class="v">التعليقات' + (ch.comments ? ' (' + ch.comments + ')' : '') + '</span></button><div class="cms" data-cms="' + ch.id + '"></div>';
+    if (P.comments && ch.comments != null) h += '<button class="go cm" data-act="comments" data-id="' + ch.id + '"><span class="v">' + T('التعليقات') + (ch.comments ? ' (' + ch.comments + ')' : '') + '</span></button><div class="cms" data-cms="' + ch.id + '"></div>';
     if (P.mode !== 'continuous') {
-      if (ch.next) h += '<button class="go" data-act="next"><span class="k">الفصل التالي</span><span class="v">' + esc(ch.next) + '</span></button>';
-      else h += '<div class="meta last">وصلت لآخر فصل منشور</div>';
+      if (ch.next) h += '<button class="go" data-act="next"><span class="k">' + T('الفصل التالي') + '</span><span class="v">' + esc(ch.next) + '</span></button>';
+      else h += '<div class="meta last">' + T('وصلت لآخر فصل منشور') + '</div>';
       if (ch.prev) h += '<button class="go prev" data-act="prev"><span class="v">' + esc(ch.prev) + '</span></button>';
-    } else if (!ch.next) h += '<div class="meta last">وصلت لآخر فصل منشور</div>';
-    if (ch.removed) h += '<div class="clean">نظّفنا ' + esc(ch.removed) + ' من إضافات الموقع</div>';
+    } else if (!ch.next) h += '<div class="meta last">' + T('وصلت لآخر فصل منشور') + '</div>';
+    if (ch.removed) h += '<div class="clean">' + T('نظّفنا {} من إضافات الموقع', esc(ch.removed)) + '</div>';
     h += '</footer>';
     return h;
   }
@@ -237,6 +243,7 @@
   function keepPlace(fn) { var w = secs.length ? where() : null; fn(); if (w) { goTo(w); report(true); } }
 
   var JR = window.JR = {};
+  JR.lang = function (d) { TR = d || {}; };
 
   /* p: colours, fonts and sizes (see ReaderTheme.css) plus mode, anim, kashida, hideHead, comments */
   JR.setPrefs = function (p) {
@@ -300,7 +307,7 @@
     secs = []; marks = {};
     page.innerHTML = '<div class="state">' + (state === 'loading' ? '<div class="spin"></div>' : '') +
       (title ? '<b>' + esc(title) + '</b>' : '') + (detail ? '<div>' + esc(detail) + '</div>' : '') +
-      (state === 'error' ? '<button class="go" data-act="retry" style="max-width:260px"><span class="v">حاول مرة ثانية</span></button>' : '') + '</div>';
+      (state === 'error' ? '<button class="go" data-act="retry" style="max-width:260px"><span class="v">' + T('حاول مرة ثانية') + '</span></button>' : '') + '</div>';
     window.scrollTo(0, 0);
   };
   JR.where = function () { return where(); };
@@ -407,20 +414,20 @@
   /* ---------- comments at the end of a chapter ---------- */
   function cmHTML(list) {
     return list.map(function (c) {
-      return '<div class="cm' + (c.spoiler ? ' spoil' : '') + '"><div class="cm-h"><b>' + esc(c.who || 'قارئ') + '</b><small>' + esc(c.when || '') + '</small></div>' +
+      return '<div class="cm' + (c.spoiler ? ' spoil' : '') + '"><div class="cm-h"><b>' + esc(c.who || T('قارئ')) + '</b><small>' + esc(c.when || '') + '</small></div>' +
         '<p>' + esc(c.text).replace(/\n/g, '<br>') + '</p>' +
-        (c.replies && c.replies.length ? '<div class="cm-r">' + c.replies.map(function (r) { return '<div class="cm"><div class="cm-h"><b>' + esc(r.who || 'قارئ') + '</b><small>' + esc(r.when || '') + '</small></div><p>' + esc(r.text).replace(/\n/g, '<br>') + '</p></div>'; }).join('') + '</div>' : '') + '</div>';
+        (c.replies && c.replies.length ? '<div class="cm-r">' + c.replies.map(function (r) { return '<div class="cm"><div class="cm-h"><b>' + esc(r.who || T('قارئ')) + '</b><small>' + esc(r.when || '') + '</small></div><p>' + esc(r.text).replace(/\n/g, '<br>') + '</p></div>'; }).join('') + '</div>' : '') + '</div>';
     }).join('');
   }
   function cmTail(box, ch, total) {
     var shown = box.querySelectorAll(':scope > .cm').length;
-    return (total > shown ? '<button class="go cm more" data-act="moreComments" data-id="' + ch + '"><span class="v">تعليقات أقدم (' + num(total - shown) + ')</span></button>' : '') +
-      '<button class="go cm site" data-act="commentsSite" data-id="' + ch + '"><span class="v">افتحها في الموقع بأسماء أصحابها</span></button>';
+    return (total > shown ? '<button class="go cm more" data-act="moreComments" data-id="' + ch + '"><span class="v">' + T('تعليقات أقدم ({})', num(total - shown)) + '</span></button>' : '') +
+      '<button class="go cm site" data-act="commentsSite" data-id="' + ch + '"><span class="v">' + T('افتحها في الموقع بأسماء أصحابها') + '</span></button>';
   }
   JR.comments = function (ch, list, total) {
     var box = document.querySelector('[data-cms="' + ch + '"]'); if (!box) return;
-    if (list == null) { box.innerHTML = '<div class="cm-wait"><span class="spin sm"></span>أجيب التعليقات</div>'; return; }
-    if (!list.length) { box.innerHTML = '<p class="cm-none">ما فيه تعليقات على هالفصل.</p>'; return; }
+    if (list == null) { box.innerHTML = '<div class="cm-wait"><span class="spin sm"></span>' + T('أجيب التعليقات') + '</div>'; return; }
+    if (!list.length) { box.innerHTML = '<p class="cm-none">' + T('ما فيه تعليقات على هالفصل.') + '</p>'; return; }
     box.innerHTML = cmHTML(list);
     box.insertAdjacentHTML('beforeend', cmTail(box, ch, total));
   };
@@ -486,7 +493,7 @@
   JR.lineGuide = function (o) {
     var el = document.getElementById('guide');
     if (!o || !o.on) { if (el) el.remove(); guide = null; return 0; }
-    if (!el) { el = document.createElement('div'); el.id = 'guide'; el.innerHTML = '<div class="g-band"></div><div class="g-grip" aria-label="حرّك دليل السطر"><i></i><i></i></div>'; document.body.appendChild(el); }
+    if (!el) { el = document.createElement('div'); el.id = 'guide'; el.innerHTML = '<div class="g-band"></div><div class="g-grip" aria-label="' + T('حرّك دليل السطر') + '"><i></i><i></i></div>'; document.body.appendChild(el); }
     guide = { y: guide ? guide.y : window.innerHeight * 0.42, lines: o.lines || 1, dim: o.dim == null ? 0.72 : o.dim, el: el };
     el.style.setProperty('--dim', String(guide.dim));
     guideFollow();
@@ -556,7 +563,7 @@
     var b = e.target.closest ? e.target.closest('[data-act]') : null;
     if (b) {
       e.preventDefault();
-      if (b.getAttribute('data-act') === 'moreComments') { if (b.disabled) return; b.disabled = true; b.innerHTML = '<span class="v"><span class="spin sm"></span> أجيب الأقدم</span>'; }
+      if (b.getAttribute('data-act') === 'moreComments') { if (b.disabled) return; b.disabled = true; b.innerHTML = '<span class="v"><span class="spin sm"></span> ' + T('أجيب الأقدم') + '</span>'; }
       post({ t: 'act', a: b.getAttribute('data-act'), id: +(b.getAttribute('data-id') || 0) });
       return;
     }

@@ -65,7 +65,7 @@ final class BookBrowser: UIViewController, WKNavigationDelegate, WKUIDelegate, U
         view.addSubview(bar)
 
         var c = UIButton.Configuration.filled()
-        c.title = "استيراد هذا الكتاب"
+        c.title = "استيراد هذا الكتاب".tr
         c.image = UIImage(systemName: "square.and.arrow.down")
         c.imagePadding = 8
         c.cornerStyle = .large
@@ -76,7 +76,7 @@ final class BookBrowser: UIViewController, WKNavigationDelegate, WKUIDelegate, U
         bar.addSubview(importButton)
 
         let hint = UILabel()
-        hint.text = "افتح صفحة الكتاب نفسه، ثم اضغط استيراد"
+        hint.text = "افتح صفحة الكتاب نفسه، ثم اضغط استيراد".tr
         hint.font = .preferredFont(forTextStyle: .caption1)
         hint.textColor = .secondaryLabel
         hint.textAlignment = .center
@@ -132,7 +132,7 @@ final class BookBrowser: UIViewController, WKNavigationDelegate, WKUIDelegate, U
         let actions = BookBrowser.sites.enumerated().map { (i, s) in
             UIAction(title: s.name, state: i == siteIndex ? .on : .off) { [weak self] _ in self?.load(site: i) }
         }
-        return UIMenu(title: "ابحث في", children: actions)
+        return UIMenu(title: "ابحث في".tr, children: actions)
     }
 
     private func load(site: Int) {
@@ -155,8 +155,8 @@ final class BookBrowser: UIViewController, WKNavigationDelegate, WKUIDelegate, U
             let title = (o["title"] as? String) ?? ""
             let images = (o["images"] as? [Any]) ?? []
             if title.isEmpty && images.isEmpty {
-                let a = UIAlertController(title: "ما لقيت بيانات كتاب", message: "افتح صفحة الكتاب نفسه (مو صفحة نتائج البحث)، ثم اضغط استيراد.", preferredStyle: .alert)
-                a.addAction(UIAlertAction(title: "حسنًا", style: .default))
+                let a = UIAlertController(title: "ما لقيت بيانات كتاب".tr, message: "افتح صفحة الكتاب نفسه (مو صفحة نتائج البحث)، ثم اضغط استيراد.".tr, preferredStyle: .alert)
+                a.addAction(UIAlertAction(title: "حسنًا".tr, style: .default))
                 self.present(a, animated: true)
                 return
             }

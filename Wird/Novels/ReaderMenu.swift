@@ -97,7 +97,7 @@ final class GlassLabel: UIVisualEffectView {
 enum Toast {
     static func show(_ text: String, in view: UIView, top: CGFloat? = nil, bottom: CGFloat? = nil) {
         let l = GlassLabel(size: 14)
-        l.text = text
+        l.text = text.tr
         l.alpha = 0
         l.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(l)
@@ -242,7 +242,7 @@ final class ReaderMenuView: UIView {
         let tapScrub = UITapGestureRecognizer(target: self, action: #selector(scrubTapped(_:)))
         scrub.addGestureRecognizer(tapScrub)
         scrub.isAccessibilityElement = true
-        scrub.accessibilityLabel = "التنقل بين الفصول"
+        scrub.accessibilityLabel = "التنقل بين الفصول".tr
         tip.alpha = 0
         addSubview(tip)
 
@@ -393,7 +393,7 @@ final class MarkBar: UIVisualEffectView {
         book.showsMenuAsPrimaryAction = true
         let kinds: [(String, String, String)] = [("quote", "اقتباس", "text.quote"), ("thought", "خاطرة", "lightbulb"), ("word", "كلمة", "character.book.closed"), ("char", "شخصية", "person")]
         // «معلومة»: the highlight takes the colour named «معلومة», so it shows in the notebook's «معلومات» list
-        let info = UIAction(title: "معلومة", image: UIImage(systemName: "info.circle")) { [weak self] _ in
+        let info = UIAction(title: "معلومة".tr, image: UIImage(systemName: "info.circle")) { [weak self] _ in
             guard let self = self, let c = self.reader?.infoColor else { return }
             self.pick(c)
             self.reader?.toast("انحفظت في «معلومات» بالدفتر")
@@ -516,7 +516,7 @@ final class AutoScrollPill: UIVisualEffectView {
 
     required init?(coder: NSCoder) { fatalError("no storyboard") }
 
-    private func update() { label.text = "السرعة \(Int(speed))" }
+    private func update() { label.text = "السرعة \(Int(speed))".tr }
 
     private func step(_ d: Double) {
         speed = max(8, min(240, speed + d))
@@ -577,7 +577,7 @@ final class ImageViewer: UIViewController, UIScrollViewDelegate {
         let close = GlassButton(symbol: "xmark")
         close.translatesAutoresizingMaskIntoConstraints = false
         close.button.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        close.button.accessibilityLabel = "إغلاق"
+        close.button.accessibilityLabel = "إغلاق".tr
         view.addSubview(close)
         NSLayoutConstraint.activate([
             close.leftAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leftAnchor, constant: 14),

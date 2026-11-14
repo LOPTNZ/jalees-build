@@ -307,7 +307,7 @@ struct WebImportSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button { done(nil) } label: { Image(systemName: "xmark") } } }
         }
-        .environment(\.layoutDirection, .rightToLeft)
+        .environment(.layoutDirection, Lang.direction)
         .onAppear(perform: load)
     }
 

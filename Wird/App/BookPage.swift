@@ -49,7 +49,7 @@ struct BookPage: View {
                 }
             }
             .environment(\.look, L)
-            .environment(\.layoutDirection, .rightToLeft)
+            .environment(.layoutDirection, Lang.direction)
         }
         .confirmationDialog("حذف الكتاب؟", isPresented: $askDelete, titleVisibility: .visible) {
             Button("حذف", role: .destructive) { deleteBook() }
@@ -197,7 +197,7 @@ struct BookPage: View {
                 Capsule().fill(Color(L.surface2))
                 Capsule().fill(Color(L.primary)).frame(width: g.size.width * p)
             }
-            .environment(\.layoutDirection, .rightToLeft)
+            .environment(.layoutDirection, Lang.direction)
         }
         .frame(height: 6)
     }
@@ -657,7 +657,7 @@ struct TargetSheet: View {
         if let b = lib.state.book(bookID) {
             JSheet(title: "موعد الانتهاء", subtitle: b.title) {
                 DatePicker("أبي أنهيه قبل", selection: $date, in: Date()..., displayedComponents: .date).font(JFont.body(15.5)).tint(Color(L.primary))
-                    .environment(\.locale, Locale(identifier: "ar@numbers=latn"))
+                    .environment(\.locale, Lang.locale)
                 Text("يحسب لك كم " + b.unit.pl + " تحتاج يوميًا عشان توصل.").font(JFont.body(13.5)).foregroundStyle(Color(L.ink2))
                 Button { afterEditing(save) } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
                 if !b.target.isEmpty {
@@ -749,9 +749,9 @@ struct ItemListSheet: View {
                 }
             }
             .sheet(item: Binding(get: { editSession.map { IDBox(id: $0) } }, set: { editSession = $0?.id })) { x in
-                SessionEditSheet(sessionID: x.id).presentationDetents([.medium]).environment(\.look, L).environment(\.layoutDirection, .rightToLeft)
+                SessionEditSheet(sessionID: x.id).presentationDetents([.medium]).environment(\.look, L).environment(.layoutDirection, Lang.direction)
             }
-            .sheet(isPresented: $review) { WordReview(bookID: b.id).environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
+            .sheet(isPresented: $review) { WordReview(bookID: b.id).environment(\.look, L).environment(.layoutDirection, Lang.direction) }
         }
     }
 }

@@ -27,6 +27,14 @@ struct SettingsView: View {
                     field("الوضع") { JSeg(options: [("system", "حسب الجهاز"), ("light", "فاتح"), ("dark", "داكن")], value: str("theme", "system")) }
                     field("اللون الأساسي") { swatches }
                     field("حجم الخط") { JSeg(options: [("s", "صغير"), ("m", "متوسط"), ("l", "كبير")], value: str("fs", "m")) }
+                    field("اللغة · Language") {
+                        JSeg(options: [(false, "العربية"), (true, "English")],
+                             value: Binding(get: { LangState.shared.english }, set: { v in
+                                 LangState.shared.set(english: v)
+                                 lib.objectWillChange.send()
+                             }))
+                        note("أسماء الكتب والروايات والمواقع وما كتبته أنت تبقى كما هي.")
+                    }
                 }
 
                 section("المكتبة") {
@@ -51,7 +59,7 @@ struct SettingsView: View {
                             JLabel(text: "الوقت")
                             Spacer()
                             DatePicker("", selection: remindTime, displayedComponents: .hourAndMinute).labelsHidden()
-                                .environment(\.locale, Locale(identifier: "ar@numbers=latn"))
+                                .environment(\.locale, Lang.locale)
                         }
                     }
                 }
@@ -157,8 +165,8 @@ struct SettingsView: View {
         .statusBarBackdrop(Color(L.bg))
         .background(Color(L.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $shelfStyle) { ShelfStyleSheet().environment(\.look, L).environment(\.layoutDirection, .rightToLeft) }
-        .sheet(isPresented: $askReset) { ResetSheet().environment(\.look, L).environment(\.layoutDirection, .rightToLeft).presentationDetents([.medium]) }
+        .sheet(isPresented: $shelfStyle) { ShelfStyleSheet().environment(\.look, L).environment(.layoutDirection, Lang.direction) }
+        .sheet(isPresented: $askReset) { ResetSheet().environment(\.look, L).environment(.layoutDirection, Lang.direction).presentationDetents([.medium]) }
         .onReceive(NotificationCenter.default.publisher(for: .settingsDebug)) { n in
             if (n.object as? String) == "reset" { askReset = true }
         }

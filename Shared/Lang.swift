@@ -11,6 +11,9 @@ enum Lang {
     private static var cache: [String: String] = [:]
     private static var table: [String: String] = [:]
     private static var patterns: [(NSRegularExpression, String)] = []
+    /// pieces the code joins to other text («تمت إضافة » + a count): keys that start or end with a space
+    private static var heads: [String] = []
+    private static var tails: [String] = []
     private static var loaded = false
 
     static var english: Bool {
@@ -60,6 +63,9 @@ enum Lang {
                 patterns.append((re, v))
             }
         }
+        let keys = table.keys.filter { !$0.contains("{}") }.sorted { $0.count > $1.count }
+        heads = keys.filter { $0.count > 2 && ($0.last == " " || $0.last == "«") }
+        tails = keys.filter { $0.count > 2 && ($0.first == " " || $0.first == "»" || $0.first == "،") }
     }
 
     /// The interface text in the chosen language.
@@ -82,17 +88,45 @@ enum Lang {
         let ns = s as NSString
         for (re, en) in patterns {
             guard let m = re.firstMatch(in: s, range: NSRange(location: 0, length: ns.length)) else { continue }
-            var parts: [String] = []
+            var raw: [String] = []
             for i in 1..<m.numberOfRanges {
                 let r = m.range(at: i)
-                let p = r.location == NSNotFound ? "" : ns.substring(with: r)
-                // what was put in may be interface text too («صفحات» in «{} في الساعة»)
-                parts.append(look(p, depth: depth + 1) ?? p)
+                raw.append(r.location == NSNotFound ? "" : ns.substring(with: r))
             }
-            return fill(en, parts)
+            // what was put in may be interface text too («صفحات» in «{} في الساعة»)
+            let parts = raw.map { look($0, depth: depth + 1) }
+            // a short key («{} من {}») could match someone's own sentence: it counts only when what fills it is
+            // numbers, English or interface text, or when the key's own words are most of the text
+            let fixed = s.count - raw.reduce(0) { $0 + $1.count }
+            let filled = zip(raw, parts).allSatisfy { r, p in p != nil || !hasArabic(r) }
+            guard filled || (fixed >= 8 && Double(fixed) >= Double(s.count) * 0.4) else { continue }
+            return fill(en, zip(raw, parts).map { $1 ?? $0 })
+        }
+        // a sentence the code put together from pieces: the known piece at its start or end, and the rest in turn
+        if let h = heads.first(where: { s.hasPrefix($0) && s.count > $0.count }) {
+            let rest = String(s.dropFirst(h.count))
+            let r = look(rest, depth: depth + 1)
+            if r != nil || !hasArabic(rest) || Double(h.count) >= Double(s.count) * 0.4 { return table[h]! + (r ?? rest) }
+        }
+        if let t = tails.first(where: { s.hasSuffix($0) && s.count > $0.count }) {
+            let head = String(s.dropLast(t.count))
+            let r = look(head, depth: depth + 1)
+            if r != nil || !hasArabic(head) || Double(t.count) >= Double(s.count) * 0.4 { return (r ?? head) + table[t]! }
+        }
+        // numbers the code wrote into the text: «3 كتب» finds «{} كتب»
+        let digits = try? NSRegularExpression(pattern: "[0-9٠-٩]+([.,][0-9٠-٩]+)?")
+        if let re = digits {
+            let ms = re.matches(in: s, range: NSRange(location: 0, length: ns.length))
+            if !ms.isEmpty {
+                var key = s
+                for m in ms.reversed() { key = (key as NSString).replacingCharacters(in: m.range, with: "{}") }
+                if let en = table[key] { return fill(en, ms.map { ns.substring(with: $0.range) }) }
+            }
         }
         return nil
     }
+
+    private static func hasArabic(_ s: String) -> Bool { s.unicodeScalars.contains { (0x0621...0x064A).contains($0.value) } }
 
     private static func fill(_ en: String, _ parts: [String]) -> String {
         var out = en
@@ -112,6 +146,17 @@ enum Lang {
     static var direction: LayoutDirection { english ? .leftToRight : .rightToLeft }
     /// Dates and numbers: always Western digits, the Gregorian calendar.
     static var locale: Locale { Locale(identifier: english ? "en_US" : "ar@numbers=latn") }
+}
+
+/// The interface rebuilds itself when the language changes.
+final class LangState: ObservableObject {
+    static let shared = LangState()
+    @Published var english = Lang.english
+
+    func set(english: Bool) {
+        Lang.set(english: english)
+        self.english = english
+    }
 }
 
 extension String {

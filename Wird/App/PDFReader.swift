@@ -192,7 +192,7 @@ final class PDFReaderViewController: UIViewController, UIGestureRecognizerDelega
         lastActivity = Date()
         guard let d = pdf.document, let p = pdf.currentPage else { return }
         let i = d.index(for: p)
-        pageLabel.text = "ص \(i + 1) / \(d.pageCount)"
+        pageLabel.text = "ص \(i + 1) / \(d.pageCount)".tr
         Library.shared.changeBook(bookID) { $0.pos = Double(i + 1) }
     }
 
@@ -223,10 +223,10 @@ final class PDFReaderViewController: UIViewController, UIGestureRecognizerDelega
     }
 
     private func search() {
-        let a = UIAlertController(title: "بحث في الملف", message: nil, preferredStyle: .alert)
-        a.addTextField { $0.placeholder = "كلمة أو جملة" }
-        a.addAction(UIAlertAction(title: "إلغاء", style: .cancel))
-        a.addAction(UIAlertAction(title: "ابحث", style: .default) { [weak self] _ in
+        let a = UIAlertController(title: "بحث في الملف".tr, message: nil, preferredStyle: .alert)
+        a.addTextField { $0.placeholder = "كلمة أو جملة".tr }
+        a.addAction(UIAlertAction(title: "إلغاء".tr, style: .cancel))
+        a.addAction(UIAlertAction(title: "ابحث".tr, style: .default) { [weak self] _ in
             guard let self = self, let q = a.textFields?.first?.text, !q.isEmpty, let d = self.pdf.document else { return }
             let found = d.findString(q, fromSelection: self.findAt, withOptions: [.caseInsensitive, .diacriticInsensitive])
                 ?? d.findString(q, fromSelection: nil, withOptions: [.caseInsensitive, .diacriticInsensitive])
@@ -243,10 +243,10 @@ final class PDFReaderViewController: UIViewController, UIGestureRecognizerDelega
 
     private func goToPage() {
         guard let d = pdf.document else { return }
-        let a = UIAlertController(title: "روح لصفحة", message: "من 1 إلى \(d.pageCount)", preferredStyle: .alert)
+        let a = UIAlertController(title: "روح لصفحة".tr, message: "من 1 إلى \(d.pageCount)".tr, preferredStyle: .alert)
         a.addTextField { $0.keyboardType = .numberPad }
-        a.addAction(UIAlertAction(title: "إلغاء", style: .cancel))
-        a.addAction(UIAlertAction(title: "روح", style: .default) { [weak self] _ in
+        a.addAction(UIAlertAction(title: "إلغاء".tr, style: .cancel))
+        a.addAction(UIAlertAction(title: "روح".tr, style: .default) { [weak self] _ in
             guard let self = self, let t = a.textFields?.first?.text, let n = Int(t.filter(\.isNumber)), n >= 1, let p = d.page(at: min(n, d.pageCount) - 1) else { return }
             self.pdf.go(to: p)
         })

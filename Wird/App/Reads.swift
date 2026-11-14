@@ -51,7 +51,7 @@ struct FinishSheet: View {
                     }
                 if !review.isEmpty { JSwitchRow(title: "المراجعة فيها حرق", sub: "تتغطى لين تضغط عليها", on: $spoiler) }
                 if vi == nil {
-                    DatePicker("تاريخ الانتهاء", selection: $finish, displayedComponents: .date).font(JFont.body(15)).environment(\.locale, Locale(identifier: "ar@numbers=latn"))
+                    DatePicker("تاريخ الانتهاء", selection: $finish, displayedComponents: .date).font(JFont.body(15)).environment(\.locale, Lang.locale)
                 }
                 if !err.isEmpty { Text(err).font(JFont.body(14)).foregroundStyle(Color(L.danger)) }
                 Button { save(b, vi) } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
