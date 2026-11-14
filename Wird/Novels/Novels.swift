@@ -181,8 +181,7 @@ final class SourceEngine: NSObject, WKNavigationDelegate {
         guard !extra.isEmpty else { markReady(); return }
         var left = extra.count
         for js in extra {
-            webView.evaluateJavaScript("(function(){try{" + js + "
-}catch(e){}})();1") { [weak self] _, _ in
+            webView.evaluateJavaScript("(function(){try{" + js + "\n}catch(e){}})();1") { [weak self] _, _ in
                 left -= 1
                 if left == 0 { self?.markReady() }
             }
