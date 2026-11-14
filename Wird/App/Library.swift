@@ -52,17 +52,42 @@ final class Library: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
     }
 
+    private let encodeQueue = DispatchQueue(label: "wird.encode", qos: .utility)
+
+    /// The library is copied, then turned into JSON and written off the main thread (one queue, so saves keep their order).
     func saveNow() {
         saveWork?.cancel()
         saveWork = nil
-        guard let d = JSONValue.object(state.json).data(), let s = String(data: d, encoding: .utf8) else { return }
-        Store.shared.saveState(s)
+        let snap = state
+        // a little time to finish the write if the app is going to the background
+        let bg = UIApplication.shared.beginBackgroundTask(withName: "save")
+        encodeQueue.async {
+            if let d = JSONValue.object(snap.json).data(), let s = String(data: d, encoding: .utf8) {
+                Store.shared.saveState(s) {
+                    DispatchQueue.main.async { if bg != .invalid { UIApplication.shared.endBackgroundTask(bg) } }
+                }
+            } else {
+                DispatchQueue.main.async { if bg != .invalid { UIApplication.shared.endBackgroundTask(bg) } }
+            }
+        }
         WidgetFeed.schedule()
     }
 
     // MARK: pictures (same files as before: Application Support/Wird/img/<id>)
 
-    private let images = NSCache<NSString, UIImage>()
+    private let images: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.countLimit = 120; return c }()
+
+    /// Reads and decodes covers in the background, so a cover coming into view is already ready.
+    func prefetch(_ ids: [String]) {
+        let cache = images
+        let todo = ids.filter { !$0.isEmpty && cache.object(forKey: $0 as NSString) == nil }
+        guard !todo.isEmpty else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            for id in todo where cache.object(forKey: id as NSString) == nil {
+                if let d = Store.shared.imageData(id), let i = Library.prepared(d, max: 1200) { cache.setObject(i, forKey: id as NSString) }
+            }
+        }
+    }
 
     /// A picture, made ready to draw once and kept: no bigger than the screen needs (a 3000-pixel photo is cut
     /// down to 1200), decoded up front, so scrolling and the cover flight never decode it again.

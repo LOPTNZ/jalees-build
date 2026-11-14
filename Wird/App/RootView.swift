@@ -29,7 +29,6 @@ struct RootView: View {
     @ObservedObject private var appearance = Appearance.shared
     @ObservedObject private var library = Library.shared
     @ObservedObject private var present = Present.shared
-    @ObservedObject private var session = SessionModel.shared
     @ObservedObject private var backup = BackupImport.shared
     @ObservedObject private var lang = LangState.shared
     @Environment(\.colorScheme) private var scheme
@@ -59,9 +58,7 @@ struct RootView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { TabBar().id(lang.english) }
         .overlay(alignment: .bottom) { VStack(spacing: 10) { ToastView(); if router.group == .novels { SessionChip() } }.padding(.bottom, 92) }
         .overlay { if splash { SplashView { splash = false }.environment(\.look, L) } }
-        .fullScreenCover(isPresented: $session.showScreen) {
-            SessionScreen().environment(\.look, L).environment(\.layoutDirection, Lang.direction).environment(\.locale, Lang.locale).environment(\.calendar, Calendar.greg)
-        }
+        .modifier(SessionCover(look: L))
         .sheet(item: $present.modal) { m in
             Group {
                 switch m {
@@ -114,6 +111,18 @@ struct RootView: View {
     }
 }
 
+/// The session screen over everything. It watches the session itself, so the clock's ticks do not redraw the whole app.
+private struct SessionCover: ViewModifier {
+    let look: JLook
+    @ObservedObject private var session = SessionModel.shared
+
+    func body(content: Content) -> some View {
+        content.fullScreenCover(isPresented: $session.showScreen) {
+            SessionScreen().environment(\.look, look).environment(\.layoutDirection, Lang.direction).environment(\.locale, Lang.locale).environment(\.calendar, Calendar.greg)
+        }
+    }
+}
+
 /// One tab: its first screen and the pages pushed over it.
 private struct TabRoot: View {
     let tab: Router.Tab
@@ -147,7 +156,8 @@ private struct TabRoot: View {
         case .history: HistoryTab(look: L).id(visit)
         case .library: LibraryView(ns: zoom)
         case .notebook: NotebookView()
-        case .progress: ProgressTab()
+        // the goals and stats work out all 40 achievements: only while the tab is open, not on every save behind it
+        case .progress: if router.tab == .progress { ProgressTab() } else { Color(L.bg) }
         case .settings: SettingsView()
         }
     }

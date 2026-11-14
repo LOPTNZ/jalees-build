@@ -267,6 +267,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         var place = given
         if place == nil, let saved = Novels.shared.place(in: chapters[i].id) { place = ["p": saved.p, "o": saved.o] }
         index = i
+        lastPos = [:]
         token += 1
         let mine = token
         let ch = chapters[i]
@@ -306,7 +307,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         guard chapters.indices.contains(j), !loadedInPage.contains(chapters[j].id) else { return }
         loadedInPage.insert(chapters[j].id)
         Task { @MainActor [weak self] in
-            guard let self = self, let o = try? await self.payload(j) else { return }
+            guard let self = self else { return }
+            guard let o = try? await self.payload(j) else { self.loadedInPage.remove(self.chapters[j].id); return }
+            guard self.loadedInPage.contains(self.chapters[j].id) else { return }   // a new chapter was opened meanwhile
             self.call(dir == "next" ? "JR.append(ch)" : "JR.prepend(ch)", ["ch": o])
             Novels.shared.prepare(after: j, in: self.chapters, source: self.novel.source, count: self.settings.prefs.ahead)
         }
@@ -369,6 +372,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
             if (o["on"] as? Bool) == true { setChrome(false); closeOverlays() }
         case "markTap":
             openMarkBar(id: o["id"] as? String ?? "", chapter: NovelBridge.num(o["ch"]), rect: rect(o["rect"]))
+        case "drop":
+            // the page let go of a chapter far from the reader (memory): it may be asked for again
+            loadedInPage.remove(NovelBridge.num(o["id"]))
         case "need":
             need(o["dir"] as? String ?? "next", after: NovelBridge.num(o["id"]))
         case "nameTap":
@@ -423,6 +429,8 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
                 self.ask("JR.toChapter(id)", ["id": id]) { done in
                     if NovelBridge.num(done) == 1 {
                         self.index = i
+                        self.lastPos = [:]
+                        Novels.shared.logHistory(novel: self.novel.id, chapter: id)
                         self.refreshBookmarks()
                         UIView.animate(withDuration: 0.16) { self.web.alpha = 1 }
                     } else {
@@ -546,6 +554,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
 
     @objc func closeTapped() {
         if ReadAloud.shared.reader === self { ReadAloud.shared.stop() }
+        savePlaceNow()
         endSession()
         onClose?()
         dismiss(animated: true)
@@ -791,6 +800,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     func sendNames() {
         let list = characters.map { ["id": $0["id"] ?? "", "name": $0["name"] ?? "", "alias": $0["alias"] ?? ""] }
         let style = settings.prefs.nameStyle
+        guard pageReady else { return }   // the page sends «loaded» (and names follow) once it is ready
         sentNames = "\(style)|\(settings.prefs.showNames)"
         call("JR.setNames(l, on, st)", ["l": list, "on": settings.prefs.showNames && style != "off", "st": style])
     }
@@ -1239,7 +1249,19 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         lastTick = now
     }
 
+    /// Asks the page where it is and keeps that (the page reports a place only when it stops, so the last one can be a moment old).
+    private func savePlaceNow() {
+        let nid = novel.id, ids = Set(chapters.map(\.id))
+        ask("JR.where()") { v in
+            guard let w = v as? [String: Any] else { return }
+            let id = NovelBridge.num(w["id"])
+            guard ids.contains(id) else { return }
+            Novels.shared.savePlace(novel: nid, chapter: id, p: NovelBridge.num(w["p"]), o: (w["o"] as? Double) ?? 0)
+        }
+    }
+
     @objc private func wentAway() {
+        if pageReady { savePlaceNow() }
         tick()
         running = false
     }

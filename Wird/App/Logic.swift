@@ -99,12 +99,16 @@ enum Words {
         return "\(c.day ?? 1) \(months[(c.month ?? 1) - 1])" + (withYear ? " \(c.year ?? thisYear)" : "")
     }
 
-    static func n0(_ x: Double) -> String {
+    private static let n0Formatter: NumberFormatter = {
         let f = NumberFormatter()
         f.locale = Locale(identifier: "en_US")
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: x.rounded())) ?? String(Int(x.rounded()))
+        return f
+    }()
+
+    static func n0(_ x: Double) -> String {
+        n0Formatter.string(from: NSNumber(value: x.rounded())) ?? (x.isFinite ? String(Int(x.rounded())) : "0")
     }
 
     /// "★★★½": half stars as ½ (ratings go in halves, answers-round2 س64)
@@ -157,7 +161,7 @@ extension Book {
     var sumTotal: Double { volumes.reduce(0) { $0 + ($1.total ?? 0) } }
     var doneUnits: Double {
         var s = 0.0
-        for i in 0..<min(vi, volumes.count) { s += volumes[i].total ?? 0 }
+        for i in 0..<max(0, min(vi, volumes.count)) { s += volumes[i].total ?? 0 }
         return s + pos
     }
     /// 0…1, nil when a total is unknown
@@ -256,8 +260,13 @@ extension AppState {
         }
         let asc = st.dir == "asc"
         // ties keep the library's own order, so the list is the same every time it is drawn
-        let order = Dictionary(uniqueKeysWithValues: books.enumerated().map { ($1.id, $0) })
+        let order = Dictionary(books.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
         func tie(_ x: Book, _ y: Book) -> Bool { (order[x.id] ?? 0) < (order[y.id] ?? 0) }
+        // the latest session of each book, read once (lastTs for every book would go through every session each time)
+        var latest: [String: Double] = [:]
+        if !["title", "author", "added", "started", "finished", "progress", "rating", "length"].contains(st.sort) {
+            for s in sessions where s.start > (latest[s.bookId] ?? 0) { latest[s.bookId] = s.start }
+        }
         func num(_ b: Book) -> Double {
             switch st.sort {
             case "added": return b.added
@@ -266,19 +275,22 @@ extension AppState {
             case "progress": return b.pct ?? -1
             case "rating": return b.rating
             case "length": return b.sumTotal
-            default: return lastTs(b)
+            default:
+                let t = max(b.opened, latest[b.id] ?? 0)
+                return t > 0 ? t : b.added
             }
         }
         if st.sort == "title" || st.sort == "author" {
             let ar = Locale(identifier: "ar")
+            let names = Dictionary(list.map { ($0.id, Words.norm(st.sort == "title" ? $0.title : $0.author)) }, uniquingKeysWith: { a, _ in a })
             list.sort { x, y in
-                let a = Words.norm(st.sort == "title" ? x.title : x.author), b = Words.norm(st.sort == "title" ? y.title : y.author)
+                let a = names[x.id] ?? "", b = names[y.id] ?? ""
                 let c = a.compare(b, locale: ar)
                 if c == .orderedSame { return tie(x, y) }
                 return asc ? c == .orderedAscending : c == .orderedDescending
             }
         } else {
-            let keys = Dictionary(uniqueKeysWithValues: list.map { ($0.id, num($0)) })
+            let keys = Dictionary(list.map { ($0.id, num($0)) }, uniquingKeysWith: { a, _ in a })
             list.sort { x, y in
                 let a = keys[x.id] ?? 0, b = keys[y.id] ?? 0
                 if a == b { return tie(x, y) }

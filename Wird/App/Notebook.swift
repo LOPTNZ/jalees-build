@@ -5,6 +5,7 @@ import UIKit
 
 struct NotebookView: View {
     @ObservedObject private var lib = Library.shared
+    @ObservedObject private var router = Router.shared
     @ObservedObject private var nav = NotebookNav.shared
     @Environment(\.look) private var L
     @State private var tab = "quote"
@@ -64,6 +65,8 @@ struct NotebookView: View {
         .background(Color(L.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .onAppear(perform: follow)
+        // the + menu folds when you go to another tab
+        .onChange(of: router.tab) { _ in if fabOpen { fabMenu(false) } }
         .onChange(of: nav.book) { _ in follow() }
         .onChange(of: nav.kind) { _ in follow() }
         .onChange(of: nav.character) { _ in follow() }
@@ -165,8 +168,8 @@ struct NotebookView: View {
 
     private func add() {
         if let k = NoteKind(rawValue: tab) {
-            let b = bookFilter.isEmpty ? (lib.state.lastBookId() ?? "") : bookFilter
-            edit = ItemRef(book: b, kind: k.rawValue, item: nil, pick: bookFilter.isEmpty)
+            // the book shown in the notebook, or none: the form asks (it does not guess the last book read)
+            edit = ItemRef(book: bookFilter, kind: k.rawValue, item: nil, pick: true, fromNotebook: true)
         }
     }
 

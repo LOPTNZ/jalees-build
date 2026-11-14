@@ -92,11 +92,11 @@ struct MultiAddSheet: View {
         let t0 = Millis.now
         var books: [Book] = []
         for (i, l) in lines.enumerated() {
-            let parts = l.components(separatedBy: CharacterSet(charactersIn: "-–—")).map { $0.trimmingCharacters(in: .whitespaces) }
-            let hasDash = l.range(of: #"\s+[-–—]\s+"#, options: .regularExpression) != nil
+            // split at the first spaced dash only, so «Spider-Man» keeps its hyphen
+            let dash = l.range(of: #"\s+[-–—]\s+"#, options: .regularExpression)
             var o = Library.blankBook()
-            o.set("title", hasDash ? parts[0] : l)
-            o.set("author", hasDash ? parts.dropFirst().joined(separator: " - ") : "")
+            o.set("title", dash.map { String(l[..<$0.lowerBound]).trimmingCharacters(in: .whitespaces) } ?? l)
+            o.set("author", dash.map { String(l[$0.upperBound...]).trimmingCharacters(in: .whitespaces) } ?? "")
             o.set("structure", structure)
             o.set("format", format.rawValue)
             if format == .audio { o.set("audioBy", audioBy) }

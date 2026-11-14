@@ -187,9 +187,12 @@ struct SourceBrowse: View {
 
     private func load() {
         loading = true
+        let (k, p, q) = (kind, page, query)
         Task {
             do {
-                let r = try await SourceEngine.shared.browse(site, kind: kind, page: page, query: query)
+                let r = try await SourceEngine.shared.browse(site, kind: k, page: p, query: q)
+                // the list was switched meanwhile (another tab or search): this answer is stale
+                guard k == kind, p == page, q == query else { return }
                 let have = Set(items.compactMap { $0["url"] as? String })
                 items += r.items.filter { !have.contains(($0["url"] as? String) ?? "") }
                 more = r.more && kind != "search"
@@ -404,7 +407,8 @@ struct DownloadsTab: View {
         .tint(Color(look.primary))
         .preferredColorScheme(look.dark ? .dark : .light)
         .onAppear(perform: load)
-        .onReceive(downloads.$waiting) { _ in load() }
+        // the sizes scan every saved text: refresh every ten chapters and at the end, not after each one
+        .onReceive(downloads.$waiting) { w in if w.isEmpty || w.count % 10 == 0 { load() } }
     }
 
     private func load() {

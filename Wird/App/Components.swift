@@ -11,7 +11,9 @@ struct BookCover: View {
     var radius: CGFloat = 8
     /// the small marks on the cover the owner turned on (progress, stars, format badge, novels' unread count)
     var marks = true
-    @ObservedObject private var lib = Library.shared
+    /// read, not watched: the views that show covers already redraw on library changes, so a save no longer
+    /// redraws every cover on screen
+    private var lib: Library { Library.shared }
 
     var body: some View {
         let s = lib.state.settings.show

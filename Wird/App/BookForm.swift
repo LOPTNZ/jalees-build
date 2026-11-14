@@ -41,6 +41,7 @@ final class BookFormModel: ObservableObject {
     /// the cover came from your own photo (the edition picker asks before replacing it)
     var ownCover = false
     private let original: Data?
+    private let originalDates: (Double?, Double?)
     private let old: (cover: String?, spine: String?)
     var saved = false
 
@@ -60,10 +61,14 @@ final class BookFormModel: ObservableObject {
         openBuy = !p.str("where").isEmpty || !p.str("price").isEmpty || !p.str("date").isEmpty || p.bool("gift")
         openDims = book.dims != nil
         old = (book.cover, book.spine)
+        originalDates = (book.start, book.finish)
         original = JSONValue.object(book.raw).data()
     }
 
-    var dirty: Bool { !saved && (JSONValue.object(b.raw).data() != original || !newImgs.isEmpty) }
+    var dirty: Bool {
+        !saved && (JSONValue.object(b.raw).data() != original || !newImgs.isEmpty
+                   || start.map(Millis.ms) != originalDates.0 || finish.map(Millis.ms) != originalDates.1)
+    }
 
     func discard() {
         guard !saved else { return }
@@ -168,7 +173,7 @@ final class BookFormModel: ObservableObject {
     }
 
     func addVolume() { b.volumes = b.volumes + [Volume.blank()] }
-    func deleteVolume(_ i: Int) { var v = b.volumes; if v.count > 1 { v.remove(at: i); b.volumes = v; b.vi = min(b.vi, v.count - 1) } }
+    func deleteVolume(_ i: Int) { var v = b.volumes; if v.count > 1, v.indices.contains(i) { v.remove(at: i); b.volumes = v; b.vi = min(i < b.vi ? b.vi - 1 : b.vi, v.count - 1) } }
 
     // MARK: saving (saveBookDraft)
 
@@ -178,13 +183,14 @@ final class BookFormModel: ObservableObject {
         x.author = x.author.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !x.title.isEmpty else { err = "اكتب عنوان الكتاب."; return false }
         if !x.series { x.volumes = Array(x.volumes.prefix(1)) }
+        if x.volumes.isEmpty { x.volumes = [Volume.blank()] }
         x.volumes = x.volumes.map { v in var v = v; v.total = (v.total ?? 0) > 0 ? (x.unit.time ? v.total : v.total?.rounded()) : nil; return v }
         if !x.series && x.unit == .page && x.volumes.first?.total == nil { err = "اكتب عدد الصفحات."; return false }
         if x.unit == .page { x.ongoing = false }
         x.link = x.isNovel ? x.link : ""
         x.vi = min(max(0, x.vi), max(0, x.volumes.count - 1))
         x.pos = max(0, x.pos.rounded())
-        if let t = x.volumes[x.vi].total, x.pos > t {
+        if x.status != .done && x.status != .want, let t = x.volumes[x.vi].total, x.pos > t {
             err = x.unit.time ? "الوقت اللي وصلت له أكبر من مدة الكتاب (\(Words.hm(t)))." : "رقم \(x.unit.name) أكبر من العدد الكلي (\(Int(t)))."
             return false
         }
@@ -210,6 +216,8 @@ final class BookFormModel: ObservableObject {
         if !openDims { x.dims = nil }
         if let c = old.cover, c != x.cover { Library.shared.deleteImage(c) }
         if let s = old.spine, s != x.spine { Library.shared.deleteImage(s) }
+        // pictures picked and then replaced while the form was open
+        for id in newImgs where id != x.cover && id != x.spine { Library.shared.deleteImage(id) }
         let book = Book(Library.fixBook(x.raw))
         if editing {
             Library.shared.change { st in if let i = st.index(of: book.id) { st.books[i] = book } }
@@ -314,7 +322,7 @@ struct BookFormView: View {
             Text(m.editing ? "التغييرات اللي سويتها ما انحفظت، وبتروح إذا طلعت." : "اللي كتبته ما انحفظ، وبيروح إذا طلعت.")
         }
         .sheet(item: $editions) { r in
-            EditionsSheet(request: r) { e, keep in Task { await m.apply(e, coverOnly: false, keepCover: keep) } }
+            EditionsSheet(request: r, use: { e, keep in Task { await m.apply(e, coverOnly: false, keepCover: keep) } }, ownCover: m.ownCover)
                 .environment(\.look, L).environment(\.layoutDirection, Lang.direction)
         }
         .sheet(isPresented: $coverSearch) {

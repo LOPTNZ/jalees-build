@@ -263,13 +263,15 @@
       if (p.top != null) root.style.setProperty('--top', p.top + 'px');
       if (p.bottom != null) root.style.setProperty('--bottom', p.bottom + 'px');
       if (p.cols != null) root.style.setProperty('--cols', String(p.cols));
-      var rebuild = false;
+      var rebuild = false, curId = secs.length > 1 ? where().id : null;   // read before the mode changes
       ['mode', 'anim', 'kashida', 'hideHead', 'comments'].forEach(function (k) { if (p[k] != null && p[k] !== P[k]) { P[k] = p[k]; rebuild = true; } });
       root.classList.toggle('paged', paged());
       root.classList.toggle('kashida', !!P.kashida);
       if (rebuild && secs.length) {
         var keep = secs.map(function (s) { return s.ch; }), first = keep[0];
-        if (P.mode !== 'continuous') keep = [secs.length > 1 ? (secById(where().id) || secs[0]).ch : first];
+        /* highlights made since the chapter came in must survive the rebuild */
+        keep.forEach(function (c) { if (marks[c.id]) c.marks = marks[c.id]; });
+        if (P.mode !== 'continuous') keep = [curId != null ? (secById(curId) || secs[0]).ch : first];
         page.innerHTML = ''; secs = []; needing = {};
         keep.forEach(function (ch) { var s = makeSec(ch); secs.push(s); page.appendChild(s.el); });
       }
@@ -280,7 +282,7 @@
   /* ch: {id,label,title,paras[],words,minutes,next,prev,removed,comments,marks}   pos: {p,o} | {end:true} | null */
   JR.load = function (ch, pos) {
     lastSent = ''; needing = {}; find = null; wentUp = false;
-    page.innerHTML = ''; secs = [];
+    page.innerHTML = ''; secs = []; marks = {};
     var sec = makeSec(ch); secs.push(sec); page.appendChild(sec.el);
     var target = pos ? Object.assign({ id: ch.id }, pos) : null;
     goTo(target);
@@ -294,7 +296,11 @@
     var last = secs[secs.length - 1];
     if (last) { var f = last.el.querySelector('footer.end'); if (f && !f.querySelector('.joint')) f.insertAdjacentHTML('beforeend', '<div class="joint"><span>' + esc(ch.label) + '</span></div>'); }
     var s = makeSec(ch); secs.push(s); page.appendChild(s.el);
-    while (secs.length > 6) { var old = secs.shift(), h = old.el.getBoundingClientRect().height; old.el.remove(); window.scrollBy(0, -h); }
+    while (secs.length > 6) {
+      var old = secs.shift(), h = old.el.getBoundingClientRect().height; old.el.remove(); window.scrollBy(0, -h);
+      delete marks[old.id]; delete needing['p' + old.id]; post({ t: 'drop', id: old.id });
+    }
+    if (secs[0]) delete needing['p' + secs[0].id];
     report(true);
   };
   JR.prepend = function (ch) {
@@ -303,6 +309,10 @@
     var f = s.el.querySelector('footer.end'); if (f) f.insertAdjacentHTML('beforeend', '<div class="joint"><span>' + esc(secs[0] ? secs[0].ch.label : '') + '</span></div>');
     secs.unshift(s); page.insertBefore(s.el, page.firstChild);
     window.scrollBy(0, document.documentElement.scrollHeight - before);
+    /* far below the reader: let go of the last chapters (they can be asked for again) */
+    while (secs.length > 6) {
+      var tail = secs.pop(); tail.el.remove(); delete marks[tail.id]; delete needing[tail.id]; post({ t: 'drop', id: tail.id });
+    }
     report(true);
   };
 
@@ -448,19 +458,19 @@
   JR.find = function (q, nth) {
     document.querySelectorAll('mark.fd').forEach(function (m) { var t = document.createTextNode(m.textContent); m.replaceWith(t); });
     secs.forEach(function (s) { s.el.normalize(); });
-    q = plain(q || '').trim(); if (!q) return 0;
+    q = plain(q || '').trim().toLowerCase(); if (!q) return 0;   // the search list ignores case, so the nth hit matches
     var hits = [];
     secs.forEach(function (s) {
       var w = document.createTreeWalker(s.el.querySelector('.body'), NodeFilter.SHOW_TEXT, null), t, nodes = [];
       while ((t = w.nextNode())) nodes.push(t);
       nodes.forEach(function (node) {
-        var v = node.nodeValue, i = plain(v).indexOf(q);
+        var v = node.nodeValue, i = v.toLowerCase().indexOf(q);
         if (i < 0 || /ـ/.test(v)) return;
         var rest = node, at = i;
         while (at >= 0) {
           var mid = rest.splitText(at), after = mid.splitText(q.length), m = document.createElement('mark');
           m.className = 'fd'; m.textContent = mid.nodeValue; mid.replaceWith(m); hits.push(m);
-          rest = after; at = rest.nodeValue.indexOf(q);
+          rest = after; at = rest.nodeValue.toLowerCase().indexOf(q);
         }
       });
     });

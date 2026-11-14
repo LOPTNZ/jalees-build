@@ -221,7 +221,8 @@ struct BookPage: View {
             } else {
                 x.finish = nil
             }
-            if s == .reading && x.start == nil { x.start = Millis.now }
+            if (s == .reading || s == .paused || s == .dnf) && x.start == nil { x.start = Millis.now }
+            if s == .want { x.pos = 0; x.vi = 0 }
             if s != .done && s != .dnf { x.rating = 0 }
         }
         Achievements.check()
@@ -563,17 +564,23 @@ struct NoteRow: View {
     let item: NoteItem
     let kind: NoteKind
     var compact = false
+    /// set when the row sits in a sheet: that sheet closes first, since a sheet cannot open over another
+    var closeFirst: (() -> Void)? = nil
     @Environment(\.look) private var L
 
     var body: some View {
         let r = item.raw
-        Button { Flows.note(book.id, kind: "edit:" + kind.rawValue + ":" + item.id) } label: {
+        Button {
+            let k = "edit:" + kind.rawValue + ":" + item.id
+            if let c = closeFirst { c(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(book.id, kind: k) } }
+            else { Flows.note(book.id, kind: k) }
+        } label: {
             Group {
                 switch kind {
                 case .char:
                     HStack(spacing: 10) {
                         Text(String(r.str("name").prefix(1))).font(JFont.display(18, .bold)).foregroundStyle(.white)
-                            .frame(width: 44, height: 44).background(Circle().fill(Color(hue: Double(abs(r.str("name").hashValue % 360)) / 360, saturation: 0.35, brightness: 0.45)))
+                            .frame(width: 44, height: 44).background(Circle().fill(Color(hue: Double(r.str("name").unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) % 360 }) / 360, saturation: 0.35, brightness: 0.45)))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(r.str("name")).font(JFont.body(15, .semibold)).foregroundStyle(Color(L.ink)).lineLimit(1)
                             Text(r.str("alias").isEmpty ? r.str("desc") : r.str("alias")).font(JFont.body(12.5)).foregroundStyle(Color(L.ink2)).lineLimit(1)
@@ -702,7 +709,8 @@ struct SessionEditSheet: View {
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
                 if !err.isEmpty { Text(err).font(JFont.body(14)).foregroundStyle(Color(L.danger)) }
-                Button { save(i) } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
+                // after the typed number is committed (a number field only commits when it loses focus)
+                Button { afterEditing { if let j = lib.state.sessions.firstIndex(where: { $0.id == sessionID }) { save(j) } } } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
                 Button { delete(i) } label: { Label("حذف الجلسة", systemImage: "trash").frame(maxWidth: .infinity).foregroundStyle(Color(L.danger)) }
                     .buttonStyle(JButtonStyle(look: L))
             }
@@ -733,6 +741,7 @@ struct ItemListSheet: View {
     let kind: String
     @ObservedObject private var lib = Library.shared
     @Environment(\.look) private var L
+    @Environment(\.dismiss) private var dismiss
     @State private var editSession: String?
     @State private var review = false
 
@@ -746,12 +755,12 @@ struct ItemListSheet: View {
                     }
                 } else if let k = NoteKind(rawValue: kind) {
                     HStack(spacing: 8) {
-                        Button { Flows.note(b.id, kind: kind) } label: { Label("أضف", systemImage: "plus") }.buttonStyle(JButtonStyle(look: L, small: true))
+                        Button { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(b.id, kind: kind) } } label: { Label("أضف", systemImage: "plus") }.buttonStyle(JButtonStyle(look: L, small: true))
                         if k == .word && !b.items(.word).isEmpty {
                             Button { review = true } label: { Label("اختبار", systemImage: "rectangle.on.rectangle") }.buttonStyle(JButtonStyle(look: L, small: true))
                         }
                     }
-                    VStack(spacing: 0) { ForEach(b.items(k).sorted { $0.at > $1.at }) { NoteRow(book: b, item: $0, kind: k, compact: false) } }
+                    VStack(spacing: 0) { ForEach(b.items(k).sorted { $0.at > $1.at }) { NoteRow(book: b, item: $0, kind: k, compact: false, closeFirst: { dismiss() }) } }
                 }
             }
             .sheet(item: Binding(get: { editSession.map { IDBox(id: $0) } }, set: { editSession = $0?.id })) { x in

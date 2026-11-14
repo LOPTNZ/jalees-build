@@ -48,6 +48,8 @@ final class CarouselState: NSObject, ObservableObject {
     }
 
     func go(to t: Double) {
+        // a drag that was cut off (a sheet came up) never said it ended: moving on our own ends it
+        dragging = false
         target = wraps ? t : min(max(t, 0), Double(max(0, count - 1)))
         run()
     }
@@ -78,7 +80,8 @@ final class CarouselState: NSObject, ObservableObject {
     @objc private func frame(_ l: CADisplayLink) {
         let dt = last == 0 ? 1.0 / 60 : min(0.034, l.timestamp - last)
         last = l.timestamp
-        guard !dragging else { return }
+        // while a finger moves it nothing runs here; the display link stops until the drag ends (go starts it again)
+        if dragging { stop(); return }
         if UIAccessibility.isReduceMotionEnabled {
             pos = target; vel = 0
         } else {
@@ -98,6 +101,9 @@ final class CarouselState: NSObject, ObservableObject {
             if haptic && centerID != nil { Haptics.play("sel") }
             centerID = id
             CarouselCenter.shared.id = id
+            // the covers next to the middle one are decoded in the background before they slide in
+            let near = (-5...5).map { ids[((index(pos) + $0) % ids.count + ids.count) % ids.count] }
+            Library.shared.prefetch(near.compactMap { Library.shared.state.book($0)?.cover })
         }
     }
 }
@@ -135,12 +141,16 @@ struct CarouselView: View {
                 stage(W: W, coverH: coverH)
                     .frame(width: W, height: coverH)
                     .padding(.top, max(10, min(26, (g.size.height - coverH - infoH) * 0.3)))
-                if let b = lib.state.book(car.centerID ?? "") {
-                    info(b).id(b.id).transition(.opacity)
+                // only the words fade between books: an animation on the whole column would also slow the covers
+                // every time the middle book changes
+                VStack(spacing: 0) {
+                    if let b = lib.state.book(car.centerID ?? "") {
+                        info(b).id(b.id).transition(.opacity)
+                    }
                 }
+                .animation(.easeOut(duration: 0.2), value: car.centerID)
                 Spacer(minLength: 0)
             }
-            .animation(.easeOut(duration: 0.2), value: car.centerID)
         }
         .onAppear { sync() }
         .onChange(of: books.map(\.id)) { _ in sync() }
@@ -164,7 +174,7 @@ struct CarouselView: View {
             let cw = coverH * b.coverAspect
             let p = flow ? flowPlace(o, W: W, tilt: tilt) : stackPlace(o, cw: cw, W: W)
             return (i, b, p, abs(o) <= R)
-        }.sorted { $0.p.z < $1.p.z }
+        }.filter { $0.show }.sorted { $0.p.z < $1.p.z }   // only the covers near the middle are built, however many books there are
         return ZStack {
             ForEach(cards, id: \.b.id) { c in
                 CarouselCard(book: c.b, height: coverH, place: c.p, ns: ns)
@@ -220,6 +230,7 @@ struct CarouselView: View {
                     lastX = dx; lastT = Date(); speed = 0
                 }
                 guard axis == "x" else { return }
+                car.dragging = true
                 let now = Date(), dt = max(0.001, now.timeIntervalSince(lastT))
                 speed = 0.6 * speed + 0.4 * (Double(dx - lastX) / step(W: W, coverH: coverH) / dt)
                 lastX = dx; lastT = now

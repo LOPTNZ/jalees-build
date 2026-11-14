@@ -171,6 +171,8 @@ struct ShelfRowDrop: DropDelegate {
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         let p = place(info.location.x)
+        // dropUpdated fires many times a second: redraw the shelf only when the marker really moved
+        if let h = editor.hint, h.row == row, h.index == p.index, h.gap == p.gap { return DropProposal(operation: .move) }
         editor.hint = (row, p.index, p.gap)
         return DropProposal(operation: .move)
     }

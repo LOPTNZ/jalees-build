@@ -114,6 +114,8 @@ struct ViewMenu: View {
             VStack(spacing: 0) {
                 ForEach([("carousel", "دائري", "rectangle.stack"), ("shelf", "رفوف", "books.vertical"), ("grid", "شبكة", "square.grid.3x3")], id: \.0) { v in
                     JMenuRow(icon: v.2, title: v.1, checked: s.view == v.0) {
+                        // leaving the shelf ends its editing (the draft would come back stale)
+                        if v.0 != "shelf" && ShelfEditor.shared.editing { ShelfEditor.shared.cancel() }
                         lib.change { $0.settings.view = v.0 }
                         dismiss()
                     }
@@ -306,9 +308,9 @@ struct PositionField: View {
     var body: some View {
         if unitTime {
             HStack(spacing: 10) {
-                numberBox(Binding(get: { Double(Int(value) / 60) }, set: { value = $0 * 60 + Double(Int(value) % 60) }), label: "ساعات")
+                numberBox(Binding(get: { Double(iv(value) / 60) }, set: { value = min(1e6, max(0, $0)) * 60 + Double(iv(value) % 60) }), label: "ساعات")
                 Text(":").font(JFont.body(20, .medium))
-                numberBox(Binding(get: { Double(Int(value) % 60) }, set: { value = Double(Int(value) / 60) * 60 + min(59, $0) }), label: "دقائق")
+                numberBox(Binding(get: { Double(iv(value) % 60) }, set: { value = Double(iv(value) / 60) * 60 + min(59, max(0, $0)) }), label: "دقائق")
             }
             .environment(\.layoutDirection, .leftToRight)
         } else {
@@ -319,6 +321,9 @@ struct PositionField: View {
             }
         }
     }
+
+    /// a whole number of minutes that can't crash Int() (a very long typed number, or a negative one)
+    private func iv(_ v: Double) -> Int { v.isFinite ? Int(min(max(v, 0), 1e9)) : 0 }
 
     private func numberBox(_ v: Binding<Double>, label: String) -> some View {
         TextField(label, value: v, format: .number.grouping(.never).locale(Locale(identifier: "en_US_POSIX")))
@@ -351,10 +356,10 @@ struct AddNoteMenu: View {
         let b = lib.state.book(bookID)
         JSheet(title: "أضف إلى «" + (b?.title ?? "") + "»") {
             VStack(spacing: 0) {
-                JMenuRow(icon: "quote.opening", title: "اقتباس", sub: "جملة أعجبتك") { dismiss(); Flows.note(bookID, kind: "quote") }
-                JMenuRow(icon: "lightbulb", title: "فكرة", sub: "شي خطر في بالك وأنت تقرأ") { dismiss(); Flows.note(bookID, kind: "thought") }
-                JMenuRow(icon: "person", title: "شخصية", sub: "اسمها ووصفها وعلاقاتها") { dismiss(); Flows.note(bookID, kind: "char") }
-                JMenuRow(icon: "character.book.closed", title: "كلمة", sub: "كلمة جديدة ومعناها") { dismiss(); Flows.note(bookID, kind: "word") }
+                JMenuRow(icon: "quote.opening", title: "اقتباس", sub: "جملة أعجبتك") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(bookID, kind: "quote") } }
+                JMenuRow(icon: "lightbulb", title: "فكرة", sub: "شي خطر في بالك وأنت تقرأ") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(bookID, kind: "thought") } }
+                JMenuRow(icon: "person", title: "شخصية", sub: "اسمها ووصفها وعلاقاتها") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(bookID, kind: "char") } }
+                JMenuRow(icon: "character.book.closed", title: "كلمة", sub: "كلمة جديدة ومعناها") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(bookID, kind: "word") } }
                 if let b = b, !b.isNovel {
                     JMenuRow(icon: "flag", title: "تحديث التقدم", sub: b.posLabel) { progress = true }
                 }

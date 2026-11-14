@@ -105,7 +105,7 @@ struct ShelfView: View {
                 .padding(.horizontal, 16).padding(.bottom, 110)
             }
             .onAppear { ShelfStore.ensure(width: g.size.width) }
-            .onChange(of: lib.state.books.count) { _ in ShelfStore.ensure(width: g.size.width) }
+            .onChange(of: lib.state.books.map(\.id)) { _ in ShelfStore.ensure(width: g.size.width) }
         }
     }
 }
@@ -286,7 +286,7 @@ struct Spine: View {
     let book: Book
     let width: CGFloat
     let height: CGFloat
-    @ObservedObject private var lib = Library.shared
+    private var lib: Library { Library.shared }
 
     var body: some View {
         let c = UIColor.hslParts(book.hslString) ?? .darkGray
@@ -329,7 +329,7 @@ struct FlatSpine: View {
     let book: Book
     let width: CGFloat
     let height: CGFloat
-    @ObservedObject private var lib = Library.shared
+    private var lib: Library { Library.shared }
 
     var body: some View {
         let c = UIColor.hslParts(book.hslString) ?? .darkGray

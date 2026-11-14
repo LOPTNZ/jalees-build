@@ -504,18 +504,26 @@ final class Novels: ObservableObject {
         let page = try await Fetcher.html(novel.url)
         guard let info = try await SourceEngine.shared.run(novel.source, "series", html: page, url: novel.url) as? [String: Any] else { return 0 }
         let rows = (info["rows"] as? [[String: Any]]) ?? []
-        let known = Set(db.query("SELECT url FROM chapters WHERE novel=?", [novel.id]).map { $0.str("url") })
-        let fresh = rows.filter { !known.contains(($0["url"] as? String) ?? "") }.reversed()
-        var idx = (db.query("SELECT MAX(idx) AS m FROM chapters WHERE novel=?", [novel.id]).first?.int("m") ?? -1) + 1
         let now = Date().timeIntervalSince1970
+        var added = 0
+        // read what is known inside the transaction, so two checks at once cannot both add the same chapter or leave idx gaps
         db.transaction {
-            for r in fresh { insert(r, novel: novel.id, idx: idx, found: now); idx += 1 }
+            var known = Set(db.query("SELECT url FROM chapters WHERE novel=?", [novel.id]).map { $0.str("url") })
+            var idx = (db.query("SELECT MAX(idx) AS m FROM chapters WHERE novel=?", [novel.id]).first?.int("m") ?? -1) + 1
+            for r in rows.reversed() {
+                let u = (r["url"] as? String) ?? ""
+                guard !u.isEmpty, !known.contains(u) else { continue }
+                known.insert(u)
+                insert(r, novel: novel.id, idx: idx, found: now)
+                idx += 1
+                added += 1
+            }
             db.run("UPDATE novels SET total=(SELECT COUNT(*) FROM chapters WHERE novel=?), updated=?, status=? WHERE id=?",
                    [novel.id, Date().timeIntervalSince1970, (info["status"] as? String) ?? novel.status, novel.id])
         }
         reload()
         fixCover(novel, siteCover: (info["cover"] as? String) ?? "", page: page)
-        return fresh.count
+        return added
     }
 
     /// The saved cover is the site's own picture (what every page of it shows, its logo): the novel's cover replaces it.

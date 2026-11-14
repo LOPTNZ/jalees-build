@@ -622,7 +622,8 @@ struct NovelPageView: View {
                 if let i = model.currentIndex {
                     JCircle(look: L, symbol: "scope", label: "الفصل الحالي") {
                         model.filter = "all"
-                        withAnimation { proxy.scrollTo(model.chapters[i].id, anchor: .center) }
+                        model.folded.remove(model.volume(model.chapters[i]))
+                        DispatchQueue.main.async { withAnimation { proxy.scrollTo(model.chapters[i].id, anchor: .center) } }
                     }
                 }
                 JCircle(look: L, symbol: model.newestFirst ? "arrow.up" : "arrow.down", label: model.newestFirst ? "الأقدم أولًا" : "الأحدث أولًا") { model.newestFirst.toggle() }
@@ -679,13 +680,16 @@ struct NovelPageView: View {
             return
         }
         model.filter = "all"
+        // a chapter inside a folded volume is not drawn: open the volume first
+        model.folded.remove(model.volume(c))
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         DispatchQueue.main.async { withAnimation { proxy.scrollTo(c.id, anchor: .center) } }
     }
 
     private var chapterRows: some View {
         let list = model.shown
-        let cur = model.currentIndex ?? -1
+        // the current chapter's idx (not its place in the list: they differ when idx has gaps)
+        let cur = model.currentIndex.map { model.chapters[$0].idx } ?? -1
         let mk = model.markedChapters
         let range = model.picked
         let showVol = !model.newestFirst && model.filter == "all"
@@ -725,7 +729,7 @@ struct NovelPageView: View {
                             Button { model.act("download", [c.id]) } label: { Label("حمّل", systemImage: "arrow.down.circle") }
                         }
                         Button { model.act(c.read ? "unread" : "read", [c.id]) } label: { Label(c.read ? "علّمه غير مقروء" : "علّمه مقروء", systemImage: c.read ? "circle" : "checkmark.circle") }
-                        Button { model.act("read", model.chapters[..<c.idx].filter { !$0.read }.map(\.id)) } label: { Label("علّم كل اللي قبله مقروء", systemImage: "checkmark") }
+                        Button { model.act("read", model.chapters.filter { $0.idx < c.idx && !$0.read }.map(\.id)) } label: { Label("علّم كل اللي قبله مقروء", systemImage: "checkmark") }
                         Button { NovelBridge.openSite(c.url) } label: { Label("افتحه في الموقع", systemImage: "safari") }
                     }
                 Rectangle().fill(Color(L.line).opacity(0.6)).frame(height: 0.5)

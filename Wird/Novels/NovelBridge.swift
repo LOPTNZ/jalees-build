@@ -101,7 +101,8 @@ enum NovelBridge {
         var at = 0
         var place: (p: Int, o: Double)?
         if let i = index {
-            at = i
+            // `index` is the chapter's idx; its place in the list differs when idx has gaps
+            at = chapters.firstIndex(where: { $0.idx == i }) ?? min(max(0, i), chapters.count - 1)
         } else if let c = chapter, let i = chapters.firstIndex(where: { $0.id == c }) {
             at = i
             place = paragraph.map { (p: $0, o: 0) }
@@ -170,6 +171,8 @@ final class Downloads: ObservableObject {
     private func run(source: String) async {
         while let id = waiting.first {
             if let ch = Novels.shared.chapter(id), !ch.saved {
+                // each chapter's own novel decides the site (the queue can hold chapters of several novels)
+                let source = Novels.shared.novel(ch.novel)?.source ?? source
                 do {
                     _ = try await Novels.shared.text(ch, source: source)
                     done += 1

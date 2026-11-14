@@ -89,7 +89,8 @@ struct LibraryView: View {
                     headerButton("slider.horizontal.3", "خيارات المكتبة", over, dot: filterActive) { sheet = .options }
                     headerButton("magnifyingglass", "بحث", over) {
                         withAnimation(.easeOut(duration: 0.2)) { searching.toggle() }
-                        if searching { searchFocus = true } else { query = "" }
+                        // the field isn't there yet in this pass: focus it on the next one
+                        if searching { DispatchQueue.main.async { searchFocus = true } } else { query = "" }
                     }
                 }
             }

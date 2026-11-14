@@ -34,9 +34,11 @@ final class Store {
         }
     }
 
-    func saveState(_ json: String) {
-        guard let data = json.data(using: .utf8), !data.isEmpty else { return }
+    /// `done` runs on the store's queue once the file is written (or skipped).
+    func saveState(_ json: String, done: (() -> Void)? = nil) {
+        guard let data = json.data(using: .utf8), !data.isEmpty else { done?(); return }
         queue.async {
+            defer { done?() }
             // keep the version from the start of this launch, in case something goes wrong
             if !self.keptPrevious, self.fm.fileExists(atPath: self.stateURL.path) {
                 let prev = self.root.appendingPathComponent("state.previous.json")

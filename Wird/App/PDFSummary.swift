@@ -51,7 +51,7 @@ enum PDFSummary {
     }
 
     private static func hsl(_ b: Book) -> (h: Double, s: Double, l: Double, raw: [Double]) {
-        let c = b.color ?? [b.raw.num("hue", 0), 38, 32]
+        let c = (b.color.flatMap { $0.count >= 3 ? $0 : nil }) ?? [b.raw.num("hue", 0), 38, 32]
         return (c[0], min(c[1], 55), c[2], c)
     }
 

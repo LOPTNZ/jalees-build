@@ -31,7 +31,8 @@ final class SessionModel: ObservableObject {
     }
 
     private init() {
-        if timer != nil { startTicking(); syncLock() }
+        // a session still running after a relaunch: the clock, the lock screen and the awake screen come back
+        if timer != nil { startTicking(); syncLock(); awake(running) }
     }
 
     private func setTimer(_ f: (inout JSONObject) -> Void) {
@@ -55,6 +56,7 @@ final class SessionModel: ObservableObject {
         }
         if b.status == .done { Present.shared.open(.reread(id)); return }
         let now = Millis.now
+        self.now = Date()
         Library.shared.change { st in
             st.timer = ["bookId": .string(id), "vi": .number(Double(b.vi)), "pos": .number(b.pos), "startedAt": .number(now), "acc": .number(0),
                         "sessionStart": .number(now), "cd": .null, "min": .bool(false)]
@@ -73,6 +75,7 @@ final class SessionModel: ObservableObject {
     }
 
     func pause() {
+        now = Date()
         let e = elapsed
         setTimer { $0.set("acc", e); $0["startedAt"] = .null }
         awake(false)
@@ -81,6 +84,7 @@ final class SessionModel: ObservableObject {
     }
 
     func resume() {
+        now = Date()
         setTimer { $0.set("startedAt", Millis.now) }
         awake(true)
         syncLock()
@@ -105,6 +109,7 @@ final class SessionModel: ObservableObject {
     }
 
     func setCountdown(_ minutes: Int) {
+        now = Date()
         let e = elapsed
         setTimer { t in
             t["cd"] = .object(["min": .number(Double(minutes)), "at": .number(e), "fired": .bool(false)])
@@ -138,6 +143,8 @@ final class SessionModel: ObservableObject {
 
     private func step() {
         guard timer != nil else { tick?.invalidate(); tick = nil; return }
+        // paused: the clock stands still, so nothing redraws every half second
+        guard running else { return }
         now = Date()
         if let left = countdownLeft, left <= 0, timer?["cd"]?.object?.bool("fired") == false {
             let m = Int(timer?["cd"]?.object?.num("min") ?? 0)
@@ -149,7 +156,7 @@ final class SessionModel: ObservableObject {
     }
 
     /// The keep-awake setting changed: apply it to the running session.
-    func refreshAwake() { awake(timer != nil) }
+    func refreshAwake() { awake(running) }
 
     /// Everything about a session stops without saving (restoring a backup, starting from zero).
     func clear() { stopAll() }
@@ -217,9 +224,10 @@ final class SessionModel: ObservableObject {
 
     func save(vi: Int, pos: Double) -> String? {
         guard let t = timer, let b = book else { return nil }
+        now = Date()
         let v = min(max(0, vi), max(0, b.volumes.count - 1))
         let p = max(0, pos.rounded())
-        if let tot = b.volumes[v].total, p > tot {
+        if b.volumes.indices.contains(v), let tot = b.volumes[v].total, p > tot {
             return b.unit.time ? "الوقت أكبر من مدة الكتاب (\(Words.hm(tot)))." : "الرقم أكبر من عدد \(b.unit.plu) (\(Int(tot)))."
         }
         let ms = elapsed

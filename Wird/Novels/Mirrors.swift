@@ -63,10 +63,19 @@ extension Novels {
         return r.rows.map { ["num": $0["num"] as? String ?? "", "url": $0["url"] as? String ?? "", "title": $0["title"] as? String ?? ""] }
     }
 
+    /// The same chapter number: by value, so a side chapter «12.5» is not chapter 125.
     static func sameNum(_ a: String, _ b: String) -> Bool {
-        let x = a.filter(\.isNumber), y = b.filter(\.isNumber)
-        guard !x.isEmpty, !y.isEmpty, let p = Int(x), let q = Int(y) else { return false }
+        guard let p = numValue(a), let q = numValue(b) else { return false }
         return p == q
+    }
+
+    static func numValue(_ s: String) -> Double? {
+        let w = s.map { c -> Character in
+            if let d = c.wholeNumberValue, !c.isASCII { return Character(String(d)) }
+            return c == "٫" || c == "," ? "." : c
+        }
+        guard let r = String(w).range(of: #"[0-9]+(\.[0-9]+)?"#, options: .regularExpression) else { return nil }
+        return Double(String(w)[r])
     }
 
     /// One chapter from a backup source (the first that has its number); saved as this chapter's text.
@@ -106,9 +115,20 @@ extension Novels {
         let db = DB.shared
         db.transaction {
             var used = Set<Int>()
+            // old chapters by number, in order (a long novel's 2,000+ chapters would make a scan per row very slow)
+            var byNum: [Double: [ChapterRow]] = [:]
+            for c in old {
+                if let k = Self.numValue(c.num) { byNum[k, default: []].append(c) }
+            }
+            var taken: [Double: Int] = [:]
             for (i, row) in r.rows.enumerated() {
                 let num = row["num"] as? String ?? ""
-                if let c = old.first(where: { !used.contains($0.id) && Self.sameNum($0.num, num) }) {
+                var match: ChapterRow?
+                if let k = Self.numValue(num), let list = byNum[k] {
+                    let t = taken[k] ?? 0
+                    if t < list.count { match = list[t]; taken[k] = t + 1 }
+                }
+                if let c = match {
                     used.insert(c.id)
                     db.run("UPDATE chapters SET idx=?, url=?, title=CASE WHEN title IS NULL OR title='' THEN ? ELSE title END, volume=?, date=?, locked=? WHERE id=?",
                            [i, row["url"] as? String ?? "", row["title"] as? String ?? "", row["volume"] as? String ?? "", row["date"] as? String ?? "",

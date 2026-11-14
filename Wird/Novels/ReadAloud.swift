@@ -57,6 +57,8 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
     private(set) var sleepEnd: Date?
     private(set) var sleepAtChapterEnd = false
     private var commandsReady = false
+    /// it was playing when a call or another app took the sound
+    private var pausedByCall = false
     var onChange: (() -> Void)?
     /// simulator checks (-JaleesSilent): the speech engine there can stall the app, so sentences are "said" in silence
     /// at a reading pace, and the player, the highlight and going on to the next sentence are what gets checked
@@ -205,7 +207,11 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
         gen += 1
         renditions = [:]
         ready = [:]
-        if active { jump(to: at) }
+        if active {
+            let was = playing
+            jump(to: at)
+            if !was { pause() }   // changing the voice while paused doesn't start the reading
+        }
         onChange?()
     }
 
@@ -264,7 +270,7 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
     }
 
     private func nextChapter() {
-        guard let r = reader else { return }
+        guard let r = reader else { stop(); return }   // the reader went away: nothing should go on playing
         r.markReadForReadAloud(chapterIndex)
         if sleepAtChapterEnd { stopSounds(); sleepNow(); return }
         let i = chapterIndex + 1
@@ -562,8 +568,9 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
         guard let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         let o = n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
         Task { @MainActor in
-            if type == .began { self.pause() }
-            else if let o = o, AVAudioSession.InterruptionOptions(rawValue: o).contains(.shouldResume) { self.resume() }
+            if type == .began { self.pausedByCall = self.playing; self.pause() }
+            else if self.pausedByCall, let o = o, AVAudioSession.InterruptionOptions(rawValue: o).contains(.shouldResume) { self.pausedByCall = false; self.resume() }
+            else { self.pausedByCall = false }
         }
     }
 
