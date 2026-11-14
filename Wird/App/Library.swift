@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import ImageIO
 import Combine
 
 /// The library in memory. It is read from and saved to the same state.json the web app used (Store), so nothing has
@@ -63,12 +64,33 @@ final class Library: ObservableObject {
 
     private let images = NSCache<NSString, UIImage>()
 
+    /// A picture, made ready to draw once and kept: no bigger than the screen needs (a 3000-pixel photo is cut
+    /// down to 1200), decoded up front, so scrolling and the cover flight never decode it again.
     func image(_ id: String?) -> UIImage? {
         guard let id = id, !id.isEmpty else { return nil }
         if let i = images.object(forKey: id as NSString) { return i }
-        guard let i = Store.shared.image(id) else { return nil }
+        guard let d = Store.shared.imageData(id), let i = Self.prepared(d, max: 1200) else { return nil }
         images.setObject(i, forKey: id as NSString)
         return i
+    }
+
+    /// The same picture, tiny: the blurred colour behind the carousel, a book's page and a session. Blurring a
+    /// 60-pixel picture looks the same as blurring the whole one and costs nothing.
+    func backdrop(_ id: String?) -> UIImage? {
+        guard let id = id, !id.isEmpty else { return nil }
+        let key = ("bd:" + id) as NSString
+        if let i = images.object(forKey: key) { return i }
+        guard let d = Store.shared.imageData(id), let i = Self.prepared(d, max: 60) else { return nil }
+        images.setObject(i, forKey: key)
+        return i
+    }
+
+    nonisolated static func prepared(_ d: Data, max side: CGFloat) -> UIImage? {
+        guard let src = CGImageSourceCreateWithData(d as CFData, nil) else { return UIImage(data: d) }
+        let opts: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                                     kCGImageSourceShouldCacheImmediately: true, kCGImageSourceThumbnailMaxPixelSize: side]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return UIImage(data: d) }
+        return UIImage(cgImage: cg)
     }
 
     /// Saves a picture and returns its new id.

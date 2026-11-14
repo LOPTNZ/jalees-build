@@ -115,9 +115,8 @@ struct NotebookView: View {
                     .shadow(color: .black.opacity(0.4), radius: 12, y: 10)
                     .contentShape(Circle())
                     .onTapGesture { fabMenu(!fabOpen) }
-                    .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 14) {
+                    .onLongPressGesture(minimumDuration: 0.3, maximumDistance: 14) {
                         Haptics.play("soft")
-                        if fabOpen { fabMenu(false) }
                         fabPick(tab == "mark" ? "quote" : tab)
                     }
                     .accessibilityElement()
@@ -139,12 +138,16 @@ struct NotebookView: View {
     }
 
     private func fabPick(_ k: String) {
+        let wasOpen = fabOpen
         fabMenu(false)
-        let b = bookFilter.isEmpty ? (lib.state.lastBookId() ?? "") : bookFilter
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            if k == "photo" { edit = ItemRef(book: b, kind: "quote", item: nil, pick: true, photo: true) }
-            else { edit = ItemRef(book: b, kind: k, item: nil, pick: true) }
+        // the book shown in the notebook, or none: the form asks (it does not guess the last book read)
+        let b = bookFilter
+        let open = {
+            if k == "photo" { edit = ItemRef(book: b, kind: "quote", item: nil, pick: true, photo: true, fromNotebook: true) }
+            else { edit = ItemRef(book: b, kind: k, item: nil, pick: true, fromNotebook: true) }
         }
+        // straight away from a hold; after the menu folds when picked from it
+        if wasOpen { DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: open) } else { open() }
     }
 
     /// Opened from somewhere else (a book, the reader): its book, its list, maybe a character's card.
@@ -350,6 +353,8 @@ struct ItemRef: Identifiable {
     var pick = false
     /// open the camera (or photos) for a page right away (the + menu's «صوّر اقتباس»)
     var photo = false
+    /// added from the notebook's own +: no page or chapter is filled in for you
+    var fromNotebook = false
 }
 
 /// The notebook's scroll position, for the floating + that fades while scrolling.

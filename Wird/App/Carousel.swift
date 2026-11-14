@@ -308,11 +308,11 @@ struct CarouselCard: View {
         BookCover(book: book, radius: 11)
             .frame(width: height * book.coverAspect, height: height)
             .overlay(Color.black.opacity(place.dim).clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous)))
-            .zoomSource(book.id, ns)
             .shadow(color: .black.opacity(0.55), radius: 14, y: 12)
             .rotation3DEffect(.degrees(place.rot), axis: (x: 0, y: 1, z: 0), perspective: 0.45)
             .scaleEffect(place.scale)
             .offset(x: place.x)
+            .coverSpot(book.id)
             .accessibilityElement()
             .accessibilityLabel(book.title)
             .accessibilityAddTraits(.isButton)
@@ -331,8 +331,8 @@ struct CarouselBand: View {
                 ZStack {
                     if let b = book {
                         Color(UIColor.hslParts(b.hslString) ?? L.primary)
-                        if let img = Library.shared.image(b.cover) {
-                            Image(uiImage: img).resizable().scaledToFill().blur(radius: 34).opacity(0.9)
+                        if let img = Library.shared.backdrop(b.cover) {
+                            Image(uiImage: img).resizable().scaledToFill().blur(radius: 16).opacity(0.9)
                         }
                     }
                     Color.black.opacity(0.42)

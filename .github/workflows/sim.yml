@@ -37,12 +37,19 @@ jobs:
         run: bash tools/sim/shots.sh
       - name: Walk through the app (UI tests)
         if: always()
-        timeout-minutes: 12
+        timeout-minutes: 18
         run: |
           mkdir -p out-sim/ui
           # a fresh install: the demo library, not what the pictures above changed
           xcrun simctl uninstall Jalees13 com.abdullah.wird.reader || true
+          # the screen is recorded, so the animations can be looked at frame by frame (tools/sim/frames.swift)
+          xcrun simctl io Jalees13 recordVideo --codec=h264 --force walk.mp4 2> rec.log &
+          REC=$!
+          for i in $(seq 1 60); do grep -q "Recording started" rec.log && break; sleep 0.1; done
+          python3 -c 'import time; print(time.time())' > out-sim/rec-start
           TEST_RUNNER_SHOTS="$PWD/out-sim/ui" xcodebuild test -project Wird.xcodeproj -scheme Wird             -destination 'platform=iOS Simulator,name=Jalees13' -derivedDataPath build             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=""             2>&1 | tee test.log | grep -E "error:|Test Case .*(passed|failed)|: error|XCTAssert|not found|TEST (SUCCEEDED|FAILED)" || true
+          kill -INT $REC 2>/dev/null; wait $REC 2>/dev/null || true
+          swift tools/sim/frames.swift walk.mp4 out-sim/rec-start out-sim/ui/marks.txt out-sim/frames || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

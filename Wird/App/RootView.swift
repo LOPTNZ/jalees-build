@@ -129,12 +129,14 @@ private struct TabRoot: View {
                 .navigationDestination(for: Router.Page.self) { page in
                     switch page {
                     case .novel(let id, let book):
-                        if tab == .library { NovelPageScreen(novelID: id, bookID: book).zoomDestination(book, zoom) } else { NovelPageScreen(novelID: id, bookID: book) }
+                        NovelPageScreen(novelID: id, bookID: book)
                     case .book(let id):
-                        if tab == .library { BookPage(bookID: id).zoomDestination(id, zoom) } else { BookPage(bookID: id) }
+                        BookPage(bookID: id)
                     }
                 }
         }
+        // the covers' places belong to this tab (Flight.swift)
+        .environment(\.flightTab, tab)
     }
 
     @ViewBuilder private var first: some View {

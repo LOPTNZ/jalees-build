@@ -27,7 +27,40 @@ final class NovelPageModel: ObservableObject {
     /// volumes folded away in the chapter list (all but the one being read, at first)
     @Published var folded: Set<String> = []
     private var foldedOnce = false
-    var volumeCounts: [String: Int] { Dictionary(grouping: chapters, by: \.volume).mapValues(\.count) }
+    /// each chapter's volume as the list shows it, and how many chapters each volume has
+    private(set) var dvol: [Int: String] = [:]
+    private(set) var volumeCounts: [String: Int] = [:]
+
+    /// A chapter or two with another volume's name (or none, or a general «الفصول») between chapters of one volume
+    /// belong to that volume in the list, so it is not split into two with the same heading.
+    static func displayVolumes(_ chs: [ChapterRow]) -> [String] {
+        var v = chs.map(\.volume)
+        var runs: [(start: Int, end: Int, name: String)] = []
+        for i in v.indices {
+            if let last = runs.last, last.name == v[i] { runs[runs.count - 1].end = i } else { runs.append((i, i, v[i])) }
+        }
+        if runs.count >= 3 {
+            for r in 1..<(runs.count - 1) {
+                let prev = runs[r - 1], next = runs[r + 1], cur = runs[r]
+                if prev.name == next.name, !prev.name.isEmpty, cur.end - cur.start < 3 {
+                    for i in cur.start...cur.end { v[i] = prev.name }
+                }
+            }
+        }
+        return v
+    }
+
+    private func groupVolumes() {
+        let v = Self.displayVolumes(chapters)
+        var d: [Int: String] = [:], counts: [String: Int] = [:]
+        for (c, name) in zip(chapters, v) { d[c.id] = name; counts[name, default: 0] += 1 }
+        dvol = d
+        volumeCounts = counts
+        shownCache = nil
+    }
+
+    func volume(_ c: ChapterRow) -> String { dvol[c.id] ?? c.volume }
+    private var shownCache: (key: String, list: [ChapterRow])?
 
     func toggleVolume(_ v: String) {
         if folded.contains(v) { folded.remove(v) } else { folded.insert(v) }
@@ -52,10 +85,11 @@ final class NovelPageModel: ObservableObject {
     func reload() {
         if let n = Novels.shared.novel(novel.id) { novel = n }
         chapters = Novels.shared.chapters(novel.id)
+        groupVolumes()
         if !foldedOnce {
             foldedOnce = true
-            let vols = Set(chapters.map(\.volume).filter { !$0.isEmpty })
-            let here = currentIndex.map { chapters[$0].volume } ?? chapters.first?.volume ?? ""
+            let vols = Set(chapters.map { volume($0) }.filter { !$0.isEmpty })
+            let here = currentIndex.map { volume(chapters[$0]) } ?? chapters.first.map { volume($0) } ?? ""
             if vols.count > 1 { folded = vols.subtracting([here]) }
         }
         book = NovelLibrary.book(bookID) ?? [:]
@@ -81,6 +115,8 @@ final class NovelPageModel: ObservableObject {
     var markedChapters: Set<Int> { Set(marks.compactMap { NovelBridge.num($0["ch"]) }) }
 
     var shown: [ChapterRow] {
+        let key = "\(chapters.count)|\(chapters.last?.id ?? 0)|\(filter)|\(newestFirst)|\(marks.count)|\(chapters.filter(\.read).count)|\(chapters.filter(\.saved).count)"
+        if let c = shownCache, c.key == key { return c.list }
         let mk = markedChapters
         var list = chapters
         switch filter {
@@ -89,7 +125,9 @@ final class NovelPageModel: ObservableObject {
         case "marked": list = list.filter { mk.contains($0.id) }
         default: break
         }
-        return newestFirst ? list.reversed() : list
+        let out = newestFirst ? Array(list.reversed()) : list
+        shownCache = (key, out)
+        return out
     }
 
     var picked: ClosedRange<Int>? {
@@ -213,9 +251,12 @@ struct NovelPageView: View {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     topBar
                     hero
-                    if !model.novel.summary.isEmpty { summary }
-                    statusAndProgress
-                    ListsRow(bookID: model.bookID)
+                    Group {
+                        if !model.novel.summary.isEmpty { summary }
+                        statusAndProgress
+                        ListsRow(bookID: model.bookID)
+                    }
+                    .flightArrive(model.bookID)
                     if downloads.active { downloadsCard }
                     highlights
                     notebook
@@ -297,6 +338,7 @@ struct NovelPageView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             CoverView(id: model.s("cover"), title: model.novel.title, author: model.novel.author, color: bookColor)
                 .frame(width: 116, height: 116 / 0.66)
+                .heroSpot(model.bookID)
                 .shadow(color: .black.opacity(0.55), radius: 11, y: 10)
         }
         .padding(.vertical, 14)
@@ -647,15 +689,17 @@ struct NovelPageView: View {
         let mk = model.markedChapters
         let range = model.picked
         let showVol = !model.newestFirst && model.filter == "all"
-        return VStack(spacing: 0) {
+        // lazy: a long novel's thousands of rows are made as they scroll into view
+        return LazyVStack(spacing: 0) {
             ForEach(Array(list.enumerated()), id: \.element.id) { k, c in
-                if showVol, !c.volume.isEmpty, k == 0 || list[k - 1].volume != c.volume {
-                    let open = !model.folded.contains(c.volume)
-                    Button { withAnimation(.easeOut(duration: 0.2)) { model.toggleVolume(c.volume) } } label: {
+                let vol = model.volume(c)
+                if showVol, !vol.isEmpty, k == 0 || model.volume(list[k - 1]) != vol {
+                    let open = !model.folded.contains(vol)
+                    Button { withAnimation(.easeOut(duration: 0.2)) { model.toggleVolume(vol) } } label: {
                         HStack(spacing: 8) {
-                            Text(c.volume).font(JFont.display(16, .semibold)).foregroundStyle(Color(L.ink)).multilineTextAlignment(.leading)
+                            Text(vol).font(JFont.display(16, .semibold)).foregroundStyle(Color(L.ink)).multilineTextAlignment(.leading)
                             Spacer(minLength: 6)
-                            Text("\(model.volumeCounts[c.volume] ?? 0)").font(JFont.body(13)).foregroundStyle(Color(L.ink2)).monospacedDigit()
+                            Text("\(model.volumeCounts[vol] ?? 0)").font(JFont.body(13)).foregroundStyle(Color(L.ink2)).monospacedDigit()
                             Image(systemName: "chevron.down").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(L.ink2))
                                 .rotationEffect(.degrees(open ? 0 : 90))
                         }
@@ -666,7 +710,7 @@ struct NovelPageView: View {
                     .buttonStyle(.plain)
                     .padding(.top, 10).padding(.bottom, 4)
                 }
-                if !(showVol && model.folded.contains(c.volume)) {
+                if !(showVol && model.folded.contains(vol)) {
                 ChapterRowView(look: L, ch: c, current: c.idx == cur, marked: mk.contains(c.id),
                                hideTitle: model.hideNext && cur >= 0 && c.idx > cur + 1,
                                picked: range?.contains(c.idx) ?? false)
@@ -878,6 +922,10 @@ private struct NovelPageHolder: View {
     var body: some View {
         NovelPageView(model: model)
             .toolbar(.hidden, for: .navigationBar)
-            .onAppear { model.close = { dismiss() }; model.reload() }
+            .onAppear {
+                let id = model.bookID
+                model.close = { Flight.shared.close(id) { dismiss() } }
+                model.reload()
+            }
     }
 }

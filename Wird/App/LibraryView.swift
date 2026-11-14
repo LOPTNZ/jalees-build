@@ -236,23 +236,15 @@ enum OpenBook {
     static func open(_ b: Book) {
         Library.shared.changeBook(b.id) { $0.opened = Millis.now }
         Library.shared.change { $0.lastBook = b.id }
-        if let n = b.novel { Router.shared.openNovel(n.novelID, book: b.id) } else { Router.shared.push(.book(b.id)) }
+        // the cover flies to the page when it is on screen (Flight.swift)
+        Flight.shared.open(b.id) {
+            if let n = b.novel { Router.shared.openNovel(n.novelID, book: b.id) } else { Router.shared.push(.book(b.id)) }
+        }
         // the web's soft tap when the details have finished opening
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Haptics.play("soft") }
     }
 }
 
-extension View {
-    /// The cover a book page grows from (iOS 18's zoom); nothing on older systems.
-    @ViewBuilder func zoomSource(_ id: String, _ ns: Namespace.ID) -> some View {
-        if #available(iOS 18, *) { self.matchedTransitionSource(id: id, in: ns) } else { self }
-    }
-
-    /// A page that grows from its book's cover, and shrinks back into it when you swipe down or go back.
-    @ViewBuilder func zoomDestination(_ id: String, _ ns: Namespace.ID) -> some View {
-        if #available(iOS 18, *) { self.navigationTransition(.zoom(sourceID: id, in: ns)) } else { self }
-    }
-}
 
 // MARK: - the grid
 
@@ -269,7 +261,7 @@ struct LibraryGrid: View {
                 ForEach(books) { b in
                     Button { OpenBook.open(b) } label: {
                         VStack(alignment: .leading, spacing: 6) {
-                            BookCover(book: b).frame(maxWidth: .infinity).zoomSource(b.id, ns)
+                            BookCover(book: b).frame(maxWidth: .infinity).coverSpot(b.id)
                                 .shadow(color: .black.opacity(0.3), radius: 7, y: 6)
                             Text(b.title).font(JFont.body(cols == 4 ? 12 : 13.5, .semibold)).foregroundStyle(Color(L.ink)).lineLimit(2)
                             Text(b.author.isEmpty ? b.status.label : b.author).font(JFont.body(cols == 4 ? 11 : 12)).foregroundStyle(Color(L.ink2)).lineLimit(1)

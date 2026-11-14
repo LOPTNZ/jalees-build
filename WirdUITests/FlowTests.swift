@@ -44,6 +44,27 @@ final class FlowTests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
     }
 
+    /// A moment the build machine's recording is cut at (tools/sim/frames.swift): the name and the time now.
+    private func mark(_ name: String) {
+        guard let d = Self.dir else { return }
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        let f = d.appendingPathComponent("marks.txt")
+        let line = "\(name) \(Date().timeIntervalSince1970)\n"
+        if let h = try? FileHandle(forWritingTo: f) {
+            h.seekToEndOfFile()
+            h.write(Data(line.utf8))
+            h.closeFile()
+        } else {
+            try? line.write(to: f, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// The page's own back button (the tab bar has a button with the same name, lower down).
+    private func pageBack() {
+        let all = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "المكتبة")).allElementsBoundByIndex.filter { $0.isHittable }
+        if let top = all.min(by: { $0.frame.minY < $1.frame.minY }), top.frame.minY < 300 { top.tap() } else { XCTFail("no back button") }
+    }
+
     private func tab(_ name: String) { tap(button(name), "tab " + name); sleep(1) }
 
     /// Scrolls until the element sits clear of the tab bar (a tap under it would land on a tab).
@@ -252,6 +273,45 @@ final class FlowTests: XCTestCase {
         tap(button("إغلاق"), "close the reader")
         sleep(2)
         shot("ui45-after-reader")
+    }
+
+    /// The animations: opening and closing books from the carousel, the tabs, the notebook's + held down. The build
+    /// machine records the screen and cuts each marked moment into a sheet of frames.
+    func test09Transitions() {
+        tab("المكتبة")
+        sleep(2)
+        mark("open-book")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.40)).tap()
+        sleep(2)
+        shot("ui50-book-open")
+        mark("close-book")
+        pageBack()
+        sleep(2)
+        shot("ui51-back")
+        mark("carousel-swipe")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.40)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.40)))
+        sleep(2)
+        mark("open-second")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.40)).tap()
+        sleep(2)
+        shot("ui52-second-open")
+        mark("close-second")
+        pageBack()
+        sleep(2)
+        shot("ui53-second-back")
+        mark("tab-notebook")
+        tab("دفتري")
+        mark("tab-progress")
+        tab("إنجازاتي")
+        mark("tab-library")
+        tab("المكتبة")
+        tab("دفتري")
+        sleep(1)
+        mark("fab-hold")
+        let plus = app.buttons["إضافة للدفتر"].firstMatch
+        if plus.waitForExistence(timeout: 4) { plus.press(forDuration: 0.35) } else { XCTFail("no + in the notebook") }
+        sleep(2)
+        shot("ui54-fab-hold-form")
     }
 
     /// إنجازاتي: goals with the achievements, then stats with the charts.

@@ -182,7 +182,7 @@ extension Book {
         (series ? "م\(vi + 1) · " : "") + uv(pos) + "/" + (curVolume?.total.map { uv($0) } ?? "؟")
     }
 
-    var coverAspect: Double { min(0.9, max(0.5, coverRatio ?? 0.66)) }
+    var coverAspect: Double { min(0.78, max(0.5, coverRatio ?? 0.66)) }
 }
 
 extension AppState {

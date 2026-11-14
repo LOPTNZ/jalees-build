@@ -29,12 +29,22 @@ final class ItemFormModel: ObservableObject {
             item = found
         } else {
             editing = false
-            item = b.map { NovelLibrary.blankItem(k, $0) } ?? [:]
+            item = b.map { ItemFormModel.blank(k, $0, ref.fromNotebook) } ?? [:]
         }
         x = item
         showPassage = !item.str("passage").isEmpty
         oldImg = k == .char ? item.optStr("photo") : item.optStr("img")
         original = JSONValue.object(item).data()
+    }
+
+    /// A new entry for a book. From the notebook's own + it is not placed at the page or chapter you are on.
+    static func blank(_ k: NoteKind, _ b: Book, _ fromNotebook: Bool) -> JSONObject {
+        var o = NovelLibrary.blankItem(k, b)
+        if fromNotebook {
+            o["loc"] = .null
+            if k == .char { o["first"] = .null }
+        }
+        return o
     }
 
     var book: Book? { Library.shared.state.book(bookID) }
@@ -259,7 +269,7 @@ struct ItemForm: View {
     @ViewBuilder private var bookRow: some View {
         if ref.pick {
             Menu {
-                ForEach(Library.shared.state.books) { b in Button(b.title) { m.bookID = b.id; m.x = NovelLibrary.blankItem(m.kind, b).merging(m.x.filter { ["text", "word", "name", "passage"].contains($0.key) }) { $1 } } }
+                ForEach(Library.shared.state.books) { b in Button(b.title) { m.bookID = b.id; m.x = ItemFormModel.blank(m.kind, b, ref.fromNotebook).merging(m.x.filter { ["text", "word", "name", "passage"].contains($0.key) }) { $1 } } }
             } label: {
                 HStack { Text(m.book?.title ?? "اختر كتابًا").font(JFont.body(15.5, .medium)); Spacer(); Image(systemName: "chevron.down") }
                     .foregroundStyle(Color(L.ink)).padding(.horizontal, 12).frame(height: 46)

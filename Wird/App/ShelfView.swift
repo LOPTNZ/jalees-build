@@ -239,7 +239,7 @@ struct ShelfBoard: View {
                 }
             }
             .overlay(alignment: .top) { badge(b) }
-            .zoomSource(b.id, ns)
+            .coverSpot(b.id)
         }
         .buttonStyle(.plain)
         .onDrag { editor.dragIDs = [b.id]; return NSItemProvider(object: b.id as NSString) }

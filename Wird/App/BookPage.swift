@@ -74,6 +74,7 @@ struct BookPage: View {
                     detailsSection(b)
                 }
                 .padding(.horizontal, 16)
+                .flightArrive(b.id)
             }
             .padding(.bottom, 110)
         }
@@ -87,7 +88,7 @@ struct BookPage: View {
         let tint = UIColor.hslParts(b.hslString) ?? L.primary
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Button { dismiss() } label: {
+                Button { Flight.shared.close(bookID) { dismiss() } } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.forward").font(.system(size: 15, weight: .semibold))
                         Text(backLabel).font(JFont.body(15, .medium))
@@ -109,6 +110,7 @@ struct BookPage: View {
                 Spacer(minLength: 0)
                 Button { Flows.editBook(b.id) } label: {
                     BookCover(book: b, radius: 6, marks: false).frame(width: 116)
+                        .heroSpot(b.id)
                         .shadow(color: .black.opacity(0.6), radius: 11, y: 12)
                 }
                 .buttonStyle(.plain)
@@ -119,7 +121,7 @@ struct BookPage: View {
         .background {
             // the picture fills the hero and no more (an overlay takes the hero's size, so nothing spills below it)
             Color(tint)
-                .overlay { if let img = lib.image(b.cover) { Image(uiImage: img).resizable().scaledToFill().blur(radius: 30).opacity(0.75) } }
+                .overlay { if let img = lib.backdrop(b.cover) { Image(uiImage: img).resizable().scaledToFill().blur(radius: 14).opacity(0.75) } }
                 .overlay { LinearGradient(colors: [Color.black.opacity(0.25), Color.black.opacity(0.5)], startPoint: .top, endPoint: .bottom) }
                 .clipped()
                 .ignoresSafeArea(edges: .top)

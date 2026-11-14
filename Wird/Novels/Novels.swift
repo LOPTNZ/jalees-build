@@ -514,7 +514,24 @@ final class Novels: ObservableObject {
                    [novel.id, Date().timeIntervalSince1970, (info["status"] as? String) ?? novel.status, novel.id])
         }
         reload()
+        fixCover(novel, siteCover: (info["cover"] as? String) ?? "", page: page)
         return fresh.count
+    }
+
+    /// The saved cover is the site's own picture (what every page of it shows, its logo): the novel's cover replaces it.
+    private func fixCover(_ novel: Novel, siteCover c: String, page: String) {
+        guard !c.isEmpty, c != novel.cover else { return }
+        let og = page.range(of: #"property="og:image"\s+content="([^"]+)""#, options: .regularExpression)
+            .map { String(page[$0]).replacingOccurrences(of: #"^.*content=""#, with: "", options: .regularExpression).dropLast() }
+            .map(String.init) ?? ""
+        guard novel.cover.isEmpty || novel.cover == og || novel.cover.removingPercentEncoding == og.removingPercentEncoding else { return }
+        db.run("UPDATE novels SET cover=? WHERE id=?", [c, novel.id])
+        guard !novel.book.isEmpty, let url = URL(string: c) else { return }
+        let book = novel.book
+        Task { @MainActor in
+            guard let (d, _) = try? await URLSession.shared.data(from: url), let img = UIImage(data: d) else { return }
+            NovelLibrary.setCover(book, img)
+        }
     }
 
     /// Looks for new chapters in every novel from a site, three at a time. Returns how many arrived.
