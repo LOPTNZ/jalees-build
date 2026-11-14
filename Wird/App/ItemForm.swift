@@ -275,6 +275,7 @@ struct ItemForm: View {
                     .foregroundStyle(Color(L.ink)).padding(.horizontal, 12).frame(height: 46)
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
             }
+            .accessibilityIdentifier("pickBook")
         } else if let b = m.book {
             Text(b.title).font(JFont.body(14.5, .medium)).foregroundStyle(Color(L.ink2))
         }
