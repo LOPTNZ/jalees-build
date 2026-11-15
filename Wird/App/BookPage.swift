@@ -82,6 +82,7 @@ struct BookPage: View {
                     }
                 }
                 .padding(.horizontal, 16)
+                .readableColumn()
             }
             // in the book layer: once the page has landed (BookLayer.covering); anywhere else: straight away
             .onAppear { if !inLayer { full = true } }
@@ -96,75 +97,7 @@ struct BookPage: View {
     // MARK: hero
 
     private func hero(_ b: Book) -> some View {
-        let tint = UIColor.hslParts(b.hslString) ?? L.primary
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Button { if inLayer { BookLayer.shared.close() } else { dismiss() } } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.forward").font(.system(size: 15, weight: .semibold))
-                        Text(backLabel).font(JFont.body(15, .medium))
-                    }
-                    .foregroundStyle(.white)
-                }
-                .buttonStyle(.plain)
-                Spacer(minLength: 0)
-                HeaderSessionChip()
-            }
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(b.title).font(JFont.display(26, .bold)).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
-                    let by = [b.author.isEmpty ? nil : "بقلم " + b.author, b.translated && !b.translator.isEmpty ? "ترجمة " + b.translator : nil,
-                              b.isAudio && !b.narrator.isEmpty ? "بصوت " + b.narrator : nil].compactMap { $0 }.joined(separator: " · ")
-                    if !by.isEmpty { Text(by).font(JFont.body(14.5)).foregroundStyle(.white.opacity(0.85)) }
-                    Flow(spacing: 6) { chips(b) }
-                }
-                Spacer(minLength: 0)
-                Button { Flows.editBook(b.id) } label: {
-                    BookCover(book: b, radius: 6, marks: false).frame(width: 116)
-                        .heroSpot(b.id)
-                        .shadow(color: .black.opacity(0.6), radius: 11, y: 12)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("تعديل الكتاب")
-            }
-        }
-        .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 22)
-        .background {
-            // the picture fills the hero and no more (an overlay takes the hero's size, so nothing spills below it)
-            Color(tint)
-                .overlay { if let img = lib.softBackdrop(b.cover) { Image(uiImage: img).resizable().interpolation(.medium).scaledToFill().opacity(0.75) } }
-                .overlay { LinearGradient(colors: [Color.black.opacity(0.25), Color.black.opacity(0.5)], startPoint: .top, endPoint: .bottom) }
-                .clipped()
-                .ignoresSafeArea(edges: .top)
-        }
-    }
-
-    /// the tab the page opened over (the book layer shows in the tab it was opened in)
-    private var backLabel: String { Router.shared.tab.title }
-
-    @ViewBuilder private func chips(_ b: Book) -> some View {
-        heroChip(b.format.label, icon: ["physical": "book", "ebook": "ipad", "audio": "headphones", "web": "globe"][b.format.rawValue])
-        if b.series { heroChip(Words.cnt(Double(b.volumes.count), Words.vols)) }
-        heroChip((b.structure == "chapters" ? "فصول" : "مجلد") + " · يُحسب ب" + b.unit.plu)
-        heroChip(Words.lang(b.lang) + (b.translated ? " · مترجم من " + Words.lang(b.origLang) : ""))
-        ForEach(Array(b.genres.prefix(9)), id: \.self) { heroChip($0) }
-        ForEach(b.cols, id: \.self) { c in
-            HStack(spacing: 4) {
-                if lib.state.colEmoji(c).isEmpty { Image(systemName: "square.stack").font(.system(size: 10)) }
-                Text(lib.state.colLabel(c)).font(JFont.body(12.5))
-            }
-                .foregroundStyle(Color(L.accentInk)).padding(.horizontal, 10).padding(.vertical, 3)
-                .background(Capsule().fill(Color(L.accentSoft)))
-        }
-    }
-
-    private func heroChip(_ t: String, icon: String? = nil) -> some View {
-        HStack(spacing: 4) {
-            if let i = icon { Image(systemName: i).font(.system(size: 10)) }
-            Text(t).font(JFont.body(12.5))
-        }
-        .foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 3)
-        .background(Capsule().fill(Color.white.opacity(0.16)))
+        BookHero(book: b) { if inLayer { BookLayer.shared.close() } else { dismiss() } }
     }
 
     // MARK: status and progress
@@ -779,5 +712,93 @@ struct ReviewPanel: View {
                 Text(b.review).font(JFont.quote(18)).foregroundStyle(Color(L.ink)).lineSpacing(6).spoiler(b.raw.bool("reviewSpoiler"))
             }
         }
+    }
+}
+
+/// The top of a book's page and a novel's page alike: the cover's colours behind, the title, who wrote and
+/// translated it, its chips, its cover (tap to edit), back to the tab it opened over.
+struct BookHero: View {
+    let book: Book
+    /// more chips (a novel's state and site)
+    var extra: [String] = []
+    let close: () -> Void
+    @ObservedObject private var lib = Library.shared
+    @Environment(\.look) private var L
+
+    var body: some View {
+        let b = book
+        let tint = UIColor.hslParts(b.hslString) ?? L.primary
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Button(action: close) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.backward").font(.system(size: 15, weight: .semibold))
+                        Text(backLabel).font(JFont.body(15, .medium))
+                    }
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                Spacer(minLength: 0)
+                HeaderSessionChip()
+            }
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(b.title).font(JFont.display(26, .bold)).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
+                    let by = [b.author.isEmpty ? nil : "بقلم " + b.author, b.translated && !b.translator.isEmpty ? "ترجمة " + b.translator : nil,
+                              b.isAudio && !b.narrator.isEmpty ? "بصوت " + b.narrator : nil].compactMap { $0 }.joined(separator: " · ")
+                    if !by.isEmpty { Text(by).font(JFont.body(14.5)).foregroundStyle(.white.opacity(0.85)) }
+                    Flow(spacing: 6) {
+                        chips(b)
+                        ForEach(extra, id: \.self) { heroChip($0) }
+                    }
+                }
+                Spacer(minLength: 0)
+                Button { Flows.editBook(b.id) } label: {
+                    BookCover(book: b, radius: 6, marks: false).frame(width: 116)
+                        .heroSpot(b.id)
+                        .shadow(color: .black.opacity(0.6), radius: 11, y: 12)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("تعديل الكتاب")
+            }
+        }
+        .readableColumn()
+        .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 22)
+        .background {
+            // the picture fills the hero and no more (an overlay takes the hero's size, so nothing spills below it)
+            Color(tint)
+                .overlay { if let img = lib.softBackdrop(b.cover) { Image(uiImage: img).resizable().interpolation(.medium).scaledToFill().opacity(0.75) } }
+                .overlay { LinearGradient(colors: [Color.black.opacity(0.25), Color.black.opacity(0.5)], startPoint: .top, endPoint: .bottom) }
+                .clipped()
+                .ignoresSafeArea(edges: .top)
+        }
+    }
+
+    /// the tab the page opened over (the book layer shows in the tab it was opened in)
+    private var backLabel: String { Router.shared.tab.title }
+
+    @ViewBuilder private func chips(_ b: Book) -> some View {
+        heroChip(b.format.label, icon: ["physical": "book", "ebook": "ipad", "audio": "headphones", "web": "globe"][b.format.rawValue])
+        if b.series { heroChip(Words.cnt(Double(b.volumes.count), Words.vols)) }
+        heroChip((b.structure == "chapters" ? "فصول" : "مجلد") + " · يُحسب ب" + b.unit.plu)
+        heroChip(Words.lang(b.lang) + (b.translated ? " · مترجم من " + Words.lang(b.origLang) : ""))
+        ForEach(Array(b.genres.prefix(9)), id: \.self) { heroChip($0) }
+        ForEach(b.cols, id: \.self) { c in
+            HStack(spacing: 4) {
+                if lib.state.colEmoji(c).isEmpty { Image(systemName: "square.stack").font(.system(size: 10)) }
+                Text(lib.state.colLabel(c)).font(JFont.body(12.5))
+            }
+                .foregroundStyle(Color(L.accentInk)).padding(.horizontal, 10).padding(.vertical, 3)
+                .background(Capsule().fill(Color(L.accentSoft)))
+        }
+    }
+
+    private func heroChip(_ t: String, icon: String? = nil) -> some View {
+        HStack(spacing: 4) {
+            if let i = icon { Image(systemName: i).font(.system(size: 10)) }
+            Text(t).font(JFont.body(12.5))
+        }
+        .foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 3)
+        .background(Capsule().fill(Color.white.opacity(0.16)))
     }
 }

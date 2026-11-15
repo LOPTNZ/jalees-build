@@ -25,6 +25,7 @@ struct ProgressTab: View {
                     if sub == "goals" { GoalsPage(state: lib.state) } else { StatsPage(state: lib.state, range: $range) }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 110)
+                .readableColumn(820)
             }
             .onReceive(NotificationCenter.default.publisher(for: .tabRetap)) { n in
                 if (n.object as? String) == "progress" { withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("top", anchor: .top) } }

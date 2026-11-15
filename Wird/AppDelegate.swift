@@ -15,6 +15,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         if let i = args.firstIndex(of: "-JaleesLang"), i + 1 < args.count { Lang.set(english: args[i + 1] == "en") }
         else if args.contains("-JaleesRoute") { Lang.set(english: false) }
         if let f = ProcessInfo.processInfo.environment["JALEES_STALLS"] { StallWatch.start(f) }
+        AppDirection.apply()
+        LangState.onChange = { DispatchQueue.main.async { AppDirection.apply() } }
         return true
     }
 
@@ -78,6 +80,26 @@ final class StallWatch: NSObject {
             h.closeFile()
         } else {
             try? line.write(to: file, atomically: true, encoding: .utf8)
+        }
+    }
+}
+
+/// The system's own pieces (navigation bars, sheets, menus, text fields, the back swipe) go the app's way, not the
+/// phone's: an Arabic Jalees on an English phone was laid out left to right around its right-to-left screens.
+@MainActor
+enum AppDirection {
+    static func apply() {
+        let a: UISemanticContentAttribute = Lang.english ? .forceLeftToRight : .forceRightToLeft
+        UIView.appearance().semanticContentAttribute = a
+        UINavigationBar.appearance().semanticContentAttribute = a
+        UIToolbar.appearance().semanticContentAttribute = a
+        UISearchBar.appearance().semanticContentAttribute = a
+        UITextField.appearance().semanticContentAttribute = a
+        UITextView.appearance().semanticContentAttribute = a
+        // from the next launch the whole process runs in the app's language (dates, the keyboard's first choice)
+        let want = Lang.english ? "en" : "ar"
+        if (UserDefaults.standard.stringArray(forKey: "AppleLanguages") ?? []).first?.hasPrefix(want) != true {
+            UserDefaults.standard.set([want], forKey: "AppleLanguages")
         }
     }
 }

@@ -323,8 +323,15 @@ struct ReadingSheet: View {
                     }
                 }
                 Section("النص") {
-                    NavigationLink("قواعد الاستبدال لهذه الرواية") { ReplaceRulesView(scope: String(novelID), title: "هذه الرواية") }
-                    NavigationLink("قواعد الاستبدال لكل الروايات") { ReplaceRulesView(scope: "all", title: "كل الروايات") }
+                    // back to these settings, or «تم» to the page (the rules are already on it)
+                    NavigationLink("قواعد الاستبدال لهذه الرواية") {
+                        ReplaceRulesView(scope: String(novelID), title: "هذه الرواية")
+                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم", action: close) } }
+                    }
+                    NavigationLink("قواعد الاستبدال لكل الروايات") {
+                        ReplaceRulesView(scope: "all", title: "كل الروايات")
+                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم", action: close) } }
+                    }
                 }
                 Section {
                     Toggle("إعدادات متقدمة", isOn: $settings.prefs.advanced)

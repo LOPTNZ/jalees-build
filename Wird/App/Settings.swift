@@ -2,20 +2,20 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-// الإعدادات (inventory-3, section 1) and the data tools behind it: backup, restore, start from zero, the demo again
-// (section 2.1–2.3), and the daily reminder.
+// الإعدادات (inventory-3, section 1): a short list of topics, each a page (SettingsPages.swift). The data tools behind
+// it (backup, restore, start from zero, the demo again, section 2.1–2.3) and the daily reminder are below.
 
 struct SettingsView: View {
     @ObservedObject private var lib = Library.shared
     @Environment(\.look) private var L
-    @State private var shelfStyle = false
-    @State private var askReset = false
-    @State private var exporting = false
+    /// the data page, pushed by the debug hook; the other rows are plain links
+    @State private var dataOpen = false
+    @State private var openReset = false
 
     var body: some View {
         ScrollViewReader { proxy in
         ScrollView {
-            VStack(alignment: .leading, spacing: 32) {
+            VStack(alignment: .leading, spacing: 24) {
                 HStack(spacing: 12) {
                     Text("الإعدادات").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink))
                     HeaderSessionChip()
@@ -23,129 +23,22 @@ struct SettingsView: View {
                 }
                 .id("top")
 
-                section("المظهر") {
-                    field("الوضع") { JSeg(options: [("system", "حسب الجهاز"), ("light", "فاتح"), ("dark", "داكن")], value: str("theme", "system")) }
-                    field("اللون الأساسي") { swatches }
-                    field("حجم الخط") { JSeg(options: [("s", "صغير"), ("m", "متوسط"), ("l", "كبير")], value: str("fs", "m")) }
-                    field("اللغة · Language") {
-                        JSeg(options: [(false, "العربية"), (true, "English")],
-                             value: Binding(get: { LangState.shared.english }, set: { v in
-                                 LangState.shared.set(english: v)
-                                 lib.objectWillChange.send()
-                             }))
-                        note("أسماء الكتب والروايات والمواقع وما كتبته أنت تبقى كما هي.")
-                    }
+                group {
+                    row("paintbrush", "المظهر", themeName) { SettingsLookPage() }
+                    row("globe", "اللغة · Language", LangState.shared.english ? "English" : "العربية") { SettingsLanguagePage() }
                 }
 
-                section("المكتبة") {
-                    field("العرض الافتراضي") { JSeg(options: [("carousel", "دائري"), ("shelf", "رفوف"), ("grid", "شبكة")], value: str("view", "carousel")) }
-                    field("شكل الدوران") { JSeg(options: [("stack", "مكدّس"), ("flow", "أغلفة مائلة")], value: str("carStyle", "stack")) }
-                    Button { shelfStyle = true } label: { Label("شكل الرف والإضاءة", systemImage: "paintpalette") }
-                        .buttonStyle(JButtonStyle(look: L, small: true))
+                group {
+                    row("books.vertical", "المكتبة", viewName) { SettingsLibraryPage() }
+                    row("timer", "الجلسة والتذكير", remind.bool("on") ? "التذكير مفعّل" : "التذكير مطفأ") { SettingsSessionPage() }
+                    row("headphones", "الروايات والقراءة الصوتية", nil) { SettingsNovelsPage() }
                 }
 
-                section("الجلسة") {
-                    field("الصوت الافتراضي") { JSeg(options: SessionModel.sounds, value: str("sound", "rain")) }
-                    VStack(spacing: 0) {
-                        JSwitchRow(title: "غلاف الكتاب خلفية للجلسة", on: flag("sessCover", false))
-                        JSwitchRow(title: "إبقاء الشاشة مضاءة أثناء الجلسة", on: flag("wake", true))
-                    }
-                }
-
-                section("التذكير اليومي") {
-                    JSwitchRow(title: "ذكّرني بالقراءة", sub: "إشعار في الوقت اللي تختاره، وما يجيك إذا حققت هدفك ذاك اليوم", on: remindOn)
-                    if remind.bool("on") {
-                        HStack {
-                            JLabel(text: "الوقت")
-                            Spacer()
-                            DatePicker("", selection: remindTime, displayedComponents: .hourAndMinute).labelsHidden()
-                                .environment(\.locale, Lang.locale)
-                        }
-                    }
-                }
-
-                section("الروايات") {
-                    note("التنبيه لكل رواية من جرس صفحتها: مع كل فصل، أو لما يتجمع عدد تختاره.")
-                }
-
-                section("القراءة الصوتية") {
-                    ReadAloudSettings()
-                }
-
-                section("الخصوصية") {
-                    JSwitchRow(title: "قفل جليس بـ " + AppLock.method, sub: "يتغطى أول ما تطلع منه، ويفتح بوجهك أو رمز الجوال",
-                               on: Binding(get: { AppLock.shared.enabled }, set: { AppLock.shared.turnOn($0); lib.objectWillChange.send() }))
-                    if AppLock.shared.enabled {
-                        field("يتقفل") {
-                            JSeg(options: [(0.0, "فورًا"), (60.0, "بعد دقيقة"), (300.0, "بعد 5 دقائق")],
-                                 value: Binding(get: { AppLock.shared.grace }, set: { AppLock.shared.grace = $0; lib.objectWillChange.send() }))
-                        }
-                    }
-                }
-
-                section("الكلمات والشخصيات") {
-                    JSwitchRow(title: "إخفاء الحرق", sub: "موت الشخصية، والاقتباسات والأفكار والمراجعات اللي علّمتها «فيها حرق»، تظهر مغطّاة حتى تضغط عليها", on: flag("spoilers", true))
-                }
-
-                // «متقدمة» (the third round of answers): what most never need, shown when asked for
-                section("متقدمة") {
-                    JSwitchRow(title: "أظهر الإعدادات المتقدمة", sub: "أبعاد الكتب، مفتاح Google Books، طريقة مراجعة الكلمات، والفحص بالخلفية", on: flag("advanced", false))
-                    if lib.state.settings.raw.bool("advanced") {
-                    field("تعديل أبعاد الكتاب") {
-                        JSeg(options: [("handles", "سحب المقابض"), ("sliders", "أشرطة تمرير")], value: str("dimMode", "handles"))
-                        note("القياسات بالسنتيمتر متاحة في الحالتين.")
-                    }
-                    field("طريقة المراجعة") {
-                        JSeg(options: [("simple", "عادية"), ("srs", "تكرار متباعد")], value: str("review", "srs"))
-                        note(lib.state.settings.raw.str("review", "srs") == "srs"
-                             ? "كل كلمة ترجع لك بعد مدة تطول كلما عرفتها، وتقصر كلما صعبت عليك."
-                             : "تمر على كل الكلمات بترتيب عشوائي وتعلّم اللي عرفتها.")
-                    }
-                    VStack(spacing: 0) {
-                        JSwitchRow(title: "أفحص الفصول الجديدة بالخلفية", sub: "iOS يحدد الوقت، مرة بالساعة بالأكثر. لو حسيت إنه ياكل بطارية طفّه، ويبقى الفحص لما تفتح جليس أو تسحب قائمة التحديثات", on: Binding(get: { NewChapters.background }, set: { NewChapters.background = $0; lib.objectWillChange.send() }))
-                        JSwitchRow(title: "عدد الفصول الجديدة على أيقونة جليس", on: Binding(get: { NewChapters.badge }, set: { NewChapters.badge = $0; lib.objectWillChange.send() }))
-                    }
-                    field("مفتاح Google Books (اختياري)") {
-                        TextField("AIza…", text: str("gbKey", ""))
-                            .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.asciiCapable)
-                            .multilineTextAlignment(.leading)
-                            .environment(\.layoutDirection, .leftToRight)
-                            .font(JFont.body(16)).foregroundStyle(Color(L.ink))
-                            .padding(.horizontal, 14).frame(height: 48)
-                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
-                    }
-                    note("البحث يشتغل بدونه من Goodreads وأبجد وOpen Library. Google Books بدون مفتاح يرفض أغلب الطلبات لأن حدّه المجاني المشترك يخلص بسرعة. لو تبي نتائجه، سوّ مفتاحًا مجانيًا لـ «Books API» من Google Cloud والصقه هنا.")
-                    ServerSettings().padding(.top, 8)
-                                    }
-                }
-
-                section("البيانات") {
-                    note("بياناتك محفوظة في جوالك داخل التطبيق. صدّر نسخة احتياطية لتطبيق «الملفات» أول بأول، عشان لو حذفت التطبيق ترجعها.")
-                    HStack(spacing: 10) {
-                        Button { exportBackup() } label: {
-                            Label(exporting ? "جاري التجهيز…" : "تصدير نسخة احتياطية", systemImage: "square.and.arrow.up")
-                        }
-                        .buttonStyle(JButtonStyle(look: L)).disabled(exporting)
-                        Button("استعادة نسخة") { Flows.importBackup() }.buttonStyle(JButtonStyle(look: L))
-                    }
-                    if lib.state.demo {
-                        Text("الكتب الحالية تجريبية. إذا جهزت تبدأ بكتبك، امسحها بزر «ابدأ من الصفر».")
-                            .font(JFont.body(15 * 0.93)).foregroundStyle(Color(L.ink))
-                            .padding(.horizontal, 14).padding(.vertical, 12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(L.accentSoft)))
-                    } else if Library.edition != "clean" {
-                        Button("إرجاع البيانات التجريبية") { Backup.reseed() }.buttonStyle(JButtonStyle(look: L, small: true))
-                    }
-                    Button { askReset = true } label: {
-                        Label("ابدأ من الصفر", systemImage: "trash")
-                            .font(JFont.body(15, .medium)).foregroundStyle(Color(L.danger))
-                            .padding(.horizontal, 16).frame(height: 44)
-                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.danger).opacity(0.1)))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.danger).opacity(0.45), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
+                group {
+                    row("lock", "الخصوصية", AppLock.shared.enabled ? "القفل مفعّل" : "القفل مطفأ") { SettingsPrivacyPage() }
+                    row("server.rack", "السيرفر", nil) { SettingsServerPage() }
+                    dataRow
+                    row("slider.horizontal.3", "متقدمة", lib.state.settings.raw.bool("advanced") ? "مفعّلة" : nil) { SettingsAdvancedPage() }
                 }
 
                 VStack(spacing: 4) {
@@ -157,8 +50,8 @@ struct SettingsView: View {
                 .padding(.top, 6)
             }
             .padding(.horizontal, 16).padding(.bottom, 110)
+            .readableColumn()
         }
-        .scrollDismissesKeyboard(.interactively)
         .onReceive(NotificationCenter.default.publisher(for: .tabRetap)) { n in
             if (n.object as? String) == "settings" { withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("top", anchor: .top) } }
         }
@@ -166,10 +59,9 @@ struct SettingsView: View {
         .statusBarBackdrop(Color(L.bg))
         .background(Color(L.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $shelfStyle) { ShelfStyleSheet().environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
-        .sheet(isPresented: $askReset) { ResetSheet().environment(\.look, L).environment(\.layoutDirection, Lang.direction).presentationDetents([.medium]) }
         .onReceive(NotificationCenter.default.publisher(for: .settingsDebug)) { n in
-            if (n.object as? String) == "reset" { askReset = true }
+            // the confirmation lives on the data page: open it first, it takes the request when it appears
+            if (n.object as? String) == "reset" { openReset = true; dataOpen = true }
         }
     }
 
@@ -177,90 +69,59 @@ struct SettingsView: View {
 
     // MARK: pieces
 
-    private func section<C: View>(_ title: String, @ViewBuilder _ c: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(JFont.display(15 * 1.2)).foregroundStyle(Color(L.ink))
-            c()
-        }
+    private func group<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+        VStack(spacing: 0) { c() }
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(L.surface)))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
     }
 
-    private func field<C: View>(_ label: String, @ViewBuilder _ c: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 6) { JLabel(text: label); c() }
+    private func row<D: View>(_ icon: String, _ title: String, _ sub: String?, @ViewBuilder _ dest: @escaping () -> D) -> some View {
+        NavigationLink { dest() } label: { rowLabel(icon, title, sub) }
+            .buttonStyle(.plain)
     }
 
-    private func note(_ t: String) -> some View {
-        Text(t).font(JFont.body(15 * 0.86)).foregroundStyle(Color(L.ink2)).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+    /// the data page is a link we can also switch on from outside
+    private var dataRow: some View {
+        NavigationLink(isActive: $dataOpen) { SettingsDataPage(openReset: $openReset) } label: { rowLabel("externaldrive", "البيانات", nil) }
+            .buttonStyle(.plain)
     }
 
-    private var swatches: some View {
-        HStack(spacing: 10) {
-            ForEach(Theme.accentNames, id: \.0) { k, name in
-                let on = lib.state.settings.accent == k
-                Button { lib.change { $0.settings.accent = k }; Haptics.play("sel") } label: {
-                    Circle().fill(Color(hex: Theme.accents[k]!.light[0])).frame(width: 36, height: 36)
-                        .overlay(Circle().strokeBorder(Color(L.surface), lineWidth: on ? 3 : 0).padding(2))
-                        .overlay(Circle().strokeBorder(on ? Color(L.ink) : .clear, lineWidth: 2))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(name)
-                .accessibilityAddTraits(on ? [.isSelected] : [])
+    private func rowLabel(_ icon: String, _ title: String, _ sub: String?) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(Color(L.primary))
+                .frame(width: 30, height: 30)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(L.accentSoft)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(JFont.body(16)).foregroundStyle(Color(L.ink))
+                if let s = sub { Text(s).font(JFont.body(12.5)).foregroundStyle(Color(L.ink2)) }
             }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.forward").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(L.ink2))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .frame(minHeight: 52)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: one-line summaries
+
+    private var themeName: String {
+        switch lib.state.settings.raw.str("theme", "system") {
+        case "light": return "فاتح"
+        case "dark": return "داكن"
+        default: return "حسب الجهاز"
         }
     }
 
-    // MARK: bindings into S.set
-
-    private func str(_ k: String, _ d: String) -> Binding<String> {
-        Binding(get: { lib.state.settings.raw.str(k, d) }, set: { v in lib.change { $0.settings.raw.set(k, v) } })
-    }
-
-    private func flag(_ k: String, _ d: Bool) -> Binding<Bool> {
-        Binding(get: { lib.state.settings.raw.bool(k, d) }, set: { v in
-            lib.change { $0.settings.raw.set(k, v) }
-            if k == "wake" { SessionModel.shared.refreshAwake() }
-        })
+    private var viewName: String {
+        switch lib.state.settings.raw.str("view", "carousel") {
+        case "shelf": return "رفوف"
+        case "grid": return "شبكة"
+        default: return "دائري"
+        }
     }
 
     private var remind: JSONObject { lib.state.settings.raw.obj("remind") }
-
-    private var remindOn: Binding<Bool> {
-        Binding(get: { remind.bool("on") }, set: { v in
-            lib.change { st in
-                var r = st.settings.raw.obj("remind")
-                r.set("on", v)
-                if r["time"] == nil { r.set("time", "21:00") }
-                st.settings.raw["remind"] = .object(r)
-            }
-            Reminder.sync(ask: v)
-        })
-    }
-
-    private var remindTime: Binding<Date> {
-        Binding(get: {
-            let p = remind.str("time", "21:00").split(separator: ":").compactMap { Int($0) }
-            return Calendar.greg.date(bySettingHour: p.first ?? 21, minute: p.count > 1 ? p[1] : 0, second: 0, of: Date()) ?? Date()
-        }, set: { d in
-            let c = Calendar.greg.dateComponents([.hour, .minute], from: d)
-            lib.change { st in
-                var r = st.settings.raw.obj("remind")
-                r.set("time", String(format: "%02d:%02d", c.hour ?? 21, c.minute ?? 0))
-                st.settings.raw["remind"] = .object(r)
-            }
-            Reminder.sync()
-        })
-    }
-
-    // MARK: backup
-
-    private func exportBackup() {
-        exporting = true
-        Task {
-            let r = await Backup.export()
-            exporting = false
-            guard let file = r else { ToastCenter.shared.show("تعذّر حفظ الملف"); return }
-            Share.data(file.0, name: file.1) { done in ToastCenter.shared.show(done ? "تم حفظ النسخة" : "تم الإلغاء") }
-        }
-    }
 }
 
 extension Notification.Name {
@@ -301,7 +162,7 @@ struct RestoreSheet: View {
 }
 
 /// ابدأ من الصفر: books, sessions, notes and pictures go; settings and achievements stay.
-private struct ResetSheet: View {
+struct ResetSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.look) private var L
     var body: some View {

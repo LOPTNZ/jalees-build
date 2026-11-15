@@ -274,8 +274,15 @@ struct NovelPageView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
-                    topBar
-                    hero
+                    // one design with a book's page: the same top (a novel only being looked at has no book yet)
+                    if let bk = Library.shared.state.book(model.bookID) {
+                        // the page's close at the moment of the tap (it is set once the page has appeared)
+                        BookHero(book: bk, extra: novelChips, close: { model.close() })
+                            .padding(.horizontal, -16)
+                    } else {
+                        topBar
+                        hero
+                    }
                     if !model.novel.summary.isEmpty { summary }
                     if model.bookID.isEmpty {
                         previewActions
@@ -295,6 +302,7 @@ struct NovelPageView: View {
                     Color.clear.frame(height: model.selecting ? 120 : 24)
                 }
                 .padding(.horizontal, 16)
+                .readableColumn()
                 .background(PullToClose(bookID: model.bookID))
             }
             .scrollIndicators(.hidden)
@@ -378,6 +386,11 @@ struct NovelPageView: View {
             LinearGradient(colors: [Color(bookColor).opacity(0.28), Color(L.bg).opacity(0)], startPoint: .top, endPoint: .bottom)
                 .padding(.horizontal, -16)
         )
+    }
+
+    /// what a book's chips don't say about a novel
+    private var novelChips: [String] {
+        model.isBook ? [] : [model.novel.complete ? "مكتملة" : "مستمرة", model.novel.siteName]
     }
 
     private var summary: some View {

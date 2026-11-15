@@ -45,6 +45,7 @@ struct NotebookView: View {
                 if tab == "mark" { marks } else { list }
             }
             .padding(.horizontal, 16).padding(.bottom, 110)
+            .readableColumn(820)
             .background(GeometryReader { g in Color.clear.preference(key: ScrollY.self, value: g.frame(in: .named("nb")).minY) })
         }
         .coordinateSpace(name: "nb")
@@ -378,6 +379,13 @@ struct ItemRef: Identifiable {
     var photo = false
     /// added from the notebook's own +: no page or chapter is filled in for you
     var fromNotebook = false
+    /// fields filled in for a new entry (the reader: the selected text, the chapter, its place in the novel)
+    var prefill: [String: Any]? = nil
+}
+
+extension Notification.Name {
+    /// an entry was saved by its form: the reader shows a new character's name in the text
+    static let noteSaved = Notification.Name("jalees.noteSaved")
 }
 
 /// The notebook's scroll position, for the floating + that fades while scrolling.

@@ -158,8 +158,13 @@ final class LangState: ObservableObject {
 
     func set(english: Bool) {
         Lang.set(english: english)
+        // the app's own UIKit pieces follow (the app target sets it; extensions leave it alone)
+        LangState.onChange?()
         self.english = english
     }
+
+    /// set by the app at launch: what else follows a change of language
+    static var onChange: (() -> Void)?
 }
 
 extension String {

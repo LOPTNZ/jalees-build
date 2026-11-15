@@ -149,6 +149,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         nc.addObserver(self, selector: #selector(wentAway), name: UIApplication.willResignActiveNotification, object: nil)
         nc.addObserver(self, selector: #selector(cameBack), name: UIApplication.didBecomeActiveNotification, object: nil)
         nc.addObserver(self, selector: #selector(rulesChanged), name: .replaceRulesChanged, object: nil)
+        nc.addObserver(self, selector: #selector(noteSaved(_:)), name: .noteSaved, object: nil)
         clock = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.tick() }
     }
 
@@ -352,8 +353,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
             lastPos = o
             let id = NovelBridge.num(o["id"])
             if let i = chapters.firstIndex(where: { $0.id == id }), i != index {
-                // continuous reading moved into another chapter: the one before it is read
-                if i > index { markRead(index) }
+                // continuous reading moved into another chapter: the one before it is read (scrolled through, not
+                // swiped past)
+                if i > index, Date().timeIntervalSince(jumping ?? .distantPast) > 1.5 { markRead(index) }
                 index = i
                 refreshBookmarks()
                 Novels.shared.logHistory(novel: novel.id, chapter: id)
@@ -434,11 +436,15 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
                 self.toast(step > 0 ? "هذا آخر فصل" : "هذا أول فصل")
                 return
             }
-            if step > 0 { self.markRead(at) }
+            // moving on is not finishing: a chapter is read when its end is reached, not when it is swiped past
             Haptics.play("sel")
             let id = self.chapters[i].id
+            // where you stopped in that chapter (its start when you never read in it)
+            let saved = Novels.shared.place(in: id)
+            let pos: Any = saved.map { ["p": $0.p, "o": $0.o] as [String: Any] } ?? NSNull()
+            self.jumping = Date()
             UIView.animate(withDuration: 0.1, animations: { self.web.alpha = 0 }, completion: { _ in
-                self.ask("JR.toChapter(id)", ["id": id]) { done in
+                self.ask("JR.toChapter(id, pos)", ["id": id, "pos": pos]) { done in
                     if NovelBridge.num(done) == 1 {
                         self.index = i
                         self.lastPos = [:]
@@ -446,7 +452,8 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
                         self.refreshBookmarks()
                         UIView.animate(withDuration: 0.16) { self.web.alpha = 1 }
                     } else {
-                        self.show(i, place: ["p": 0, "o": 0])
+                        // not on the page: opened at its saved place (show() reads it), else its start
+                        self.show(i, place: nil)
                     }
                     self.turning = false
                 }
@@ -455,6 +462,8 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     }
 
     private var turning = false
+    /// a swipe to another chapter just happened: the page moving into it is not reading through the one before
+    private var jumping: Date?
 
     private func turnPage(_ dir: Int) {
         if settings.prefs.anim == "curl" { curl(dir); return }
@@ -916,27 +925,44 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         present(sheetHost(sheet), animated: true)
     }
 
+    /// One notes form everywhere: the notebook's own form, over the page, filled from the selection (the text, the
+    /// chapter, its place in the novel; a word's sentence and meaning). Its save is the notebook's save.
     func openNotebook(kind: String, text: String, sentence: String, at s: [String: Any]) {
         closeOverlays()
         guard let b = bookID, chapters.indices.contains(index) else { toast("افتح الرواية من مكتبتك عشان تنحفظ في دفترها"); return }
         let ch = chapters.first { $0.id == NovelBridge.num(s["ch"]) } ?? chapters[index]
         let loc = Int(ch.num) ?? (ch.idx + 1)
         let nv: [String: Any] = ["ch": ch.id, "p": NovelBridge.num(s["p"]), "s": NovelBridge.num(s["s"]), "label": ch.line]
-        let sheet = NotebookSheet(kind: kind, text: text, sentence: sentence, characters: characters) { [weak self] fields in
-            var o = fields
-            o["loc"] = loc
-            o["nv"] = nv
-            if kind == "char", o["first"] == nil { o["first"] = loc }
-            self?.library("wirdNovelItem(b, k, o)", ["b": b, "k": kind, "o": o]) { v in
-                guard v != nil else { self?.toast("ما انحفظ"); return }
-                self?.toast(["quote": "انحفظ الاقتباس", "thought": "انحفظت الخاطرة", "word": "انحفظت الكلمة", "char": "انحفظت الشخصية"][kind] ?? "انحفظ")
-                if kind == "char" {
-                    self?.loadLabels()
-                    if let cid = v as? String, let name = o["name"] as? String { self?.findFirst(cid, names: [name, (o["alias"] as? String) ?? ""], was: loc) }
-                }
-            }
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var pre: [String: Any] = ["loc": loc, "nv": nv]
+        switch kind {
+        case "quote": pre["text"] = clean
+        case "thought": pre["passage"] = clean
+        case "word":
+            let w = clean.trimmingCharacters(in: .punctuationCharacters)
+            pre["word"] = w
+            pre["ex"] = sentence
+            pre["lang"] = WordLookup.language(of: w)
+        default:
+            pre["name"] = clean
+            pre["first"] = loc
         }
-        present(sheetHost(sheet), animated: true)
+        let look = Appearance.shared.look
+        let form = ItemForm(ref: ItemRef(book: b, kind: kind, item: nil, prefill: pre)).environment(\.look, look)
+        let host = sheetHost(form, large: true)
+        host.overrideUserInterfaceStyle = look.dark ? .dark : .light
+        present(host, animated: true)
+    }
+
+    /// An entry saved from a form over the page: a new character is named in the text at once, and its first
+    /// appearance looked for.
+    @objc private func noteSaved(_ n: Notification) {
+        guard let u = n.userInfo, let b = bookID, (u["book"] as? String) == b, (u["kind"] as? String) == "char" else { return }
+        loadLabels()
+        if (u["new"] as? Bool) == true, let cid = u["id"] as? String, let name = u["name"] as? String {
+            let was = (u["first"] as? Double).map { Int($0) } ?? -1
+            findFirst(cid, names: [name, (u["alias"] as? String) ?? ""], was: was)
+        }
     }
 
     /// A new character's first appearance becomes the chapter that first names it (unless it was changed meanwhile).

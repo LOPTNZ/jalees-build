@@ -170,6 +170,11 @@
     }
     var y = anchorY(), sec = secAt(y), ps = sec.paras;
     if (!ps.length) return { id: sec.id, p: 0, o: 0 };
+    /* past a chapter's last paragraph (its footer, which shows the next chapter's name) is the next chapter's top:
+       at the top of chapter 34 the reader is in 34, not at the end of 33 (that made a swipe forward land on the same
+       chapter, a swipe back skip one, and the place saved be the end of the chapter before) */
+    var lastR = ps[ps.length - 1].getBoundingClientRect(), k = secs.indexOf(sec);
+    if (y > lastR.bottom && k >= 0 && k + 1 < secs.length) return { id: secs[k + 1].id, p: 0, o: 0 };
     var lo = 0, hi = ps.length - 1;
     while (lo < hi) { var mid = (lo + hi) >> 1; if (ps[mid].getBoundingClientRect().bottom > y) hi = mid; else lo = mid + 1; }
     var r = ps[lo].getBoundingClientRect(), o = r.height > 0 ? (y - r.top) / r.height : 0;
@@ -326,10 +331,11 @@
   };
   JR.where = function () { return where(); };
   JR.here = function () { var w = where(); lastY = window.scrollY; return w ? { id: w.id } : null; };
-  JR.toChapter = function (id) {
+  /* a chapter already on the page: at its start, or at pos ({p, o}: where the reader stopped in it) */
+  JR.toChapter = function (id, pos) {
     if (paged()) return 0;
     var s = secById(id); if (!s) return 0;
-    goTo({ id: id }); lastY = window.scrollY; wentUp = false; report(true);
+    goTo(pos && (pos.p || pos.o) ? { id: id, p: pos.p, o: pos.o } : { id: id }); lastY = window.scrollY; wentUp = false; report(true);
     return 1;
   };
   JR.goTo = function (pos) { goTo(pos); report(true); };

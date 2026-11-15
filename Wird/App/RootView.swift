@@ -189,13 +189,16 @@ struct TabBar: View {
 
     var body: some View {
         GeometryReader { g in
-            let wide = g.size.width - 28 - 10 - 58
+            // on an iPad the bar keeps a phone's proportions, in the middle
+            let w = min(g.size.width, 640)
+            let wide = w - 28 - 10 - 58
             HStack(spacing: 10) {
                 group(.main, Router.Tab.main, width: wide)
                 group(.novels, Router.Tab.novels, width: wide)
             }
             .padding(.horizontal, 14)
-            .frame(width: g.size.width, height: 58)
+            .frame(width: w, height: 58)
+            .frame(width: g.size.width)
         }
         .frame(height: 58)
         .padding(.top, 8)

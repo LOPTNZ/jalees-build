@@ -160,3 +160,60 @@ enum SearchWords {
 
     static func hasArabic(_ s: String) -> Bool { s.unicodeScalars.contains { (0x0600...0x06FF).contains($0.value) } }
 }
+
+/// A picture from a site (a novel's cover while browsing): kept in memory, fetched with the browser's name and the
+/// site as referrer, and tried again once. SwiftUI's AsyncImage left covers blank for good when a scroll cancelled
+/// their loading.
+@MainActor
+final class RemoteImages {
+    static let shared = RemoteImages()
+    private let cache = NSCache<NSString, UIImage>()
+    private var running: [String: Task<UIImage?, Never>] = [:]
+
+    init() { cache.countLimit = 300 }
+
+    func cached(_ url: String) -> UIImage? { cache.object(forKey: url as NSString) }
+
+    func load(_ url: String) async -> UIImage? {
+        if let i = cached(url) { return i }
+        if let t = running[url] { return await t.value }
+        let t = Task<UIImage?, Never> { [cache] in
+            guard let u = URL(string: url) else { return nil }
+            for attempt in 0..<2 {
+                if attempt > 0 { try? await Task.sleep(nanoseconds: 700_000_000) }
+                var r = URLRequest(url: u, timeoutInterval: 20)
+                r.setValue(Fetcher.ua, forHTTPHeaderField: "User-Agent")
+                if let host = u.host { r.setValue("https://" + host.split(separator: ".").suffix(2).joined(separator: ".") + "/", forHTTPHeaderField: "Referer") }
+                guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { continue }
+                // decoded small, off the screen's thread
+                let img: UIImage? = await Task.detached(priority: .utility) { Library.prepared(d, max: 400) }.value
+                if let i = img { cache.setObject(i, forKey: url as NSString); return i }
+            }
+            return nil
+        }
+        running[url] = t
+        let out = await t.value
+        running[url] = nil
+        return out
+    }
+}
+
+struct RemoteImage<P: View>: View {
+    let url: String
+    @ViewBuilder var placeholder: () -> P
+    @State private var img: UIImage?
+
+    var body: some View {
+        Group {
+            if let i = img ?? RemoteImages.shared.cached(url) {
+                Image(uiImage: i).resizable().scaledToFill()
+            } else {
+                placeholder()
+            }
+        }
+        .task(id: url) {
+            guard img == nil, !url.isEmpty else { return }
+            img = await RemoteImages.shared.load(url)
+        }
+    }
+}

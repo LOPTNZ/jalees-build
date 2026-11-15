@@ -453,3 +453,16 @@ private struct SpoilerCover: ViewModifier {
 extension View {
     func spoiler(_ on: Bool) -> some View { modifier(SpoilerCover(on: on)) }
 }
+
+extension View {
+    /// On a wide screen (iPad), a page's column stays at a reading width, in the middle; on a phone nothing changes.
+    func readableColumn(_ width: CGFloat = 720) -> some View {
+        frame(maxWidth: width).frame(maxWidth: .infinity)
+    }
+}
+
+/// A wide screen (iPad, or a phone on its side): more columns where a grid would otherwise stretch.
+@MainActor
+enum Screen {
+    static var wide: Bool { UIScreen.main.bounds.width > 700 }
+}

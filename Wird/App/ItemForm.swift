@@ -29,7 +29,9 @@ final class ItemFormModel: ObservableObject {
             item = found
         } else {
             editing = false
-            item = b.map { ItemFormModel.blank(k, $0, ref.fromNotebook) } ?? [:]
+            var blank = b.map { ItemFormModel.blank(k, $0, ref.fromNotebook) } ?? [:]
+            for (key, v) in ref.prefill ?? [:] { blank[key] = JSONValue(any: v) }
+            item = blank
         }
         x = item
         showPassage = !item.str("passage").isEmpty
@@ -114,6 +116,11 @@ final class ItemFormModel: ObservableObject {
         if let o = oldImg, o != newPic { Library.shared.deleteImage(o) }
         let item = x, k = kind
         let firstWas = x.optNum("first")
+        defer {
+            NotificationCenter.default.post(name: .noteSaved, object: nil,
+                                            userInfo: ["book": b.id, "kind": k.rawValue, "id": item.str("id"), "name": item.str("name"), "alias": item.str("alias"),
+                                                       "first": firstWas ?? -1, "new": !editing])
+        }
         Library.shared.changeBook(b.id) { bb in
             var list = bb.raw.objs(k.listKey)
             if let i = list.firstIndex(where: { $0.str("id") == item.str("id") }) { list[i] = item } else { list.append(item) }
@@ -144,6 +151,16 @@ final class ItemFormModel: ObservableObject {
     }
 
     /// itemDel: a character also leaves the others' relations, and its quotes keep its name as «another person».
+    /// A new word from the reader: its meaning and translation looked up, as the reader's own sheet did.
+    func lookupMeaning() async {
+        guard kind == .word, !editing, x.str("meaning").isEmpty else { return }
+        let w = x.str("word").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !w.isEmpty else { return }
+        let r = await WordLookup.find(w)
+        if x.str("meaning").isEmpty { x.set("meaning", r.meaning) }
+        if x.str("tr").isEmpty { x.set("tr", r.translation) }
+    }
+
     func delete() {
         guard let b = book else { return }
         NoteItems.delete(b.id, kind, x.str("id"))
@@ -242,6 +259,7 @@ struct ItemForm: View {
         }
         .onDisappear { if !m.saved { m.discard() } }
         .onAppear { if ref.photo && !m.editing { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { ocrSource = PhotoTarget(kind: "ocr") } } }
+        .task { await m.lookupMeaning() }
     }
 
     @State private var pendingOCR: UIImage?
@@ -277,7 +295,7 @@ struct ItemForm: View {
             if b.unit.time {
                 DurationField(minutes: Binding(get: { m.x.num(key) }, set: { m.x.set(key, $0) }))
             } else {
-                box(m.num(key), numeric: true)
+                NumberBox(value: m.num(key), id: key)
             }
         }
     }
@@ -439,10 +457,7 @@ struct ItemForm: View {
     }
 
     private func box(_ v: Binding<Double?>, numeric: Bool) -> some View {
-        // the theme's ink, not the system's: over the theme's field colour it always shows
-        TextField("", value: v, format: .number.grouping(.never).locale(Locale(identifier: "en_US_POSIX"))).keyboardType(.numberPad).font(JFont.body(16)).foregroundStyle(Color(L.ink)).padding(.horizontal, 12).frame(height: 46)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
+        NumberBox(value: v)
     }
 
     private func editor(_ text: Binding<String>, quoteFont: Bool, placeholder: String, height: CGFloat = 120) -> some View {
@@ -456,4 +471,39 @@ struct ItemForm: View {
 
 extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
+}
+
+/// A number typed in a form (a page, a chapter): each digit shows as it is typed (a number-formatted field showed
+/// nothing until it lost focus, then all the digits typed meanwhile), Arabic digits count as numbers.
+struct NumberBox: View {
+    @Binding var value: Double?
+    /// for the walk-through tests: «num-first», «num-loc»
+    var id = ""
+    @Environment(\.look) private var L
+    @State private var text = ""
+
+    var body: some View {
+        TextField("", text: $text)
+            .keyboardType(.numberPad)
+            .accessibilityIdentifier(id.isEmpty ? "number" : "num-" + id)
+            .font(JFont.body(16)).foregroundStyle(Color(L.ink))
+            .padding(.horizontal, 12).frame(height: 46)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
+            .onAppear { text = Self.show(value) }
+            .onChange(of: value) { v in if Double(text) != v { text = Self.show(v) } }
+            .onChange(of: text) { t in
+                let clean = String(t.map { ch -> Character in
+                    if let d = "٠١٢٣٤٥٦٧٨٩".firstIndex(of: ch) { return Character(String("٠١٢٣٤٥٦٧٨٩".distance(from: "٠١٢٣٤٥٦٧٨٩".startIndex, to: d))) }
+                    return ch
+                }.filter { $0.isASCII && ($0.isNumber || $0 == ".") })
+                if clean != t { text = clean; return }
+                value = clean.isEmpty ? nil : Double(clean)
+            }
+    }
+
+    private static func show(_ v: Double?) -> String {
+        guard let v = v else { return "" }
+        return v == v.rounded() ? String(Int(v)) : String(v)
+    }
 }

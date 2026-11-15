@@ -121,7 +121,9 @@ struct CarouselView: View {
     let books: [Book]
     let ns: Namespace.ID
     @Binding var sheet: LibraryView.LibSheet?
-    @ObservedObject private var car = CarouselState.shared
+    /// not observed: the position changes on every frame, and only CarouselStage redraws for it
+    private var car: CarouselState { .shared }
+    @ObservedObject private var center = CarouselCenter.shared
     @ObservedObject private var lib = Library.shared
     @Environment(\.look) private var L
     @State private var axis: Character = " "
@@ -138,18 +140,18 @@ struct CarouselView: View {
             let infoH: CGFloat = 196
             let coverH = floor(max(130, min(g.size.height * 0.64, (W * 0.6) / 0.68, g.size.height - infoH - 30)))
             VStack(spacing: 14) {
-                stage(W: W, coverH: coverH)
+                CarouselStage(books: books, W: W, coverH: coverH, flow: flow, ns: ns)
                     .frame(width: W, height: coverH)
                     .padding(.top, max(10, min(26, (g.size.height - coverH - infoH) * 0.3)))
                     .gesture(drag(W: W, coverH: coverH, H: g.size.height))
                 // only the words fade between books: an animation on the whole column would also slow the covers
                 // every time the middle book changes
                 VStack(spacing: 0) {
-                    if let b = lib.state.book(car.centerID ?? "") {
+                    if let b = lib.state.book(center.id ?? "") {
                         info(b).id(b.id).transition(.opacity)
                     }
                 }
-                .animation(.easeOut(duration: 0.2), value: car.centerID)
+                .animation(.easeOut(duration: 0.2), value: center.id)
                 // the words under the cover take the same swipes (Bookly: up anywhere opens the book)
                 .contentShape(Rectangle())
                 .gesture(drag(W: W, coverH: coverH, H: g.size.height))
@@ -164,58 +166,7 @@ struct CarouselView: View {
         car.setBooks(books.map(\.id), start: lib.state.lastBookId())
     }
 
-    // MARK: the covers
-
-    private func stage(W: CGFloat, coverH: CGFloat) -> some View {
-        let R = flow ? 4.9 : 3.05
-        let tilt = flow ? min(12, max(-12, -car.vel * 4)) : 0
-        // every card is placed first, then drawn in depth order (the middle one last, on top)
-        // positions come from the carousel's own list, so a card and the words under it always agree
-        let at = Dictionary(car.ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
-        let cards: [(i: Int, b: Book, p: Place, show: Bool)] = books.enumerated().map { n, b in
-            let i = at[b.id] ?? n
-            let o = car.offset(i)
-            let cw = coverH * b.coverAspect
-            let p = flow ? flowPlace(o, W: W, tilt: tilt) : stackPlace(o, cw: cw, W: W)
-            return (i, b, p, abs(o) <= R)
-        }.filter { $0.show }.sorted { $0.p.z < $1.p.z }   // only the covers near the middle are built, however many books there are
-        return ZStack {
-            ForEach(cards, id: \.b.id) { c in
-                CarouselCard(book: c.b, height: coverH, place: c.p, ns: ns)
-                    .opacity(c.show ? c.p.op : 0)
-                    .allowsHitTesting(c.show)
-                    .onTapGesture {
-                        if abs(car.offset(c.i)) < 0.5 { OpenBook.open(c.b) } else { car.go(index: c.i) }
-                    }
-                    .accessibilityHidden(!c.show)
-            }
-        }
-        .environment(\.layoutDirection, .leftToRight)
-        .frame(width: W, height: coverH)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("مكتبتك: اسحب يمين ويسار للتنقل، واسحب للأعلى للتفاصيل")
-    }
-
-
-    /// side books behind the middle one, smaller and darker (02-library.js stackL)
-    private func stackPlace(_ o: Double, cw: CGFloat, W: CGFloat) -> Place {
-        let S: [Double] = [1, 0.77, 0.7, 0.64], D: [Double] = [0, 0.1, 0.2, 0.38]
-        let ab = abs(o), a = min(ab, 3), sg: Double = o > 0 ? 1 : (o < 0 ? -1 : 0)
-        let s1 = Double(W) * 0.085, s2 = Double(W) * 0.05, s3 = Double(W) * 0.035, c = Double(cw)
-        let X = [0, 0.115 * c + s1, 0.15 * c + s1 + s2, 0.18 * c + s1 + s2 + s3]
-        let i = min(2, Int(a.rounded(.down))), f = a - Double(i)
-        func lerp(_ x: Double, _ y: Double) -> Double { x + (y - x) * f }
-        return Place(x: CGFloat(-sg * lerp(X[i], X[i + 1])), scale: CGFloat(lerp(S[i], S[i + 1])), rot: 0, z: 100 - ab * 10,
-                     dim: lerp(D[i], D[i + 1]), op: ab < 2.2 ? 1 : max(0, (3 - ab) / 0.8))
-    }
-
-    /// side covers turned away like a shelf of records (02-library.js flowL)
-    private func flowPlace(_ o: Double, W: CGFloat, tilt: Double) -> Place {
-        let a = abs(o), sg: Double = o > 0 ? 1 : (o < 0 ? -1 : 0), m = min(a, 1), e = max(0, a - 1)
-        return Place(x: CGFloat(-sg * Double(W) * (0.25 * m + 0.105 * e)), scale: CGFloat(1 - 0.16 * m - 0.02 * e), rot: sg * m * 58 + tilt * 0.5,
-                     z: 100 - a * 10, dim: min(0.7, 0.3 * m + 0.08 * e), op: a > 4.3 ? max(0, (4.9 - a) / 0.6) : 1)
-    }
+    // MARK: the covers (CarouselStage)
 
     private func step(W: CGFloat, coverH: CGFloat) -> Double {
         let cw = Double(coverH) * 0.66
@@ -319,18 +270,83 @@ struct CarouselView: View {
 /// Where a card sits: across, its size, its turn, its depth, its shade, its fade.
 struct Place { var x: CGFloat; var scale: CGFloat; var rot: Double; var z: Double; var dim: Double; var op: Double }
 
+/// The covers alone, drawn again for every step of the carousel's position (the words under them and the gestures
+/// are not: they change only when the middle book does).
+private struct CarouselStage: View {
+    let books: [Book]
+    let W: CGFloat
+    let coverH: CGFloat
+    let flow: Bool
+    let ns: Namespace.ID
+    @ObservedObject private var car = CarouselState.shared
+
+    var body: some View {
+        let R = flow ? 4.9 : 3.05
+
+        let tilt = flow ? min(12, max(-12, -car.vel * 4)) : 0
+        // every card is placed first, then drawn in depth order (the middle one last, on top)
+        // positions come from the carousel's own list, so a card and the words under it always agree
+        let at = Dictionary(car.ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        let cards: [(i: Int, b: Book, p: Place, show: Bool)] = books.enumerated().map { n, b in
+            let i = at[b.id] ?? n
+            let o = car.offset(i)
+            let cw = coverH * b.coverAspect
+            let p = flow ? flowPlace(o, W: W, tilt: tilt) : stackPlace(o, cw: cw, W: W)
+            return (i, b, p, abs(o) <= R)
+        }.filter { $0.show }.sorted { $0.p.z < $1.p.z }   // only the covers near the middle are built, however many books there are
+        return ZStack {
+            ForEach(cards, id: \.b.id) { c in
+                // a live shadow only under the covers in front (the ones behind are mostly hidden by them)
+                CarouselCard(book: c.b, height: coverH, place: c.p, ns: ns, shadowed: abs(car.offset(c.i)) < 1.5)
+                    .opacity(c.show ? c.p.op : 0)
+                    .allowsHitTesting(c.show)
+                    .onTapGesture {
+                        if abs(car.offset(c.i)) < 0.5 { OpenBook.open(c.b) } else { car.go(index: c.i) }
+                    }
+                    .accessibilityHidden(!c.show)
+            }
+        }
+        .environment(\.layoutDirection, .leftToRight)
+        .frame(width: W, height: coverH)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("مكتبتك: اسحب يمين ويسار للتنقل، واسحب للأعلى للتفاصيل")
+    }
+
+
+    /// side books behind the middle one, smaller and darker (02-library.js stackL)
+    private func stackPlace(_ o: Double, cw: CGFloat, W: CGFloat) -> Place {
+        let S: [Double] = [1, 0.77, 0.7, 0.64], D: [Double] = [0, 0.1, 0.2, 0.38]
+        let ab = abs(o), a = min(ab, 3), sg: Double = o > 0 ? 1 : (o < 0 ? -1 : 0)
+        let s1 = Double(W) * 0.085, s2 = Double(W) * 0.05, s3 = Double(W) * 0.035, c = Double(cw)
+        let X = [0, 0.115 * c + s1, 0.15 * c + s1 + s2, 0.18 * c + s1 + s2 + s3]
+        let i = min(2, Int(a.rounded(.down))), f = a - Double(i)
+        func lerp(_ x: Double, _ y: Double) -> Double { x + (y - x) * f }
+        return Place(x: CGFloat(-sg * lerp(X[i], X[i + 1])), scale: CGFloat(lerp(S[i], S[i + 1])), rot: 0, z: 100 - ab * 10,
+                     dim: lerp(D[i], D[i + 1]), op: ab < 2.2 ? 1 : max(0, (3 - ab) / 0.8))
+    }
+
+    /// side covers turned away like a shelf of records (02-library.js flowL)
+    private func flowPlace(_ o: Double, W: CGFloat, tilt: Double) -> Place {
+        let a = abs(o), sg: Double = o > 0 ? 1 : (o < 0 ? -1 : 0), m = min(a, 1), e = max(0, a - 1)
+        return Place(x: CGFloat(-sg * Double(W) * (0.25 * m + 0.105 * e)), scale: CGFloat(1 - 0.16 * m - 0.02 * e), rot: sg * m * 58 + tilt * 0.5,
+                     z: 100 - a * 10, dim: min(0.7, 0.3 * m + 0.08 * e), op: a > 4.3 ? max(0, (4.9 - a) / 0.6) : 1)
+    }
+}
+
 /// One cover of the carousel.
 struct CarouselCard: View {
     let book: Book
     let height: CGFloat
     let place: Place
     let ns: Namespace.ID
+    var shadowed = true
 
     var body: some View {
         BookCover(book: book, radius: 11)
             .frame(width: height * book.coverAspect, height: height)
             .overlay(Color.black.opacity(place.dim).clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous)))
-            .shadow(color: .black.opacity(0.55), radius: 14, y: 12)
+            .shadow(color: .black.opacity(shadowed ? 0.55 : 0), radius: shadowed ? 14 : 0, y: shadowed ? 12 : 0)
             .rotation3DEffect(.degrees(place.rot), axis: (x: 0, y: 1, z: 0), perspective: 0.45)
             .scaleEffect(place.scale)
             .offset(x: place.x)

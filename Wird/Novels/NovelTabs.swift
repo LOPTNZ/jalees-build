@@ -67,6 +67,7 @@ struct BrowseTab: View {
             }
             .padding(.horizontal, 16).padding(.top, 8)
             .padding(.bottom, 130)
+            .readableColumn(900)
         }
         .background(Color(look.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -447,14 +448,13 @@ struct NovelGrid: View {
     var open: ([String: Any]) -> Void
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 16) {
+        // three across on a phone, more on an iPad
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 100, maximum: 170), spacing: 12)], spacing: 16) {
             ForEach(items.indices, id: \.self) { i in
                 let it = items[i]
                 Button { open(it) } label: {
                     VStack(alignment: .leading, spacing: 6) {
-                        AsyncImage(url: URL(string: it["cover"] as? String ?? "")) { img in img.resizable().scaledToFill() } placeholder: {
-                            Color(look.surface2)
-                        }
+                        RemoteImage(url: it["cover"] as? String ?? "") { Color(look.surface2) }
                         .frame(maxWidth: .infinity)
                         .aspectRatio(0.68, contentMode: .fit)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

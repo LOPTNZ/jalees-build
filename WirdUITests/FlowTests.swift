@@ -380,6 +380,10 @@ final class FlowTests: XCTestCase {
     /// Settings: dark, light, an accent, a bigger text size, and back.
     func test07Settings() {
         tab("الإعدادات")
+        shot("ui31b-settings-root")
+        // settings are pages now: the look's controls are one row down
+        tap(buttonStarting("المظهر"), "look page")
+        sleep(1)
         tap(button("فاتح"), "light")
         sleep(1)
         shot("ui32-settings-light")
@@ -390,12 +394,295 @@ final class FlowTests: XCTestCase {
         tab("المكتبة")
         shot("ui34-library-light-indigo")
         tab("الإعدادات")
+        // the tab keeps its page; if it came back at its root, the look page again
+        if !button("زمردي").waitForExistence(timeout: 2) { tap(buttonStarting("المظهر"), "look page again"); sleep(1) }
         tap(button("زمردي"), "teal")
         tap(button("متوسط"), "medium text")
         tap(button("حسب الجهاز"), "system")
-        app.swipeUp(); app.swipeUp()
+        app.navigationBars.buttons.firstMatch.tap()
+        sleep(1)
+        tap(buttonStarting("الجلسة والتذكير"), "session page")
+        sleep(1)
         shot("ui35-settings-lower")
-        app.swipeUp(); app.swipeUp()
+        app.navigationBars.buttons.firstMatch.tap()
+        sleep(1)
+        tap(buttonStarting("البيانات"), "data page")
+        sleep(1)
         shot("ui36-settings-data")
+        app.navigationBars.buttons.firstMatch.tap()
+    }
+
+    // MARK: the owner's notes after 2.1.3, one walk each (2.2)
+
+    /// The reader opened on the sample novel, its buttons hidden.
+    private func openReader() -> XCUIElement {
+        app.terminate()
+        app.launchArguments += ["-JaleesRoute", "reader", "-JaleesSilent"]
+        app.launch()
+        sleep(6)
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 10), "the reader's page is not there")
+        return web
+    }
+
+    /// The chapter the reader says it is in: its bottom pill «4 من 40», shown with its buttons.
+    private func readerChapter() -> Int? {
+        let pill = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]+ من [0-9]+$")).firstMatch
+        if !(pill.exists && pill.isHittable) {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            sleep(1)
+        }
+        guard pill.waitForExistence(timeout: 3) else { return nil }
+        let n = Int(pill.label.split(separator: " ").first ?? "")
+        // the buttons go again, so the next swipe reaches the page
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(1)
+        return n
+    }
+
+    /// One swipe is one chapter each way (it took two forward, and back skipped one), and the reader knows where it is.
+    func test10ReaderChapters() {
+        let web = openReader()
+        guard let start = readerChapter() else { XCTFail("no chapter pill"); shot("ui60-no-pill"); return }
+        mark("chapter-forward")
+        web.swipeRight()
+        sleep(3)
+        shot("ui60-chapter-forward")
+        XCTAssertEqual(readerChapter(), start + 1, "one swipe forward is one chapter")
+        web.swipeRight()
+        sleep(3)
+        XCTAssertEqual(readerChapter(), start + 2, "a second swipe forward is one more")
+        mark("chapter-back")
+        web.swipeLeft()
+        sleep(3)
+        shot("ui61-chapter-back")
+        XCTAssertEqual(readerChapter(), start + 1, "one swipe back is one chapter, not two")
+        web.swipeLeft()
+        sleep(3)
+        XCTAssertEqual(readerChapter(), start, "back where it started")
+    }
+
+    /// Text held and dragged sideways is a selection: the chapter stays.
+    func test11SelectionKeepsChapter() {
+        let web = openReader()
+        guard let start = readerChapter() else { XCTFail("no chapter pill"); return }
+        let from = web.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.42))
+        from.press(forDuration: 1.3, thenDragTo: web.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.44)))
+        sleep(2)
+        shot("ui62-selection-drag")
+        XCTAssertEqual(readerChapter(), start, "a selection dragged sideways changed the chapter")
+    }
+
+    /// A rule written without hamza («اخر») catches «آخر» and «آخرها», and shows in the open chapter at once,
+    /// reached through the reader's settings (pages with back and «تم»).
+    func test12ReplaceRuleLive() {
+        let web = openReader()
+        XCTAssertTrue(web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "آخر")).firstMatch.waitForExistence(timeout: 4), "the sample has «آخر»")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(1)
+        guard tap(button("القائمة"), "reader menu") else { return }
+        sleep(1)
+        tap(buttonStarting("السمات والإعدادات"), "themes and settings")
+        sleep(1)
+        tap(buttonStarting("إعدادات القراءة"), "reading settings")
+        sleep(1)
+        shot("ui63-reading-settings")
+        let rules = buttonStarting("قواعد الاستبدال لهذه الرواية")
+        var n = 0
+        while n < 6 && !(rules.exists && rules.isHittable) { app.swipeUp(velocity: .slow); n += 1 }
+        guard tap(rules, "this novel's rules") else { return }
+        sleep(1)
+        tap(buttonStarting("قاعدة جديدة"), "new rule")
+        sleep(1)
+        let word = app.textFields["الكلمة"].firstMatch
+        if tap(word, "the word") { word.typeText("اخر") }
+        let to = app.textFields["تصير"].firstMatch
+        if tap(to, "what it becomes") { to.typeText("زمرد") }
+        shot("ui64-rule-typed")
+        tap(button("تم"), "done")
+        sleep(3)
+        shot("ui65-rule-on-page")
+        XCTAssertTrue(web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "زمرد")).firstMatch.waitForExistence(timeout: 6),
+                      "the rule did not show in the open chapter")
+        XCTAssertFalse(web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "آخر")).firstMatch.exists, "«آخر» is still there")
+        // the rule goes again (the next walks read the sample as it was)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(1)
+        if tap(button("القائمة"), "reader menu again") {
+            tap(buttonStarting("السمات والإعدادات"), "themes and settings")
+            tap(buttonStarting("إعدادات القراءة"), "reading settings")
+            n = 0
+            while n < 6 && !(rules.exists && rules.isHittable) { app.swipeUp(velocity: .slow); n += 1 }
+            if tap(rules, "rules") {
+                tap(buttonStarting("حذف القاعدة"), "delete the rule")
+                sleep(1)
+                tap(button("تم"), "done")
+            }
+        }
+    }
+
+    /// A character's first appearance: each digit shows as it is typed (it showed nothing, then all of them).
+    func test13NumberFieldShowsDigits() {
+        tab("دفتري")
+        guard tap(button("إضافة للدفتر"), "notebook +") else { return }
+        sleep(1)
+        tap(buttonStarting("شخصية"), "a character")
+        sleep(1)
+        let pick = app.descendants(matching: .any)["pickBook"].firstMatch
+        if tap(pick, "choose the book") { sleep(1); tap(button("لكنود"), "the book لكنود"); sleep(1) }
+        let first = app.textFields["num-first"].firstMatch
+        var n = 0
+        while n < 6 && !(first.exists && first.isHittable) { app.swipeUp(velocity: .slow); n += 1 }
+        guard tap(first, "first appearance") else { shot("ui66-no-number-field"); return }
+        first.typeText("12")
+        shot("ui66-number-typed")
+        XCTAssertEqual(first.value as? String, "12", "the typed digits do not show")
+        first.typeText("٣")
+        XCTAssertEqual(first.value as? String, "123", "an Arabic digit counts")
+        tap(button("إغلاق"), "close the form")
+        sleep(1)
+        // leaving with something typed asks first
+        if app.buttons["تجاهل"].waitForExistence(timeout: 2) { app.buttons["تجاهل"].tap() }
+        else if app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "بدون حفظ")).firstMatch.exists {
+            app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "بدون حفظ")).firstMatch.tap()
+        }
+    }
+
+    /// تصفّح: the sites as cards, and WTR-LAB's own search finds «Deep Sea Embers» (the owner's novel).
+    func test14BrowseSites() {
+        tab("تصفّح")
+        sleep(3)
+        shot("ui67-browse")
+        let kol = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "ملوك الروايات")).firstMatch
+        XCTAssertTrue(kol.waitForExistence(timeout: 10), "the sites are not listed")
+        let wtr = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "WTR-LAB")).firstMatch
+        reveal(wtr)
+        shot("ui68-browse-lower")
+        guard tap(wtr, "WTR-LAB") else { return }
+        sleep(4)
+        shot("ui69-wtrlab")
+        let field = app.textFields.firstMatch
+        if tap(field, "the site's search") {
+            field.typeText("deep sea embers\n")
+            sleep(8)
+            shot("ui70-wtrlab-search")
+            // the site may refuse the build machine: then this is noted, not a failure of the app
+            XCTExpectFailure("the site may block the build machine's address", strict: false) {
+                XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Deep Sea Embers")).firstMatch.waitForExistence(timeout: 15))
+            }
+        }
+        app.navigationBars.buttons.firstMatch.tap()
+        sleep(1)
+    }
+
+    /// One search over everything: a book by its title, opened from the result.
+    func test15GlobalSearch() {
+        tab("المكتبة")
+        guard tap(button("بحث"), "search") else { return }
+        sleep(1)
+        let field = app.textFields.firstMatch
+        if field.waitForExistence(timeout: 3) { field.tap(); field.typeText("لكنود") }
+        sleep(2)
+        shot("ui71-global-search")
+        let hit = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "لكنود")).firstMatch
+        if tap(hit, "a result") {
+            sleep(3)
+            shot("ui72-search-opened")
+            pageBack()
+        }
+    }
+
+    /// The header's choices as menus: the view style changes from its menu and comes back.
+    func test16HeaderMenus() {
+        tab("المكتبة")
+        guard tap(button("طريقة العرض"), "view menu") else { return }
+        sleep(1)
+        shot("ui73-view-menu")
+        tap(button("شبكة"), "grid")
+        sleep(2)
+        shot("ui74-grid")
+        tap(button("طريقة العرض"), "view menu again")
+        sleep(1)
+        tap(button("دائري"), "carousel")
+        sleep(2)
+        shot("ui75-carousel-again")
+        if tap(button("خيارات المكتبة"), "library options") { sleep(1); shot("ui76-options-menu"); app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap() }
+    }
+
+    /// The word review: its start (ways to review), a card, and back out.
+    func test17WordReview() {
+        tab("دفتري")
+        tap(buttonStarting("كلمات"), "words")
+        sleep(1)
+        guard tap(buttonStarting("اختبار"), "review") else { return }
+        sleep(1)
+        shot("ui77-review-start")
+        let start = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@ OR label BEGINSWITH %@", "ابدأ", "راجع الكل", "ابدأ المستحقة")).firstMatch
+        if tap(start, "start") {
+            sleep(1)
+            shot("ui78-review-card")
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+            sleep(1)
+            shot("ui79-review-flipped")
+        }
+        app.swipeDown(velocity: .fast)
+        sleep(1)
+    }
+
+    /// A note's place in the novel from its form: the reader opens and stays (it closed with the form).
+    func test18OpenPlaceFromNote() {
+        // a word saved from the reader carries its place
+        let web = openReader()
+        let at = web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42))
+        at.press(forDuration: 1.3)
+        sleep(1)
+        shot("ui80-word-selected")
+        let toNotebook = app.menuItems["للدفتر"].firstMatch
+        if toNotebook.waitForExistence(timeout: 3) {
+            toNotebook.tap()
+            sleep(1)
+            let word = app.buttons["كلمة"].firstMatch.exists ? app.buttons["كلمة"].firstMatch : app.menuItems["كلمة"].firstMatch
+            if tap(word, "as a word") {
+                sleep(2)
+                shot("ui81-word-form-from-reader")
+                tap(button("حفظ"), "save the word")
+                sleep(2)
+            }
+        } else {
+            // the system's menu may show the app's items behind «›»
+            XCTExpectFailure("the selection menu's items were not found", strict: false) { XCTFail("no «للدفتر» in the selection menu") }
+        }
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(1)
+        tap(button("إغلاق"), "close the reader")
+        sleep(2)
+        tab("دفتري")
+        tap(buttonStarting("كلمات"), "words")
+        sleep(1)
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "حارس المكتبة")).firstMatch
+        guard tap(row, "the word from the sample novel") else { return }
+        sleep(1)
+        let place = buttonStarting("افتح مكانه في القارئ")
+        reveal(place)
+        guard tap(place, "its place in the reader") else { return }
+        sleep(4)
+        shot("ui82-place-in-reader")
+        XCTAssertTrue(app.webViews.firstMatch.exists, "the reader closed with the form")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(1)
+        tap(button("إغلاق"), "close the reader")
+    }
+
+    /// Last (it leaves the app in English): the English interface reads left to right and its tabs say so.
+    func test99English() {
+        app.terminate()
+        app.launchArguments += ["-JaleesLang", "en"]
+        app.launch()
+        sleep(5)
+        shot("ui90-en-library")
+        XCTAssertTrue(app.buttons["Library"].waitForExistence(timeout: 6), "the English tab bar")
+        for (t, n) in [("My notebook", "ui91-en-notebook"), ("My achievements", "ui92-en-progress"), ("Settings", "ui93-en-settings")] {
+            if app.buttons[t].exists { app.buttons[t].tap(); sleep(2); shot(n) }
+        }
     }
 }

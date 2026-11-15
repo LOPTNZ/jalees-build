@@ -9,7 +9,7 @@ settings:
     MARKETING_VERSION: "2.1.3"
     CURRENT_PROJECT_VERSION: "23"
     SWIFT_VERSION: "5.0"
-    TARGETED_DEVICE_FAMILY: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
     IPHONEOS_DEPLOYMENT_TARGET: "16.1"
     CODE_SIGNING_ALLOWED: "NO"
     CODE_SIGNING_REQUIRED: "NO"
@@ -46,6 +46,11 @@ targets:
           UIColorName: LaunchBG
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         UIRequiresFullScreen: true
@@ -164,6 +169,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.abdullah.wird.reader.uitests
         GENERATE_INFOPLIST_FILE: "YES"
         TEST_TARGET_NAME: Wird
+  # the logic checked without a screen (replacement rules, search orders, the server's address); runs inside the app
+  WirdTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: WirdTests
+    dependencies:
+      - target: Wird
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.abdullah.wird.reader.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Wird.app/Wird"
+        BUNDLE_LOADER: "$(TEST_HOST)"
 schemes:
   Wird:
     build:
@@ -171,6 +190,7 @@ schemes:
         Wird: all
     test:
       targets:
+        - WirdTests
         - WirdUITests
     archive:
       config: Release
