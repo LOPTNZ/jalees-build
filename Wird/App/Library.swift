@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import ImageIO
 import Combine
+import CoreImage
 
 /// The library in memory. It is read from and saved to the same state.json the web app used (Store), so nothing has
 /// to move: the books, sessions, notebook and pictures are already there. Changes are saved a moment later, together.
@@ -109,6 +110,24 @@ final class Library: ObservableObject {
         images.setObject(i, forKey: key)
         return i
     }
+
+    /// The backdrop already blurred, once: a live `.blur` on it was drawn again on every frame of every animation over
+    /// it (the library's band under the book layer, a book page's hero, the session screen).
+    func softBackdrop(_ id: String?) -> UIImage? {
+        guard let id = id, !id.isEmpty else { return nil }
+        let key = ("bdb:" + id) as NSString
+        if let i = images.object(forKey: key) { return i }
+        guard let small = backdrop(id), let cg = small.cgImage else { return nil }
+        let ci = CIImage(cgImage: cg)
+        // the picture is about 60 px and shown about ten times larger: 2 px here is the old 16 pt on screen
+        let soft = ci.clampedToExtent().applyingGaussianBlur(sigma: 2).cropped(to: ci.extent)
+        guard let out = Self.blurContext.createCGImage(soft, from: ci.extent) else { return small }
+        let i = UIImage(cgImage: out)
+        images.setObject(i, forKey: key)
+        return i
+    }
+
+    private static let blurContext = CIContext()
 
     nonisolated static func prepared(_ d: Data, max side: CGFloat) -> UIImage? {
         guard let src = CGImageSourceCreateWithData(d as CFData, nil) else { return UIImage(data: d) }

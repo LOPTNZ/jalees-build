@@ -353,16 +353,17 @@ struct CarouselBand: View {
                 ZStack {
                     if let b = book {
                         Color(UIColor.hslParts(b.hslString) ?? L.primary)
-                        if let img = Library.shared.backdrop(b.cover) {
-                            Image(uiImage: img).resizable().scaledToFill().blur(radius: 16).opacity(0.9)
+                        if let img = Library.shared.softBackdrop(b.cover) {
+                            Image(uiImage: img).resizable().interpolation(.medium).scaledToFill().opacity(0.9)
                         }
                     }
                     Color.black.opacity(0.42)
                 }
                 .frame(width: g.size.width, height: g.size.height * 0.62)
                 .clipped()
-                .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.62), .init(color: .clear, location: 1)],
-                                     startPoint: .top, endPoint: .bottom))
+                // fades into the page's colour (the same look as a mask over it, without a mask's extra pass per frame)
+                .overlay(LinearGradient(stops: [.init(color: Color(L.bg).opacity(0), location: 0.62), .init(color: Color(L.bg), location: 1)],
+                                        startPoint: .top, endPoint: .bottom))
                 .id(book?.id)
                 .transition(.opacity)
             }

@@ -287,8 +287,8 @@ struct SessionScreen: View {
         ZStack {
             Color(L.stage).ignoresSafeArea()
             if let b = s.book {
-                if lib.state.settings.raw.bool("sessCover"), let img = lib.backdrop(b.cover) {
-                    Image(uiImage: img).resizable().scaledToFill().blur(radius: 14).overlay(Color.black.opacity(0.62)).ignoresSafeArea()
+                if lib.state.settings.raw.bool("sessCover"), let img = lib.softBackdrop(b.cover) {
+                    Image(uiImage: img).resizable().interpolation(.medium).scaledToFill().overlay(Color.black.opacity(0.62)).ignoresSafeArea()
                 }
                 content(b)
             }

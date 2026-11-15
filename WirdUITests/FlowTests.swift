@@ -140,6 +140,12 @@ final class FlowTests: XCTestCase {
         guard tap(go, "start reading") else { return }
         sleep(3)
         shot("ui18-session")
+        // the session card swipes down to its chip (as Apple Music's player), and the chip brings it back
+        mark("session-swipe-down")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
+        sleep(2)
+        shot("ui18b-session-minimised")
+        if tap(button("العودة للجلسة"), "back to the session") { sleep(2) }
         if tap(button("إنهاء"), "end") {
             sleep(1)
             shot("ui19-session-end")
@@ -251,6 +257,16 @@ final class FlowTests: XCTestCase {
         sleep(4)
         shot("ui40-reader-open")
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 6), "the reader's page is not there")
+        // with its buttons showing, the page pulled down closes the reader (as Apple Books), back on the novel's page
+        if !button("القائمة").waitForExistence(timeout: 2) {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+            sleep(1)
+        }
+        mark("reader-pull-close")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        sleep(2)
+        shot("ui40b-reader-pulled-closed")
+        XCTAssertFalse(button("القائمة").exists, "the reader did not close when pulled down")
     }
 
     func test08ReaderAloud() {

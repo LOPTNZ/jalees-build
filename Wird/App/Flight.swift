@@ -12,10 +12,12 @@ import UIKit
 @MainActor
 final class CoverFrames {
     static let shared = CoverFrames()
-    struct Spot { let rect: CGRect; let tab: Router.Tab? }
+    /// where, in which tab, and drawn which way (the carousel draws its covers left to right): the travelling copy
+    /// matches it, so its marks don't jump corners when it hands over
+    struct Spot { let rect: CGRect; let tab: Router.Tab?; var dir: LayoutDirection = .rightToLeft }
     private(set) var spots: [String: Spot] = [:]
 
-    func set(_ id: String, _ rect: CGRect, _ tab: Router.Tab?) { spots[id] = Spot(rect: rect, tab: tab) }
+    func set(_ id: String, _ rect: CGRect, _ tab: Router.Tab?, _ dir: LayoutDirection) { spots[id] = Spot(rect: rect, tab: tab, dir: dir) }
     func clear(_ id: String) { spots[id] = nil }
 
     /// A cover that is on screen in the open tab.
@@ -70,6 +72,8 @@ final class BookLayer: ObservableObject {
     @Published private(set) var tab: Router.Tab = .library
     /// the page's own cover is hidden while the copy travels (not at rest at 1)
     @Published private(set) var travelling = false
+    /// the page is open and still: the tab underneath can stop being drawn (RootView)
+    @Published private(set) var covering = false
     /// where the cover starts in the tab underneath; nil: nothing travels, the page fades in place
     private(set) var source: CGRect?
     private var progress: LayerProgress { .shared }
@@ -158,8 +162,12 @@ final class BookLayer: ObservableObject {
     /// A novel's page (bookID "" while it is not in the library).
     func openNovel(_ novel: Int, book: String) { show(.novel(novel, book)) }
 
+    /// when a finger last moved the layer: a tap that comes with the end of a drag (on the same cover) is not a tap
+    private var lastDrag: CFTimeInterval = 0
+
     @discardableResult
     private func show(_ it: Item) -> Bool {
+        if item != nil && CACurrentMediaTime() - lastDrag < 0.5 { return true }
         begin(it)
         // the page is built first (under the clear scrim), then it moves with nothing else to do
         wait {
@@ -178,6 +186,8 @@ final class BookLayer: ObservableObject {
     /// A finger moves it (0…1).
     func drag(_ value: CGFloat) {
         guard item != nil else { return }
+        if covering { covering = false }
+        lastDrag = CACurrentMediaTime()
         stop()
         whenReady = nil
         travelling = source != nil
@@ -198,6 +208,7 @@ final class BookLayer: ObservableObject {
     func close() {
         guard item != nil else { return }
         whenReady = nil
+        covering = false
         // the cover goes home only if its place is still on screen
         if let id = bookID, !id.isEmpty, let src = CoverFrames.shared.visible(id) { source = src } else { source = nil }
         travelling = source != nil
@@ -209,12 +220,14 @@ final class BookLayer: ObservableObject {
         stop()
         whenReady = nil
         travelling = false
+        covering = false
         item = nil
         setP(0)
     }
 
     private func landed(open: Bool) {
         travelling = false
+        covering = open
         if open { markOpened() } else { item = nil }
     }
 
@@ -345,11 +358,13 @@ private struct LayerStage: View {
         // with a cover travelling: the tab fades out early (like Bookly) and the page's words come in as it lands;
         // without one: the page simply fades and rises in place
         let moving = source != nil && book != nil
-        let scrim = moving ? min(1, p / 0.4) : p
-        let content = moving ? max(0, (p - 0.55) / 0.45) : p
+        // the two overlap, so there is never a moment of an empty screen with only the cover on it
+        let scrim = moving ? min(1, p / 0.45) : p
+        let content = moving ? min(1, max(0, (p - 0.3) / 0.6)) : p
         ZStack(alignment: .topLeading) {
             Color(L.bg).opacity(scrim).ignoresSafeArea()
-            page
+            LayerPage(item: item)
+                .equatable()
                 .id(item)
                 // each page, once built (also a new one in the same stage): a waiting animation may start
                 .onAppear { BookLayer.shared.stageAppeared() }
@@ -367,7 +382,7 @@ private struct LayerStage: View {
                     // straight with the progress: the finger's own pace, or the animation's curve (no second easing)
                     let r = lerp(src, hero, p)
                     BookCover(book: b, radius: 6 + 5 * (1 - p), marks: p < 0.5)
-                        .environment(\.layoutDirection, Lang.direction)
+                        .environment(\.layoutDirection, CoverFrames.shared.spots[b.id]?.dir ?? Lang.direction)
                         .frame(width: r.width, height: r.height)
                         .shadow(color: .black.opacity(0.45 * Double(1 - content * 0.4)), radius: 14, y: 10)
                         .position(x: r.midX - o.x, y: r.midY - o.y)
@@ -379,12 +394,6 @@ private struct LayerStage: View {
         .environment(\.inBookLayer, true)
     }
 
-    @ViewBuilder private var page: some View {
-        switch item {
-        case .novel(let n, let b): NovelPageScreen(novelID: n, bookID: b)
-        case .book(let b): BookPage(bookID: b)
-        }
-    }
 
     private func lerp(_ a: CGRect, _ b: CGRect, _ t: CGFloat) -> CGRect {
         CGRect(x: a.minX + (b.minX - a.minX) * t, y: a.minY + (b.minY - a.minY) * t,
@@ -397,6 +406,20 @@ private struct LayerStage: View {
         let top = (UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.keyWindow?.safeAreaInsets.top ?? 47) + 60
         let screen = UIScreen.main.bounds.width
         return Lang.english ? CGRect(x: screen - 16 - w, y: top, width: w, height: h) : CGRect(x: 16, y: top, width: w, height: h)
+    }
+}
+
+/// The page in the layer, the same view for the same item: the stage is redrawn on every frame of a move, the page
+/// only when its own book changes.
+private struct LayerPage: View, Equatable {
+    let item: BookLayer.Item
+    static func == (a: Self, b: Self) -> Bool { a.item == b.item }
+
+    var body: some View {
+        switch item {
+        case .novel(let n, let b): NovelPageScreen(novelID: n, bookID: b)
+        case .book(let b): BookPage(bookID: b)
+        }
     }
 }
 
@@ -465,11 +488,12 @@ struct PullToClose: UIViewRepresentable {
 private struct CoverSpot: ViewModifier {
     let id: String
     @Environment(\.flightTab) private var tab
+    @Environment(\.layoutDirection) private var dir
     func body(content: Content) -> some View {
         content.background(GeometryReader { g in
             Color.clear
-                .onAppear { CoverFrames.shared.set(id, g.frame(in: .global), tab) }
-                .onChange(of: g.frame(in: .global)) { CoverFrames.shared.set(id, $0, tab) }
+                .onAppear { CoverFrames.shared.set(id, g.frame(in: .global), tab, dir) }
+                .onChange(of: g.frame(in: .global)) { CoverFrames.shared.set(id, $0, tab, dir) }
         })
     }
 }

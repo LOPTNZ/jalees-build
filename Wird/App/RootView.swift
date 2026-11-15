@@ -31,6 +31,7 @@ struct RootView: View {
     @ObservedObject private var present = Present.shared
     @ObservedObject private var backup = BackupImport.shared
     @ObservedObject private var lang = LangState.shared
+    @ObservedObject private var layer = BookLayer.shared
     @Environment(\.colorScheme) private var scheme
     /// tabs opened at least once stay alive, so each keeps its place
     @State private var opened: Set<Router.Tab> = [.library]
@@ -47,7 +48,8 @@ struct RootView: View {
             ForEach(Router.Tab.allCases, id: \.self) { t in
                 if opened.contains(t) {
                     TabRoot(tab: t, visit: visits[t] ?? 0)
-                        .opacity(router.tab == t ? 1 : 0)
+                        // a book's page covering its tab: the tab is not drawn under it
+                        .opacity(router.tab == t && !(layer.covering && layer.tab == t) ? 1 : 0)
                         .allowsHitTesting(router.tab == t)
                         .accessibilityHidden(router.tab != t)
                 }

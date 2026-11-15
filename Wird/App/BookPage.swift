@@ -122,7 +122,7 @@ struct BookPage: View {
         .background {
             // the picture fills the hero and no more (an overlay takes the hero's size, so nothing spills below it)
             Color(tint)
-                .overlay { if let img = lib.backdrop(b.cover) { Image(uiImage: img).resizable().scaledToFill().blur(radius: 14).opacity(0.75) } }
+                .overlay { if let img = lib.softBackdrop(b.cover) { Image(uiImage: img).resizable().interpolation(.medium).scaledToFill().opacity(0.75) } }
                 .overlay { LinearGradient(colors: [Color.black.opacity(0.25), Color.black.opacity(0.5)], startPoint: .top, endPoint: .bottom) }
                 .clipped()
                 .ignoresSafeArea(edges: .top)
