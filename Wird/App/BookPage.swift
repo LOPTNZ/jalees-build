@@ -65,7 +65,8 @@ struct BookPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 hero(b)
-                VStack(alignment: .leading, spacing: 24) {
+                // lazy: only the sections on screen are built (the rest as they scroll in)
+                LazyVStack(alignment: .leading, spacing: 24) {
                     statusSection(b)
                     ListsRow(bookID: b.id)
                     if b.status == .done || !b.review.isEmpty || !b.moods.isEmpty { reviewSection(b) }

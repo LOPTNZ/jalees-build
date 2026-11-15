@@ -428,7 +428,8 @@ final class FlowTests: XCTestCase {
     /// The chapter the reader says it is in: its bottom pill «4 من 40», shown with its buttons.
     private func readerChapter() -> Int? {
         let pill = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]+ من [0-9]+$")).firstMatch
-        if !(pill.exists && pill.isHittable) {
+        // the buttons show with a tap; a tap that only ends a selection needs one more (the menu button tells)
+        for _ in 0..<2 where !button("القائمة").exists {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             sleep(1)
         }
@@ -562,7 +563,10 @@ final class FlowTests: XCTestCase {
         sleep(4)
         shot("ui69-wtrlab")
         let field = app.textFields.firstMatch
-        if tap(field, "the site's search") {
+        // the field reads as not hittable inside its row: tapped where it is
+        if field.waitForExistence(timeout: 6) {
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            sleep(1)
             field.typeText("deep sea embers\n")
             sleep(8)
             shot("ui70-wtrlab-search")

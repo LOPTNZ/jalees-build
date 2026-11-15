@@ -217,17 +217,25 @@ enum Replacer {
     }
 
     private static func isMark(_ ch: Character) -> Bool {
-        ch.unicodeScalars.allSatisfy { (0x064B...0x065F).contains($0.value) || $0.value == 0x0670 || $0.value == 0x0640 }
+        ch.unicodeScalars.allSatisfy { isMarkScalar($0) }
+    }
+
+    private static func isMarkScalar(_ u: Unicode.Scalar) -> Bool { (0x064B...0x065F).contains(u.value) || u.value == 0x0670 || u.value == 0x0640 }
+
+    /// Without diacritics and tatweel. By scalar: a mark is part of its letter's Character in Swift («إِ» is one), so
+    /// filtering Characters never removed it.
+    static func bare(_ w: String) -> String {
+        String(String.UnicodeScalarView(w.unicodeScalars.filter { !isMarkScalar($0) }))
     }
 
     /// The word as a pattern: each letter in its loose class, diacritics allowed between letters.
     static func loose(_ w: String) -> String {
-        w.filter { !isMark($0) }.map { cls($0) + marks }.joined()
+        bare(w).map { cls($0) + marks }.joined()
     }
 
     /// The word reduced to compare words by (no diacritics, one alef, one ya, ه for ة).
     static func plain(_ w: String) -> String {
-        String(w.filter { !isMark($0) }.map { ch -> Character in
+        String(bare(w).map { ch -> Character in
             switch ch {
             case "أ", "إ", "آ", "ٱ": return "ا"
             case "ى", "ئ": return "ي"
@@ -303,7 +311,7 @@ enum Replacer {
                     let stem = strip(p)
                     guard stem != base, !skipPlain.contains(stem), inOrder(base, in: stem) else { continue }
                     counts[stem, default: 0] += 1
-                    if shown[stem] == nil { shown[stem] = w.filter { !isMark($0) } }
+                    if shown[stem] == nil { shown[stem] = bare(w) }
                 }
             }
             return counts.sorted { $0.value > $1.value }.prefix(30).map { (shown[$0.key] ?? $0.key, $0.value) }
