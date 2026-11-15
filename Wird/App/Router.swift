@@ -39,6 +39,8 @@ final class Router: ObservableObject {
 
     func select(_ t: Tab) {
         if t == tab {
+            // the library's book layer closes first
+            if t == .library && BookLayer.shared.isOpen { BookLayer.shared.close(); return }
             // a second tap on the open tab goes back to its first page, as on iPhone, or else to the top of it
             if !(paths[t] ?? []).isEmpty { paths[t] = [] } else { NotificationCenter.default.post(name: .tabRetap, object: t.rawValue) }
             return

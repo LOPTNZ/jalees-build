@@ -141,6 +141,7 @@ struct CarouselView: View {
                 stage(W: W, coverH: coverH)
                     .frame(width: W, height: coverH)
                     .padding(.top, max(10, min(26, (g.size.height - coverH - infoH) * 0.3)))
+                    .gesture(drag(W: W, coverH: coverH, H: g.size.height))
                 // only the words fade between books: an animation on the whole column would also slow the covers
                 // every time the middle book changes
                 VStack(spacing: 0) {
@@ -149,6 +150,9 @@ struct CarouselView: View {
                     }
                 }
                 .animation(.easeOut(duration: 0.2), value: car.centerID)
+                // the words under the cover take the same swipes (Bookly: up anywhere opens the book)
+                .contentShape(Rectangle())
+                .gesture(drag(W: W, coverH: coverH, H: g.size.height))
                 Spacer(minLength: 0)
             }
         }
@@ -189,7 +193,6 @@ struct CarouselView: View {
         .environment(\.layoutDirection, .leftToRight)
         .frame(width: W, height: coverH)
         .contentShape(Rectangle())
-        .gesture(drag(W: W, coverH: coverH))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("مكتبتك: اسحب يمين ويسار للتنقل، واسحب للأعلى للتفاصيل")
     }
@@ -219,8 +222,10 @@ struct CarouselView: View {
         return flow ? Double(W) * 0.25 : max(60, (0.115 * cw + Double(W) * 0.085) * 1.5)
     }
 
-    private func drag(W: CGFloat, coverH: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 8)
+    private func drag(W: CGFloat, coverH: CGFloat, H: CGFloat) -> some Gesture {
+        // the distance a finger travels to open the page all the way (the web's D: clamp(H × 0.42, 220, 360))
+        let D = min(360, max(220, H * 0.42))
+        return DragGesture(minimumDistance: 8)
             .onChanged { v in
                 let dx = v.translation.width, dy = v.translation.height
                 if axis == " " {
@@ -228,7 +233,12 @@ struct CarouselView: View {
                     startPos = car.pos
                     car.dragging = axis == "x"
                     lastX = dx; lastT = Date(); speed = 0
+                    if axis == "y" {
+                        // up: the book layer starts, with the middle book
+                        if let id = car.centerID, BookLayer.shared.begin(id) {} else { axis = "n" }
+                    }
                 }
+                if axis == "y" { BookLayer.shared.drag(-dy / D); return }
                 guard axis == "x" else { return }
                 car.dragging = true
                 let now = Date(), dt = max(0.001, now.timeIntervalSince(lastT))
@@ -245,8 +255,9 @@ struct CarouselView: View {
                     let base = startPos.rounded()
                     car.go(to: min(base + 4, max(base - 4, p.rounded())))
                 } else if axis == "y" {
-                    if v.translation.height < -50 || v.predictedEndTranslation.height < -160,
-                       let b = lib.state.book(car.centerID ?? "") { OpenBook.open(b) }
+                    // let go past 30 %, or flicked up: the page; otherwise back to the library
+                    let p = -v.translation.height / D
+                    BookLayer.shared.release(open: p > 0.3 || v.predictedEndTranslation.height < -D * 0.75)
                 }
             }
     }

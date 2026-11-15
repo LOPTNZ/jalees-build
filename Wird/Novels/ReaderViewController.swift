@@ -805,26 +805,18 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         call("JR.setNames(l, on, st)", ["l": list, "on": settings.prefs.showNames && style != "off", "st": style])
     }
 
+    /// A character's name tapped in the text: its card over the page (everything about it, and editing), never a
+    /// trip out of the reader; closing the card is being back in the chapter where you were.
     private func showCharacter(_ id: String, near r: CGRect) {
-        guard let c = characters.first(where: { ($0["id"] as? String) == id }) else { return }
-        let name = (c["name"] as? String) ?? ""
-        var lines = [name]
-        if let a = c["alias"] as? String, !a.isEmpty { lines.append(a) }
-        let role = ["main": "شخصية رئيسية", "secondary": "شخصية ثانوية"][(c["role"] as? String) ?? ""]
-        if let ro = role { lines.append(ro) }
-        if let d = c["desc"] as? String, !d.isEmpty { lines.append(d) }
-        let a = UIAlertController(title: name, message: lines.dropFirst().joined(separator: "\n"), preferredStyle: .actionSheet)
-        a.addAction(UIAlertAction(title: "افتح بطاقتها في دفتري".tr, style: .default) { [weak self] _ in
-            guard let self = self, let b = self.bookID else { return }
-            self.closeTapped()
-            NotebookNav.shared.show(book: b, kind: "char", character: id)
-            Router.shared.openNotebook(book: b, kind: "char")
-            NotebookNav.shared.character = id
-        })
-        a.addAction(UIAlertAction(title: "تمام".tr, style: .cancel))
-        a.popoverPresentationController?.sourceView = view
-        a.popoverPresentationController?.sourceRect = r
-        present(a, animated: true)
+        guard let b = bookID, characters.contains(where: { ($0["id"] as? String) == id }) else { return }
+        closeOverlays()
+        let look = Appearance.shared.look
+        let card = CharacterCard(bookID: b, charID: id).environment(\.look, look)
+        let host = sheetHost(card)
+        host.overrideUserInterfaceStyle = look.dark ? .dark : .light
+        // an edit in the card (a new name or alias) shows in the page once it closes
+        host.presentationController?.delegate = self
+        present(host, animated: true)
     }
 
     func editNote(_ m: [String: Any]) {
@@ -1364,4 +1356,9 @@ private final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         target?.userContentController(userContentController, didReceive: message)
     }
+}
+
+extension ReaderViewController: UIAdaptivePresentationControllerDelegate {
+    /// A card or sheet over the page was swiped away: what it changed (a character's name) shows in the page.
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) { loadLabels() }
 }

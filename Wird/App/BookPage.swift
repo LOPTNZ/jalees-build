@@ -16,6 +16,7 @@ struct BookPage: View {
     @ObservedObject private var lib = Library.shared
     @Environment(\.look) private var L
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.pageClose) private var pageClose
     @State private var sheet: Sheet?
     @State private var openReads: Set<Int> = []
     @State private var askDelete = false
@@ -74,8 +75,8 @@ struct BookPage: View {
                     detailsSection(b)
                 }
                 .padding(.horizontal, 16)
-                .flightArrive(b.id)
             }
+            .background(PullToClose(bookID: b.id))
             .padding(.bottom, 110)
         }
         .statusBarBackdrop(Color(L.bg))
@@ -88,7 +89,7 @@ struct BookPage: View {
         let tint = UIColor.hslParts(b.hslString) ?? L.primary
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Button { Flight.shared.close(bookID) { dismiss() } } label: {
+                Button { if let c = pageClose { c() } else { dismiss() } } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.forward").font(.system(size: 15, weight: .semibold))
                         Text(backLabel).font(JFont.body(15, .medium))
@@ -547,7 +548,7 @@ struct BookPage: View {
             s.sessions.removeAll { $0.bookId == snap.id }
             if hadTimer { s.timer = nil }
         }
-        dismiss()
+        if pageClose != nil { BookLayer.shared.dismissNow() } else { dismiss() }
         ToastCenter.shared.show("تم حذف «" + snap.title + "»") {
             Library.shared.change { s in
                 s.books.insert(Book(Library.fixBook(snap.raw)), at: min(idx, s.books.count))

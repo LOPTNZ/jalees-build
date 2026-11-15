@@ -52,6 +52,8 @@ struct RootView: View {
                         .accessibilityHidden(router.tab != t)
                 }
             }
+            // a book's page over the library, opened in place (Flight.swift)
+            BookLayerView()
         }
         // the web's soft change of tab (animMain('fade')): a short cross-fade, not a cut
         .animation(.easeInOut(duration: 0.18), value: router.tab)

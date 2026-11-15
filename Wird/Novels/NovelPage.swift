@@ -251,12 +251,9 @@ struct NovelPageView: View {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     topBar
                     hero
-                    Group {
-                        if !model.novel.summary.isEmpty { summary }
-                        statusAndProgress
-                        ListsRow(bookID: model.bookID)
-                    }
-                    .flightArrive(model.bookID)
+                    if !model.novel.summary.isEmpty { summary }
+                    statusAndProgress
+                    ListsRow(bookID: model.bookID)
                     if downloads.active { downloadsCard }
                     highlights
                     notebook
@@ -268,6 +265,7 @@ struct NovelPageView: View {
                     Color.clear.frame(height: model.selecting ? 120 : 24)
                 }
                 .padding(.horizontal, 16)
+                .background(PullToClose(bookID: model.bookID))
             }
             .scrollIndicators(.hidden)
         }
@@ -918,6 +916,7 @@ struct NovelPageScreen: View {
 private struct NovelPageHolder: View {
     @StateObject private var model: NovelPageModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.pageClose) private var pageClose
 
     init(novel: Novel, bookID: String) {
         _model = StateObject(wrappedValue: NovelPageModel(novel: novel, book: bookID, look: Appearance.shared.look))
@@ -927,8 +926,8 @@ private struct NovelPageHolder: View {
         NovelPageView(model: model)
             .toolbar(.hidden, for: .navigationBar)
             .onAppear {
-                let id = model.bookID
-                model.close = { Flight.shared.close(id) { dismiss() } }
+                let close = pageClose
+                model.close = { if let c = close { c() } else { dismiss() } }
                 model.reload()
             }
     }

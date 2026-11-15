@@ -235,12 +235,11 @@ struct WelcomeView: View {
 enum OpenBook {
     /// A book's page (a novel's own page for web novels and EPUB books), pushed in the library tab.
     static func open(_ b: Book) {
+        // in the library: the book layer, in place (Flight.swift)
+        if BookLayer.shared.open(b.id) { return }
         Library.shared.changeBook(b.id) { $0.opened = Millis.now }
         Library.shared.change { $0.lastBook = b.id }
-        // the cover flies to the page when it is on screen (Flight.swift)
-        Flight.shared.open(b.id) {
-            if let n = b.novel { Router.shared.openNovel(n.novelID, book: b.id) } else { Router.shared.push(.book(b.id)) }
-        }
+        if let n = b.novel { Router.shared.openNovel(n.novelID, book: b.id) } else { Router.shared.push(.book(b.id)) }
         // the web's soft tap when the details have finished opening
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Haptics.play("soft") }
     }
