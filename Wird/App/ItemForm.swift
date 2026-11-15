@@ -146,24 +146,8 @@ final class ItemFormModel: ObservableObject {
     /// itemDel: a character also leaves the others' relations, and its quotes keep its name as «another person».
     func delete() {
         guard let b = book else { return }
-        let snapshot = b
-        let id = x.str("id"), k = kind, name = x.str("name")
-        Library.shared.changeBook(b.id) { bb in
-            bb.raw.set(k.listKey, objects: bb.raw.objs(k.listKey).filter { $0.str("id") != id })
-            if k == .char {
-                bb.raw.set("chars", objects: bb.raw.objs("chars").map { c in var c = c; c.set("rel", objects: c.objs("rel").filter { $0.str("to") != id }); return c })
-                bb.raw.set("quotes", objects: bb.raw.objs("quotes").map { q in
-                    var q = q
-                    if q.str("speakerId") == id { q.set("speakerId", "__o"); q.set("speakerName", name) }
-                    return q
-                })
-            }
-        }
+        NoteItems.delete(b.id, kind, x.str("id"))
         saved = true
-        let this = ["quote": "هذا الاقتباس", "thought": "هذه الفكرة", "word": "هذه الكلمة", "char": "هذه الشخصية"][k.rawValue] ?? ""
-        ToastCenter.shared.show("تم حذف " + this) {
-            Library.shared.change { st in if let i = st.index(of: snapshot.id) { st.books[i] = snapshot } }
-        }
     }
 }
 
@@ -332,8 +316,8 @@ struct ItemForm: View {
             Button {
                 let b = m.bookID, q = m.x.str("id")
                 dismiss()
-                // after this form has gone (it may be the notebook's own sheet)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.quoteCard(b, quote: q) }
+                // after this form has gone (it may be the notebook's own sheet): Present waits for it
+                Flows.quoteCard(b, quote: q)
             } label: { Label("بطاقة الاقتباس", systemImage: "photo") }
             .buttonStyle(JButtonStyle(look: L, small: true))
         }

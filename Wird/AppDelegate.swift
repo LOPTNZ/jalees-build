@@ -14,6 +14,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-JaleesLang"), i + 1 < args.count { Lang.set(english: args[i + 1] == "en") }
         else if args.contains("-JaleesRoute") { Lang.set(english: false) }
+        if let f = ProcessInfo.processInfo.environment["JALEES_STALLS"] { StallWatch.start(f) }
         return true
     }
 
@@ -41,5 +42,42 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             }
         }
         completionHandler()
+    }
+}
+
+/// The simulator's walk-through only (JALEES_STALLS): every frame the app itself was late for (over 50 ms), with
+/// the time, so the recording's jumps can be told apart: the app busy, or only the build machine drawing slowly.
+@MainActor
+final class StallWatch: NSObject {
+    private static var watch: StallWatch?
+    private let file: URL
+    private var last: CFTimeInterval = 0
+    private var link: CADisplayLink?
+
+    private init(_ path: String) { file = URL(fileURLWithPath: path) }
+
+    static func start(_ path: String) {
+        let w = StallWatch(path)
+        watch = w
+        let l = CADisplayLink(target: w, selector: #selector(frame(_:)))
+        l.add(to: .main, forMode: .common)
+        w.link = l
+    }
+
+    @objc private func frame(_ l: CADisplayLink) {
+        defer { last = l.timestamp }
+        guard last > 0 else { return }
+        let gap = l.timestamp - last
+        guard gap > 0.05 else { return }
+        // the display link's clock is the system's uptime: written as the wall clock, like the walk-through's marks
+        let at = Date().timeIntervalSince1970 - (CACurrentMediaTime() - l.timestamp) - gap
+        let line = String(format: "stall %.0f ms from %.3f\n", gap * 1000, at)
+        if let h = try? FileHandle(forWritingTo: file) {
+            h.seekToEndOfFile()
+            h.write(Data(line.utf8))
+            h.closeFile()
+        } else {
+            try? line.write(to: file, atomically: true, encoding: .utf8)
+        }
     }
 }

@@ -122,7 +122,7 @@ struct RereadSheet: View {
         dismiss()
         Achievements.check()
         if withSession {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { SessionModel.shared.start(bookID) }
+            Present.whenClear { SessionModel.shared.start(bookID) }
         } else if let b = lib.state.book(bookID) {
             ToastCenter.shared.show("بدأت القراءة \(Words.ord(b.readNo))")
         }

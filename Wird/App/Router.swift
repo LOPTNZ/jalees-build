@@ -40,7 +40,7 @@ final class Router: ObservableObject {
     func select(_ t: Tab) {
         if t == tab {
             // the library's book layer closes first
-            if t == .library && BookLayer.shared.isOpen { BookLayer.shared.close(); return }
+            if BookLayer.shared.isOpen && BookLayer.shared.tab == t { BookLayer.shared.close(); return }
             // a second tap on the open tab goes back to its first page, as on iPhone, or else to the top of it
             if !(paths[t] ?? []).isEmpty { paths[t] = [] } else { NotificationCenter.default.post(name: .tabRetap, object: t.rawValue) }
             return
@@ -64,7 +64,8 @@ final class Router: ObservableObject {
     /// A novel's page, in the tab you are in.
     func openNovel(_ id: Int, book: String) {
         guard id > 0 else { return }
-        push(.novel(id, book))
+        // every book and novel page opens the same way, in the book layer of the tab you are in (Flight.swift)
+        BookLayer.shared.openNovel(id, book: book)
     }
 
     /// The notebook, at a book (and a list).

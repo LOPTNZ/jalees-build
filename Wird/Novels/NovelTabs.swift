@@ -12,6 +12,9 @@ struct BrowseTab: View {
     @State private var query = ""
     @State private var results: [(site: String, items: [[String: Any]])] = []
     @State private var searching = false
+    /// each site's search while it runs: "" asking, a count, "-" nothing, "!" it failed
+    @State private var siteState: [String: String] = [:]
+    @State private var searchToken = 0
     @State private var busy: String?
     @State private var note: String?
     @State private var repo = false
@@ -22,13 +25,13 @@ struct BrowseTab: View {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Color(look.ink2))
                     TextField("ابحث في كل المواقع", text: $query).font(JFont.body(16)).submitLabel(.search).onSubmit { search() }
-                    if !query.isEmpty { Button { query = ""; results = [] } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Color(look.ink2)) } }
+                    if !query.isEmpty { Button { query = ""; results = []; searchToken += 1; searching = false } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Color(look.ink2)) } }
                 }
                 .padding(.horizontal, 14).frame(minHeight: 46)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(look.surface)))
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color(look.line), lineWidth: 1))
 
-                if searching { HStack { ProgressView(); Text("أبحث…").font(JFont.body(14)).foregroundStyle(Color(look.ink2)) } }
+                if searching { searchProgress }
                 ForEach(results.indices, id: \.self) { i in
                     let g = results[i]
                     JHeading(look: look, title: siteName(g.site), count: g.items.count)
@@ -88,18 +91,60 @@ struct BrowseTab: View {
         }
     }
 
+    /// every site at once, each with its own chip: asking, found N, nothing, or failed
+    private var searchProgress: some View {
+        let sites = sources.compactMap { $0["id"] as? String }.filter { siteState[$0] != nil }
+        return Flow(spacing: 6) {
+            ForEach(sites, id: \.self) { site in
+                let st = siteState[site] ?? ""
+                HStack(spacing: 5) {
+                    if st.isEmpty { ProgressView().controlSize(.mini) }
+                    else if st == "!" { Image(systemName: "exclamationmark.triangle").font(.system(size: 11)) }
+                    else if st == "-" { Image(systemName: "minus").font(.system(size: 11)) }
+                    else { Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)) }
+                    Text(siteName(site) + (Int(st).map { " · \($0)" } ?? "")).font(JFont.body(13))
+                }
+                .foregroundStyle(Color(st == "!" || st == "-" ? look.ink2 : look.ink))
+                .padding(.horizontal, 10).frame(height: 30)
+                .background(Capsule().fill(Color(look.surface)))
+                .overlay(Capsule().strokeBorder(Color(look.line), lineWidth: 1))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: siteState)
+    }
+
     private func search() {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return }
+        let sites = sources.compactMap { $0["id"] as? String }.filter { !$0.isEmpty }
+        guard !sites.isEmpty else { return }
+        searchToken += 1
+        let mine = searchToken
         searching = true
         results = []
-        Task {
-            for s in sources {
-                let site = s["id"] as? String ?? ""
-                if let r = try? await SourceEngine.shared.browse(site, kind: "search", page: 1, query: q), !r.items.isEmpty {
-                    results.append((site, r.items))
+        siteState = sites.reduce(into: [:]) { $0[$1] = "" }
+        Task { @MainActor in
+            // all the sites at once (the network waits overlap); each result takes its site's place in the list
+            await withTaskGroup(of: (String, [[String: Any]]?).self) { group in
+                for site in sites {
+                    group.addTask { @MainActor in
+                        let r = try? await SourceEngine.shared.browse(site, kind: "search", page: 1, query: q)
+                        return (site, r?.items)
+                    }
+                }
+                for await (site, items) in group {
+                    guard mine == searchToken else { continue }
+                    if let items = items, !items.isEmpty {
+                        let rank = { (s: String) in sites.firstIndex(of: s) ?? 0 }
+                        let at = results.firstIndex { rank($0.site) > rank(site) } ?? results.count
+                        withAnimation(.easeOut(duration: 0.2)) { results.insert((site, items), at: at) }
+                        siteState[site] = "\(items.count)"
+                    } else {
+                        siteState[site] = items == nil ? "!" : "-"
+                    }
                 }
             }
+            guard mine == searchToken else { return }
             searching = false
             if results.isEmpty { note = "ما لقيت «\(q)» في المواقع" }
         }
@@ -357,6 +402,8 @@ struct BusyCard: View {
 
 struct DownloadsTab: View {
     let look: JLook
+    /// counts up each time the tab is shown: the list refreshes in place (it is not rebuilt, so it keeps its scroll)
+    var visit = 0
     @ObservedObject private var downloads = Downloads.shared
     @State private var rows: [[String: Any]] = []
 
@@ -407,6 +454,7 @@ struct DownloadsTab: View {
         .tint(Color(look.primary))
         .preferredColorScheme(look.dark ? .dark : .light)
         .onAppear(perform: load)
+        .onChange(of: visit) { _ in load() }
         // the sizes scan every saved text: refresh every ten chapters and at the end, not after each one
         .onReceive(downloads.$waiting) { w in if w.isEmpty || w.count % 10 == 0 { load() } }
     }
@@ -426,6 +474,7 @@ struct DownloadsTab: View {
 
 struct HistoryTab: View {
     let look: JLook
+    var visit = 0
     @State private var rows: [[String: Any]] = []
 
     var body: some View {
@@ -463,6 +512,7 @@ struct HistoryTab: View {
         .tint(Color(look.primary))
         .preferredColorScheme(look.dark ? .dark : .light)
         .onAppear(perform: load)
+        .onChange(of: visit) { _ in load() }
     }
 
     private var groups: [(String, [[String: Any]])] {
@@ -511,6 +561,7 @@ struct HistoryTab: View {
 /// New chapters from every novel, newest first, by day. Checked when the tab opens (at most once an hour) or on a pull.
 struct UpdatesTab: View {
     let look: JLook
+    var visit = 0
     @State private var rows: [[String: Any]] = []
     @State private var checking = false
     @State private var status = ""
@@ -546,12 +597,16 @@ struct UpdatesTab: View {
         .refreshable { await check() }
         .tint(Color(look.primary))
         .preferredColorScheme(look.dark ? .dark : .light)
-        .onAppear {
-            load()
-            NewChapters.seen()
-            let last = Double(DB.shared.get("updates.checked") ?? "") ?? 0
-            if Date().timeIntervalSince1970 - last > 3600 { Task { await check() } }
-        }
+        .onAppear(perform: arrive)
+        .onChange(of: visit) { _ in arrive() }
+    }
+
+    /// shown (first time or again): the list in place, marked seen, a check if the last is over an hour old
+    private func arrive() {
+        load()
+        NewChapters.seen()
+        let last = Double(DB.shared.get("updates.checked") ?? "") ?? 0
+        if Date().timeIntervalSince1970 - last > 3600 { Task { await check() } }
     }
 
     private func row(_ r: [String: Any]) -> some View {

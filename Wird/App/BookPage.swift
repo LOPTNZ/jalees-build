@@ -16,7 +16,7 @@ struct BookPage: View {
     @ObservedObject private var lib = Library.shared
     @Environment(\.look) private var L
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.pageClose) private var pageClose
+    @Environment(\.inBookLayer) private var inLayer
     @State private var sheet: Sheet?
     @State private var openReads: Set<Int> = []
     @State private var askDelete = false
@@ -89,7 +89,7 @@ struct BookPage: View {
         let tint = UIColor.hslParts(b.hslString) ?? L.primary
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Button { if let c = pageClose { c() } else { dismiss() } } label: {
+                Button { if inLayer { BookLayer.shared.close() } else { dismiss() } } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.forward").font(.system(size: 15, weight: .semibold))
                         Text(backLabel).font(JFont.body(15, .medium))
@@ -129,13 +129,8 @@ struct BookPage: View {
         }
     }
 
-    private var backLabel: String {
-        switch Router.shared.tab {
-        case .notebook: return "دفتري"
-        case .progress: return "إنجازاتي"
-        default: return "المكتبة"
-        }
-    }
+    /// the tab the page opened over (the book layer shows in the tab it was opened in)
+    private var backLabel: String { Router.shared.tab.title }
 
     @ViewBuilder private func chips(_ b: Book) -> some View {
         heroChip(b.format.label, icon: ["physical": "book", "ebook": "ipad", "audio": "headphones", "web": "globe"][b.format.rawValue])
@@ -169,13 +164,7 @@ struct BookPage: View {
         return VStack(alignment: .leading, spacing: 14) {
             JSeg(options: [("want", "أريد"), ("reading", b.isAudio ? "أستمع له" : "أقرأه"), ("paused", "وقفت"), ("done", "أنهيته"), ("dnf", "تركته")],
                  value: Binding(get: { b.status.rawValue }, set: { setStatus($0) }))
-            if b.status == .done || b.status == .dnf {
-                HStack {
-                    Text("تقييمك" + (b.readNo > 1 ? " للقراءة \(b.readNo)" : "")).font(JFont.body(15)).foregroundStyle(Color(L.ink))
-                    Spacer()
-                    JStars(value: Binding(get: { b.rating }, set: { v in lib.changeBook(b.id) { $0.rating = v } }))
-                }
-            }
+            if b.status == .done || b.status == .dnf { RatingRow(book: b) }
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(b.posLabel).font(JFont.body(14, .medium)).foregroundStyle(Color(L.ink2))
@@ -209,26 +198,7 @@ struct BookPage: View {
         .frame(height: 6)
     }
 
-    private func setStatus(_ v: String) {
-        guard let s = BookStatus(rawValue: v), let b = lib.state.book(bookID), b.status != s else { return }
-        let prev = b.status
-        lib.changeBook(bookID) { x in
-            x.status = s
-            if s == .done {
-                x.vi = max(0, x.volumes.count - 1)
-                if let t = x.volumes.last?.total { x.pos = t }
-                x.finish = Millis.now
-                if x.start == nil { x.start = Millis.now }
-            } else {
-                x.finish = nil
-            }
-            if (s == .reading || s == .paused || s == .dnf) && x.start == nil { x.start = Millis.now }
-            if s == .want { x.pos = 0; x.vi = 0 }
-            if s != .done && s != .dnf { x.rating = 0 }
-        }
-        Achievements.check()
-        if s == .done && prev != .done { Flows.finish(bookID, volume: nil) }
-    }
+    private func setStatus(_ v: String) { Flows.setStatus(bookID, v) }
 
     private func volumes(_ b: Book) -> some View {
         VStack(spacing: 8) {
@@ -310,28 +280,7 @@ struct BookPage: View {
 
     // MARK: review
 
-    private func reviewSection(_ b: Book) -> some View {
-        JPanel {
-            HStack {
-                Text("مراجعتك" + (b.readNo > 1 ? " · القراءة \(b.readNo)" : "")).font(JFont.display(18, .semibold)).foregroundStyle(Color(L.ink))
-                Spacer()
-                Button { Flows.review(b.id, volume: nil) } label: { Label(b.review.isEmpty ? "اكتبها" : "تعديل", systemImage: "pencil").font(JFont.body(14)) }
-                    .buttonStyle(.plain).foregroundStyle(Color(L.primary))
-            }
-            if b.rating > 0 { Text(Words.stars(b.rating)).foregroundStyle(Color(L.star)) }
-            if !b.moods.isEmpty || !b.pace.isEmpty {
-                Flow(spacing: 6) {
-                    ForEach(b.moods, id: \.self) { JMeta(look: L, text: $0) }
-                    if let p = Words.paces[b.pace] { JMeta(look: L, text: "الإيقاع: " + p) }
-                }
-            }
-            if b.review.isEmpty {
-                Text("ما كتبت مراجعة لهذا الكتاب بعد.").font(JFont.body(14)).foregroundStyle(Color(L.ink2))
-            } else {
-                Text(b.review).font(JFont.quote(18)).foregroundStyle(Color(L.ink)).lineSpacing(6).spoiler(b.raw.bool("reviewSpoiler"))
-            }
-        }
-    }
+    private func reviewSection(_ b: Book) -> some View { ReviewPanel(book: b) }
 
     // MARK: notes
 
@@ -548,7 +497,7 @@ struct BookPage: View {
             s.sessions.removeAll { $0.bookId == snap.id }
             if hadTimer { s.timer = nil }
         }
-        if pageClose != nil { BookLayer.shared.dismissNow() } else { dismiss() }
+        if inLayer { BookLayer.shared.dismissNow() } else { dismiss() }
         ToastCenter.shared.show("تم حذف «" + snap.title + "»") {
             Library.shared.change { s in
                 s.books.insert(Book(Library.fixBook(snap.raw)), at: min(idx, s.books.count))
@@ -573,8 +522,9 @@ struct NoteRow: View {
         let r = item.raw
         Button {
             let k = "edit:" + kind.rawValue + ":" + item.id
-            if let c = closeFirst { c(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(book.id, kind: k) } }
-            else { Flows.note(book.id, kind: k) }
+            // in a sheet: it closes, and the form opens once it has gone (Present.whenClear)
+            closeFirst?()
+            Flows.note(book.id, kind: k)
         } label: {
             Group {
                 switch kind {
@@ -756,7 +706,7 @@ struct ItemListSheet: View {
                     }
                 } else if let k = NoteKind(rawValue: kind) {
                     HStack(spacing: 8) {
-                        Button { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(b.id, kind: kind) } } label: { Label("أضف", systemImage: "plus") }.buttonStyle(JButtonStyle(look: L, small: true))
+                        Button { dismiss(); Flows.note(b.id, kind: kind) } label: { Label("أضف", systemImage: "plus") }.buttonStyle(JButtonStyle(look: L, small: true))
                         if k == .word && !b.items(.word).isEmpty {
                             Button { review = true } label: { Label("اختبار", systemImage: "rectangle.on.rectangle") }.buttonStyle(JButtonStyle(look: L, small: true))
                         }
@@ -773,3 +723,51 @@ struct ItemListSheet: View {
 }
 
 struct IDBox: Identifiable { let id: String }
+
+/// «تقييمك»: the stars of a finished (or left) book, on its page and a novel's page.
+struct RatingRow: View {
+    let book: Book
+    @Environment(\.look) private var L
+
+    var body: some View {
+        let b = book
+        HStack {
+            Text("تقييمك" + (b.readNo > 1 ? " للقراءة \(b.readNo)" : "")).font(JFont.body(15)).foregroundStyle(Color(L.ink))
+            Spacer()
+            JStars(value: Binding(get: { b.rating }, set: { v in
+                Library.shared.changeBook(b.id) { $0.rating = v }
+                Haptics.play("sel")
+            }))
+        }
+    }
+}
+
+/// «مراجعتك»: the rating, moods, pace and words of a book, on its page and a novel's page.
+struct ReviewPanel: View {
+    let book: Book
+    @Environment(\.look) private var L
+
+    var body: some View {
+        let b = book
+        JPanel {
+            HStack {
+                Text("مراجعتك" + (b.readNo > 1 ? " · القراءة \(b.readNo)" : "")).font(JFont.display(18, .semibold)).foregroundStyle(Color(L.ink))
+                Spacer()
+                Button { Flows.review(b.id, volume: nil) } label: { Label(b.review.isEmpty ? "اكتبها" : "تعديل", systemImage: "pencil").font(JFont.body(14)) }
+                    .buttonStyle(.plain).foregroundStyle(Color(L.primary))
+            }
+            if b.rating > 0 { Text(Words.stars(b.rating)).foregroundStyle(Color(L.star)) }
+            if !b.moods.isEmpty || !b.pace.isEmpty {
+                Flow(spacing: 6) {
+                    ForEach(b.moods, id: \.self) { JMeta(look: L, text: $0) }
+                    if let p = Words.paces[b.pace] { JMeta(look: L, text: "الإيقاع: " + p) }
+                }
+            }
+            if b.review.isEmpty {
+                Text("ما كتبت مراجعة لهذا الكتاب بعد.").font(JFont.body(14)).foregroundStyle(Color(L.ink2))
+            } else {
+                Text(b.review).font(JFont.quote(18)).foregroundStyle(Color(L.ink)).lineSpacing(6).spoiler(b.raw.bool("reviewSpoiler"))
+            }
+        }
+    }
+}

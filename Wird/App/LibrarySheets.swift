@@ -15,15 +15,15 @@ struct AddMenu: View {
                 JMenuRow(icon: "globe", title: "رواية من موقع", sub: "الصق رابطها، وتنضاف بفصولها لمكتبتك") { novel = true }
                 JMenuRow(icon: "folder", title: "رواية من أداتك", sub: "مجلد الرواية من Novel Scraper، وفصولها تنحفظ كلها") {
                     dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { NovelArchive.pick() }
+                    Present.whenClear { NovelArchive.pick() }
                 }
                 JMenuRow(icon: "doc.text", title: "كتاب PDF من ملفاتك", sub: "ينقرأ من مكانه، وصفحتك تنحفظ") {
                     dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { PDFBooks.pick() }
+                    Present.whenClear { PDFBooks.pick() }
                 }
                 JMenuRow(icon: "doc.richtext", title: "كتاب EPUB من ملفاتك", sub: "ينقرأ من مكانه، بدون نسخة ثانية") {
                     dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { EpubPick.run() }
+                    Present.whenClear { EpubPick.run() }
                 }
                 JMenuRow(icon: "barcode.viewfinder", title: "امسح باركود الكتاب", sub: "بالكاميرا، وأختار طبعتك من اللي ألقاه") { dismiss(); Flows.scanAdd() }
                 JMenuRow(icon: "square.stack.3d.down.right", title: "مسح متتابع", sub: "امسح كتاب ورا كتاب، وتنضاف كلها مرة وحدة") { dismiss(); Flows.scanBatch() }
@@ -68,7 +68,7 @@ struct NovelAddSheet: View {
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
             }
-            Text("المواقع المدعومة الحين: ملوك الروايات (kolnovel.com). باقي مواقعك في المرحلة الثانية.").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
+            Text(Self.supported).font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
             if !err.isEmpty {
                 Text(err).font(JFont.body(14)).foregroundStyle(Color(L.ink)).padding(12).frame(maxWidth: .infinity, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(L.accentSoft)))
@@ -83,6 +83,16 @@ struct NovelAddSheet: View {
         .interactiveDismissDisabled(busy)
     }
 
+    /// the sites Jalees reads itself, and the ones the server adds
+    static var supported: String {
+        let own = ["kolnovel", "cenele", "rewayat", "layl", "wetriedtls", "wtrlab", "ranobes", "realmnovel"].compactMap { Novel.siteNames[$0] }
+        if Lang.english {
+            return "Reads from: Kolnovel, Cenele, Rewayat Club, " + own.suffix(5).joined(separator: ", ")
+                + ", and the sites your server adds. Others: it tries to read the page in a general way."
+        }
+        return "يقرأ من: " + own.joined(separator: "، ") + "، ومن المواقع اللي يضيفها سيرفرك. غيرها يجرّب يقرأ صفحتها بشكل عام."
+    }
+
     private func add() {
         let u = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard u.contains(".") else { err = "الصق رابط الرواية أو رابط فصل منها."; return }
@@ -94,8 +104,8 @@ struct NovelAddSheet: View {
             let book = (r["book"] as? String) ?? ""
             dismiss()
             done()
-            Router.shared.openNovel(NovelBridge.num(r["id"]), book: book)
-            if let i = r["open"] { NovelBridge.showPage(novel: NovelBridge.num(r["id"]), book: book, openIndex: NovelBridge.num(i)) }
+            // the novel's page, and the chapter the link pointed at over it
+            NovelBridge.showPage(novel: NovelBridge.num(r["id"]), book: book, openIndex: r["open"].map { NovelBridge.num($0) })
             ToastCenter.shared.show("انضافت «\((r["title"] as? String) ?? "")»")
         }
     }
@@ -356,10 +366,10 @@ struct AddNoteMenu: View {
         let b = lib.state.book(bookID)
         JSheet(title: "أضف إلى «" + (b?.title ?? "") + "»") {
             VStack(spacing: 0) {
-                JMenuRow(icon: "quote.opening", title: "اقتباس", sub: "جملة أعجبتك") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(bookID, kind: "quote") } }
-                JMenuRow(icon: "lightbulb", title: "فكرة", sub: "شي خطر في بالك وأنت تقرأ") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(bookID, kind: "thought") } }
-                JMenuRow(icon: "person", title: "شخصية", sub: "اسمها ووصفها وعلاقاتها") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(bookID, kind: "char") } }
-                JMenuRow(icon: "character.book.closed", title: "كلمة", sub: "كلمة جديدة ومعناها") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Flows.note(bookID, kind: "word") } }
+                JMenuRow(icon: "quote.opening", title: "اقتباس", sub: "جملة أعجبتك") { dismiss(); Flows.note(bookID, kind: "quote") }
+                JMenuRow(icon: "lightbulb", title: "فكرة", sub: "شي خطر في بالك وأنت تقرأ") { dismiss(); Flows.note(bookID, kind: "thought") }
+                JMenuRow(icon: "person", title: "شخصية", sub: "اسمها ووصفها وعلاقاتها") { dismiss(); Flows.note(bookID, kind: "char") }
+                JMenuRow(icon: "character.book.closed", title: "كلمة", sub: "كلمة جديدة ومعناها") { dismiss(); Flows.note(bookID, kind: "word") }
                 if let b = b, !b.isNovel {
                     JMenuRow(icon: "flag", title: "تحديث التقدم", sub: b.posLabel) { progress = true }
                 }

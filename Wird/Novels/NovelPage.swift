@@ -136,15 +136,40 @@ final class NovelPageModel: ObservableObject {
         return min(a, b)...max(a, b)
     }
 
+    /// as a book's page: finishing opens the finish sheet, a lost rating can be undone (Flows.setStatus)
     func setStatus(_ st: String) {
-        NovelLibrary.status(bookID, st)
+        guard !bookID.isEmpty else { return }
+        Flows.setStatus(bookID, st)
         reload()
-        Haptics.play("sel")
     }
 
     func read(_ idx: Int?) {
+        if bookID.isEmpty {
+            // only looked at so far: reading it is adding it (its book, then the reader)
+            let n = novel.id
+            Task { @MainActor in
+                let b = await NovelBridge.adopt(novel: n)
+                BookLayer.shared.replace(.novel(n, b))
+                NovelBridge.openReader(novel: n, book: b, index: idx, chapter: nil, paragraph: nil)
+            }
+            return
+        }
         NovelBridge.openReader(novel: novel.id, book: bookID, index: idx, chapter: nil, paragraph: nil)
     }
+
+    /// «أضف لمكتبتك» on a novel only being looked at.
+    func addToLibrary() {
+        let n = novel.id, title = novel.title
+        Task { @MainActor in
+            let b = await NovelBridge.adopt(novel: n)
+            Haptics.play("success")
+            ToastCenter.shared.show("انضافت «\(title)» لمكتبتك")
+            BookLayer.shared.replace(.novel(n, b))
+        }
+    }
+
+    /// the notebook list of a kind, over the page (it doesn't leave for the notebook tab)
+    @Published var list: String?
 
     func loadMirrors() { mirrors = Novels.shared.mirrors(novel.id) }
 
@@ -223,12 +248,12 @@ final class NovelPageModel: ObservableObject {
     }
 
     func openNotebook(_ kind: String) {
-        Router.shared.openNotebook(book: bookID, kind: kind)
+        list = kind
     }
 
     /// The library's own form for a book's name, author and cover (what the owner changes stays).
     func edit() {
-        Router.shared.push(.book(bookID))
+        Flows.editBook(bookID)
     }
 
     func saveNames(_ names: [String: String]) {
@@ -252,14 +277,19 @@ struct NovelPageView: View {
                     topBar
                     hero
                     if !model.novel.summary.isEmpty { summary }
-                    statusAndProgress
-                    ListsRow(bookID: model.bookID)
-                    if downloads.active { downloadsCard }
-                    highlights
-                    notebook
-                    sessions
-                    about
-                    if model.novel.source != "epub" && model.novel.source != "sample" { sourcesSection }
+                    if model.bookID.isEmpty {
+                        previewActions
+                    } else {
+                        statusAndProgress
+                        NovelReview(bookID: model.bookID)
+                        ListsRow(bookID: model.bookID)
+                        if downloads.active { downloadsCard }
+                        highlights
+                        notebook
+                        sessions
+                        about
+                        if model.novel.source != "epub" && model.novel.source != "sample" { sourcesSection }
+                    }
                     chaptersHeader(proxy)
                     chapterRows
                     Color.clear.frame(height: model.selecting ? 120 : 24)
@@ -279,6 +309,10 @@ struct NovelPageView: View {
             Button("تمام", role: .cancel) {}
         }
         .sheet(isPresented: $model.namingColors) { ColorNames(model: model) }
+        .sheet(item: Binding(get: { model.list.map { ListKind(id: $0) } }, set: { model.list = $0?.id })) { k in
+            ItemListSheet(bookID: model.bookID, kind: k.id).environment(\.look, L).environment(\.layoutDirection, Lang.direction)
+                .presentationDetents([.medium, .large])
+        }
         .sheet(isPresented: $model.rules) {
             NavigationStack { ReplaceRulesView(scope: String(model.novel.id), title: model.novel.title) }
                 .environment(\.layoutDirection, Lang.direction).preferredColorScheme(L.dark ? .dark : .light)
@@ -292,20 +326,19 @@ struct NovelPageView: View {
     // MARK: top
 
     private var topBar: some View {
-        ZStack {
-            Text("جَليس").font(JFont.display(26, .bold)).foregroundStyle(Color(L.ink))
-            HStack {
-                Button(action: model.close) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.backward").font(.system(size: 14, weight: .semibold))
-                        Text("المكتبة").font(JFont.body(15))
-                    }
-                    .foregroundStyle(Color(L.ink2))
-                    .padding(.vertical, 6)
+        // as the book page: back to the tab it opened over, by name
+        HStack {
+            Button(action: model.close) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.forward").font(.system(size: 15, weight: .semibold))
+                    Text(Router.shared.tab.title).font(JFont.body(15, .medium))
                 }
-                .buttonStyle(.plain)
-                Spacer()
+                .foregroundStyle(Color(L.ink2))
+                .padding(.vertical, 6)
             }
+            .buttonStyle(.plain)
+            Spacer(minLength: 0)
+            HeaderSessionChip()
         }
         .padding(.top, 4)
     }
@@ -528,6 +561,20 @@ struct NovelPageView: View {
     }
 
     // MARK: notebook, sessions, about
+
+    /// A novel only being looked at: add it, or start reading (which adds it too).
+    private var previewActions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Button { model.addToLibrary() } label: { Label("أضف لمكتبتك", systemImage: "plus").frame(maxWidth: .infinity) }
+                    .buttonStyle(JButtonStyle(look: L, primary: true))
+                Button { model.read(0) } label: { Text("اقرأ الفصل الأول") }
+                    .buttonStyle(JButtonStyle(look: L))
+                    .disabled(model.chapters.isEmpty)
+            }
+            Text("\(model.chapters.count) فصل · \(model.novel.siteName)").font(JFont.body(13)).foregroundStyle(Color(L.ink2))
+        }
+    }
 
     private var notebook: some View {
         let counts = model.book["counts"] as? [String: Any] ?? [:]
@@ -916,7 +963,7 @@ struct NovelPageScreen: View {
 private struct NovelPageHolder: View {
     @StateObject private var model: NovelPageModel
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.pageClose) private var pageClose
+    @Environment(\.inBookLayer) private var inLayer
 
     init(novel: Novel, bookID: String) {
         _model = StateObject(wrappedValue: NovelPageModel(novel: novel, book: bookID, look: Appearance.shared.look))
@@ -926,9 +973,26 @@ private struct NovelPageHolder: View {
         NovelPageView(model: model)
             .toolbar(.hidden, for: .navigationBar)
             .onAppear {
-                let close = pageClose
-                model.close = { if let c = close { c() } else { dismiss() } }
+                let layer = inLayer
+                model.close = { if layer { BookLayer.shared.close() } else { dismiss() } }
                 model.reload()
             }
+    }
+}
+
+/// A notebook list's kind, for a sheet.
+struct ListKind: Identifiable { let id: String }
+
+/// A finished (or left) novel's stars and review, as on a book's page; it follows the library (the finish sheet).
+private struct NovelReview: View {
+    let bookID: String
+    @ObservedObject private var lib = Library.shared
+
+    var body: some View {
+        // no wrapper: nothing at all (no gap) on a novel still being read
+        if let b = lib.state.book(bookID) {
+            if b.status == .done || b.status == .dnf { RatingRow(book: b) }
+            if b.status == .done || !b.review.isEmpty || !b.moods.isEmpty { ReviewPanel(book: b) }
+        }
     }
 }

@@ -60,7 +60,8 @@ enum ServerLink {
     }
 
     static func followAll() async throws -> Int {
-        let urls = Novels.shared.list.filter { !["epub", "sample", "archive"].contains($0.source) }.map(\.url)
+        // the library's novels (not ones only looked at while browsing)
+        let urls = Novels.shared.list.filter { !["epub", "sample", "archive"].contains($0.source) && !$0.book.isEmpty }.map(\.url)
         return try await follow(urls)
     }
 

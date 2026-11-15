@@ -36,11 +36,23 @@ enum NovelBridge {
         }
     }
 
-    /// A novel found while browsing: added (or found), then its page.
+    /// A novel found while browsing: its page, to look at. It joins the library with «أضف لمكتبتك» or its first
+    /// read (adopt), not by being looked at.
     static func open(_ url: String, progress: @escaping (String) -> Void) async throws {
-        let r = await add(url, progress: progress)
-        if let e = r["error"] as? String { throw NovelError.message(e) }
-        Router.shared.openNovel(num(r["id"]), book: (r["book"] as? String) ?? "")
+        let r = try await Novels.shared.add(url: url, progress: progress)
+        let book = r.novel.book
+        let inLibrary = !book.isEmpty && Library.shared.state.book(book) != nil
+        BookLayer.shared.openNovel(r.novel.id, book: inLibrary ? book : "")
+    }
+
+    /// A novel being looked at joins the library: its book (with its cover from the site). Returns the book's id.
+    static func adopt(novel id: Int) async -> String {
+        guard let n = Novels.shared.novel(id) else { return "" }
+        let o: [String: Any] = ["id": n.id, "title": n.title, "author": n.author, "cover": n.cover, "url": n.url, "site": n.source,
+                                "total": n.total, "complete": n.complete, "translator": n.translator, "genres": n.genres]
+        let book = await NovelLibrary.adopt(o)
+        Novels.shared.reload()
+        return book
     }
 
     // MARK: EPUB books (read in place)
@@ -133,6 +145,20 @@ enum NovelBridge {
         top(h).present(sf, animated: true)
     }
 
+    /// A link from outside (a widget, a share from Safari): the reader closes (its place and session saved) and any
+    /// sheet closes, then `then` runs on a clear screen. Nothing open: it runs straight away.
+    static func clearScreen(_ then: @escaping () -> Void) {
+        guard let h = host, h.presentedViewController != nil else { then(); return }
+        var v = h.presentedViewController
+        while let x = v {
+            if let r = x as? ReaderViewController, !r.isBeingDismissed { r.closeTapped(); break }
+            v = x.presentedViewController
+        }
+        Present.shared.modal = nil
+        if h.presentedViewController != nil, !(h.presentedViewController?.isBeingDismissed ?? false) { h.dismiss(animated: true) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { then() }
+    }
+
     static func top(_ from: UIViewController) -> UIViewController {
         var v = from
         while let p = v.presentedViewController { v = p }
@@ -208,9 +234,10 @@ enum SharedAdd {
                 let r = await NovelBridge.add(l) { _ in }
                 if let e = r["error"] as? String { Toaster.show(e); continue }
                 let book = (r["book"] as? String) ?? ""
-                Present.shared.modal = nil
-                Router.shared.openNovel(NovelBridge.num(r["id"]), book: book)
-                if let i = r["open"] { NovelBridge.showPage(novel: NovelBridge.num(r["id"]), book: book, openIndex: NovelBridge.num(i)) }
+                let id = NovelBridge.num(r["id"])
+                NovelBridge.clearScreen {
+                    NovelBridge.showPage(novel: id, book: book, openIndex: r["open"].map { NovelBridge.num($0) })
+                }
                 Toaster.show("انضافت «\((r["title"] as? String) ?? "")»")
             }
             busy = false

@@ -38,9 +38,32 @@ final class Present: ObservableObject {
         }
     }
     @Published var modal: Modal?
+    /// the one after it: opened once the sheet on screen has gone (RootView's onDismiss), never on a timer
+    private var next: Modal?
 
     func open(_ m: Modal) {
-        if modal != nil { modal = nil; DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { self.modal = m } } else { modal = m }
+        if modal != nil { next = m; modal = nil; return }
+        Self.whenClear { self.modal = m }
+    }
+
+    /// The root sheet has closed: the next one in line, if any.
+    func dismissed() {
+        guard let n = next else { return }
+        next = nil
+        modal = n
+    }
+
+    /// Runs `f` once no sheet is closing (a page's own sheet just told to close, a list, a menu), so what opens next
+    /// always opens. A sheet told to close starts closing on the run loop's next turn; then its transition is waited for.
+    static func whenClear(_ f: @escaping () -> Void, hops: Int = 0) {
+        guard let h = NovelBridge.host, let p = h.presentedViewController, hops < 60 else { f(); return }
+        if let c = p.transitionCoordinator {
+            c.animate(alongsideTransition: nil) { _ in DispatchQueue.main.async { whenClear(f, hops: hops + 1) } }
+        } else if p.isBeingDismissed || hops < 2 {
+            DispatchQueue.main.async { whenClear(f, hops: hops + 1) }
+        } else {
+            f()
+        }
     }
 }
 

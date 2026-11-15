@@ -40,7 +40,7 @@ enum NewChapters {
     /// When the last check is older than `age` seconds.
     static func checkIfDue(_ age: Double = 3600) async {
         let last = Double(DB.shared.get("updates.checked") ?? "") ?? 0
-        guard !running, Date().timeIntervalSince1970 - last > age, !Novels.shared.list.filter({ !["sample", "epub", "archive"].contains($0.source) }).isEmpty else { return }
+        guard !running, Date().timeIntervalSince1970 - last > age, !Novels.shared.list.filter({ !["sample", "epub", "archive"].contains($0.source) && !$0.book.isEmpty }).isEmpty else { return }
         running = true
         _ = await Novels.shared.checkAll { _ in }
         running = false

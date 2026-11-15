@@ -93,8 +93,9 @@ final class ShareViewController: UIViewController {
         c.host = "add"
         c.queryItems = [URLQueryItem(name: "url", value: l)]
         if let u = c.url { openApp(u) }
-        titleLabel.text = "تم".tr
-        linkLabel.text = "افتح جليس وتلقى الرواية انضافت.".tr
+        // the novel is added by Jalees itself (it opens now; if it doesn't, the link waits for its next launch)
+        titleLabel.text = "وصل الرابط لجليس".tr
+        linkLabel.text = "جليس يضيف الرواية ويفتح صفحتها. لو ما انفتح، افتحه وتنضاف لحالها.".tr
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.extensionContext?.completeRequest(returningItems: nil) }
     }
 

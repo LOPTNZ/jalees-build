@@ -235,7 +235,7 @@ struct CarouselView: View {
                     lastX = dx; lastT = Date(); speed = 0
                     if axis == "y" {
                         // up: the book layer starts, with the middle book
-                        if let id = car.centerID, BookLayer.shared.begin(id) {} else { axis = "n" }
+                        if let id = car.centerID, BookLayer.shared.beginBook(id) {} else { axis = "n" }
                     }
                 }
                 if axis == "y" { BookLayer.shared.drag(-dy / D); return }

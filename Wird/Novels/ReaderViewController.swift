@@ -40,6 +40,15 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     private var pagesLeft = 0
     private var pinchBase: Double = 22
     private var menu: ReaderMenuView?
+    /// pulling the page down (with the controls showing) closes the book, as in Apple Books
+    private lazy var pullPan: UIPanGestureRecognizer = {
+        let p = UIPanGestureRecognizer(target: self, action: #selector(pulled(_:)))
+        p.delegate = self
+        return p
+    }()
+    /// the page as a picture while it is pulled (the web view itself stays put underneath, hidden)
+    private var pullShot: UIView?
+    private var pullHidden: [UIView] = []
     private var markBar: MarkBar?
     private var guideButton: GlassButton?
     private var autoPill: AutoScrollPill?
@@ -123,6 +132,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         super.viewDidLoad()
         buildChrome()
         view.addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:))))
+        view.addGestureRecognizer(pullPan)
         for dir in [UISwipeGestureRecognizer.Direction.right, .left] {
             let s = UISwipeGestureRecognizer(target: self, action: #selector(swiped(_:)))
             s.direction = dir
@@ -538,6 +548,62 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     }
 
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+    /// The pull to close starts only with the controls showing, nothing over the page, the finger going down, and
+    /// (scrolling) the text at its top.
+    func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+        guard g === pullPan else { return true }
+        guard chromeShown, markBar == nil, menu == nil, presentedViewController == nil, pullShot == nil else { return false }
+        let v = pullPan.velocity(in: view)
+        guard v.y > 0, v.y > abs(v.x) * 1.5 else { return false }
+        return paged || web.scrollView.contentOffset.y <= 1
+    }
+
+    @objc private func pulled(_ g: UIPanGestureRecognizer) {
+        let ty = max(0, g.translation(in: view).y)
+        switch g.state {
+        case .began:
+            guard let shot = view.snapshotView(afterScreenUpdates: false) else { return }
+            web.scrollView.isScrollEnabled = false
+            shot.frame = view.bounds
+            shot.layer.cornerCurve = .continuous
+            shot.clipsToBounds = true
+            view.addSubview(shot)
+            pullShot = shot
+            // only what shows now is hidden (and shown again on a cancel)
+            pullHidden = view.subviews.filter { $0 !== shot && !$0.isHidden }
+            pullHidden.forEach { $0.isHidden = true }
+            view.backgroundColor = .black
+        case .changed:
+            guard let shot = pullShot else { return }
+            let k = min(1, ty / view.bounds.height)
+            let s = 1 - 0.14 * k
+            shot.transform = CGAffineTransform(translationX: 0, y: ty * 0.85).scaledBy(x: s, y: s)
+            shot.layer.cornerRadius = min(28, ty / 3)
+        default:
+            guard let shot = pullShot else { return }
+            web.scrollView.isScrollEnabled = true
+            let vy = g.velocity(in: view).y
+            if g.state == .ended && (ty > 140 || vy > 900) {
+                Haptics.play("soft")
+                UIView.animate(withDuration: 0.22, delay: 0, options: .curveEaseIn) {
+                    shot.transform = CGAffineTransform(translationX: 0, y: self.view.bounds.height * 0.6).scaledBy(x: 0.8, y: 0.8)
+                    shot.alpha = 0.6
+                } completion: { _ in self.closeTapped() }
+            } else {
+                UIView.animate(withDuration: 0.42, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0) {
+                    shot.transform = .identity
+                    shot.layer.cornerRadius = 0
+                } completion: { _ in
+                    self.pullHidden.forEach { $0.isHidden = false }
+                    self.pullHidden = []
+                    self.view.backgroundColor = UIColor(hex: self.settings.current.bg)
+                    shot.removeFromSuperview()
+                    self.pullShot = nil
+                }
+            }
+        }
+    }
 
     /// In a right-to-left book a swipe to the right goes forward.
     @objc private func swiped(_ g: UISwipeGestureRecognizer) {

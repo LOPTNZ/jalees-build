@@ -49,17 +49,28 @@ enum DeepLink {
     static func open(_ url: URL) {
         var q: [String: String] = [:]
         URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.forEach { q[$0.name] = $0.value ?? "" }
-        let r = Router.shared
         if url.host == "add" {
-            // a link shared from Safari
+            // a link shared from Safari (it closes the reader and sheets once the novel is in)
             SharedAdd.process(q["url"])
             return
         }
-        Present.shared.modal = nil
         if url.host == "session" || q["session"] != nil {
-            if SessionModel.shared.timer != nil { SessionModel.shared.open() }
+            // the running session; in the reader you are already in it
+            if SessionModel.shared.timer != nil {
+                Present.shared.modal = nil
+                SessionModel.shared.open()
+            }
             return
         }
+        // the rest show a place in the app: the reader, a sheet and a book's page close first
+        NovelBridge.clearScreen {
+            BookLayer.shared.dismissNow()
+            route(q)
+        }
+    }
+
+    private static func route(_ q: [String: String]) {
+        let r = Router.shared
         if let b = q["book"], Library.shared.state.book(b) != nil {
             r.paths[.library] = []
             if r.tab != .library { r.select(.library) }

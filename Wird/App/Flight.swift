@@ -26,17 +26,18 @@ final class CoverFrames {
 }
 
 private struct FlightTabKey: EnvironmentKey { static let defaultValue: Router.Tab? = nil }
-private struct PageCloseKey: EnvironmentKey { static let defaultValue: (() -> Void)? = nil }
+private struct InBookLayerKey: EnvironmentKey { static let defaultValue = false }
 extension EnvironmentValues {
     /// the tab a view lives in (set by each tab's root), so a cover's place belongs to its tab
     var flightTab: Router.Tab? {
         get { self[FlightTabKey.self] }
         set { self[FlightTabKey.self] = newValue }
     }
-    /// how a book's page goes back when it is in the book layer (otherwise it is a pushed page and dismisses)
-    var pageClose: (() -> Void)? {
-        get { self[PageCloseKey.self] }
-        set { self[PageCloseKey.self] = newValue }
+    /// a book's page in the book layer: back closes the layer (otherwise it is a pushed page and dismisses). A flag,
+    /// not a closure: the stage is drawn on every frame, and a new closure each time redrew the whole page each frame.
+    var inBookLayer: Bool {
+        get { self[InBookLayerKey.self] }
+        set { self[InBookLayerKey.self] = newValue }
     }
 }
 
@@ -50,100 +51,221 @@ final class LayerProgress: ObservableObject {
 @MainActor
 final class BookLayer: ObservableObject {
     static let shared = BookLayer()
-    /// the book whose page is in the layer (nil: none)
-    @Published private(set) var bookID: String?
+
+    /// What the layer shows: a book's page, or a novel's page (its book may be "" while it is only being looked at,
+    /// before «أضف لمكتبتك»).
+    enum Item: Equatable {
+        case book(String)
+        case novel(Int, String)
+        var bookID: String {
+            switch self {
+            case .book(let b): return b
+            case .novel(_, let b): return b
+            }
+        }
+    }
+
+    @Published private(set) var item: Item?
+    /// the tab it was opened in (it shows there, and stays there while you look at another tab)
+    @Published private(set) var tab: Router.Tab = .library
     /// the page's own cover is hidden while the copy travels (not at rest at 1)
     @Published private(set) var travelling = false
-    private(set) var source: CGRect = .zero
-    private(set) var live = false
-    private var token = 0
+    /// where the cover starts in the tab underneath; nil: nothing travels, the page fades in place
+    private(set) var source: CGRect?
     private var progress: LayerProgress { .shared }
 
-    // the web's timing: 640 ms forwards (EASE_MOVE), back a little quicker (EASE_OUT); a finger's release springs
-    static let openAnimation = Animation.timingCurve(0.42, 0, 0.16, 1, duration: 0.62)
-    static let closeAnimation = Animation.timingCurve(0.3, 0.55, 0.2, 1, duration: 0.5)
-    static let releaseAnimation = Animation.interactiveSpring(response: 0.42, dampingFraction: 0.88)
+    // the web's timing: 620 ms forwards (EASE_MOVE), back a little quicker (EASE_OUT); a finger's release eases out
+    // from where it let go. Every frame is set here (a display link), as the finger does: SwiftUI's own interpolation
+    // lost every in-between frame of this layer on the simulator's recordings (it opened and closed in one frame).
+    private static let openCurve = Bezier(0.42, 0, 0.16, 1)
+    private static let closeCurve = Bezier(0.3, 0.55, 0.2, 1)
+    private static let releaseCurve = Bezier(0.2, 0.75, 0.25, 1)
 
-    var isOpen: Bool { bookID != nil }
+    var isOpen: Bool { item != nil }
+    var bookID: String? { item?.bookID }
 
-    /// Starts the layer for a book whose cover is on screen in the library. False when it can't (the caller opens
-    /// the page the plain way).
+    /// Starts the layer in the open tab. The cover travels when it is on screen there.
     @discardableResult
-    func begin(_ id: String) -> Bool {
-        guard bookID == nil || bookID == id, Router.shared.tab == .library, let src = CoverFrames.shared.visible(id),
-              Library.shared.state.book(id) != nil else { return false }
-        token += 1
-        source = src
-        if bookID == nil {
+    func begin(_ it: Item) -> Bool {
+        if let cur = item, cur != it { dismissNow() }
+        let id = it.bookID
+        source = id.isEmpty ? nil : CoverFrames.shared.visible(id)
+        if item == nil {
+            stop()
             setP(0)
-            bookID = id
-            Library.shared.changeBook(id) { $0.opened = Millis.now }
-            Library.shared.change { $0.lastBook = id }
+            tab = Router.shared.tab
+            item = it
+            stageReady = false
         }
-        travelling = true
+        travelling = source != nil
         return true
     }
 
-    /// A tap: the page opens with the animation.
-    func open(_ id: String) -> Bool {
-        guard begin(id) else { return false }
-        live = false
-        // one frame for the page to be laid out under the scrim (its cover's place is where the copy goes)
+    /// Once the page is open: it becomes the last book opened (written now, not while it moves: a write redraws the
+    /// whole app).
+    private func markOpened() {
+        guard let id = bookID, !id.isEmpty, Library.shared.state.book(id) != nil else { return }
+        Library.shared.changeBook(id) { $0.opened = Millis.now }
+        Library.shared.change { $0.lastBook = id }
+    }
+
+    /// The page has been built and laid out: an animation waiting for it starts now, so none of its frames are lost
+    /// to building the page.
+    private(set) var stageReady = false
+    private var whenReady: (() -> Void)?
+    private var readyToken = 0
+
+    func stageAppeared() {
+        // two more turns: what the page does as it appears (a novel reads its chapters) is drawn too, and the frame
+        // with the built page is on screen before the first moving one
         DispatchQueue.main.async {
-            withAnimation(Self.openAnimation) { self.progress.p = 1 }
-            self.settle(open: true, after: 0.64)
+            DispatchQueue.main.async {
+                self.stageReady = true
+                let f = self.whenReady
+                self.whenReady = nil
+                f?()
+            }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Haptics.play("soft") }
+    }
+
+    /// Runs `f` once the page is built; never later than half a second (a page that did not say so).
+    private func wait(_ f: @escaping () -> Void) {
+        if stageReady { f(); return }
+        whenReady = f
+        readyToken += 1
+        let mine = readyToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            guard mine == self.readyToken, let g = self.whenReady else { return }
+            self.whenReady = nil
+            g()
+        }
+    }
+
+    /// The carousel's swipe up: a book whose cover is on screen, its page following the finger.
+    @discardableResult
+    func beginBook(_ id: String) -> Bool {
+        guard let b = Library.shared.state.book(id), CoverFrames.shared.visible(id) != nil else { return false }
+        return begin(b.novel.map { .novel($0.novelID, id) } ?? .book(id))
+    }
+
+    /// A book from anywhere: its page opens with the animation.
+    @discardableResult
+    func open(_ id: String) -> Bool {
+        guard let b = Library.shared.state.book(id) else { return false }
+        return show(b.novel.map { .novel($0.novelID, id) } ?? .book(id))
+    }
+
+    /// A novel's page (bookID "" while it is not in the library).
+    func openNovel(_ novel: Int, book: String) { show(.novel(novel, book)) }
+
+    @discardableResult
+    private func show(_ it: Item) -> Bool {
+        begin(it)
+        // the page is built first (under the clear scrim), then it moves with nothing else to do
+        wait {
+            self.run(to: 1, duration: 0.62, curve: Self.openCurve) { self.landed(open: true) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Haptics.play("soft") }
+        }
         return true
+    }
+
+    /// The page shown changes in place (a novel just added to the library: its full page).
+    func replace(_ it: Item) {
+        guard item != nil else { return }
+        item = it
     }
 
     /// A finger moves it (0…1).
     func drag(_ value: CGFloat) {
-        guard bookID != nil else { return }
-        live = true
-        travelling = true
+        guard item != nil else { return }
+        stop()
+        whenReady = nil
+        travelling = source != nil
         setP(min(1, max(0, value)))
     }
 
-    /// The finger lets go: to the page or back to the library.
+    /// The finger lets go: to the page or back to where you were, easing out from where it is.
     func release(open: Bool) {
-        guard bookID != nil else { return }
-        live = false
+        guard item != nil else { return }
         if open { Haptics.play("soft") }
-        withAnimation(Self.releaseAnimation) { progress.p = open ? 1 : 0 }
-        settle(open: open, after: 0.5)
+        wait {
+            let left = abs((open ? 1 : 0) - self.progress.p)
+            self.run(to: open ? 1 : 0, duration: max(0.18, 0.46 * Double(left)), curve: Self.releaseCurve) { self.landed(open: open) }
+        }
     }
 
     /// The back button: home with the animation.
     func close() {
-        guard bookID != nil else { return }
-        live = false
-        travelling = true
-        withAnimation(Self.closeAnimation) { progress.p = 0 }
-        settle(open: false, after: 0.52)
+        guard item != nil else { return }
+        whenReady = nil
+        // the cover goes home only if its place is still on screen
+        if let id = bookID, !id.isEmpty, let src = CoverFrames.shared.visible(id) { source = src } else { source = nil }
+        travelling = source != nil
+        run(to: 0, duration: 0.5, curve: Self.closeCurve) { self.landed(open: false) }
     }
 
-    /// Straight away, no animation (the book was deleted, or the library changed under it).
+    /// Straight away, no animation (the book was deleted, or something else took the screen).
     func dismissNow() {
-        token += 1
-        live = false
+        stop()
+        whenReady = nil
         travelling = false
-        bookID = nil
+        item = nil
         setP(0)
     }
 
-    private func settle(open: Bool, after: Double) {
-        token += 1
-        let mine = token
-        DispatchQueue.main.asyncAfter(deadline: .now() + after) {
-            guard mine == self.token, !self.live else { return }
-            if open {
-                self.travelling = false
-            } else {
-                self.travelling = false
-                self.bookID = nil
-            }
+    private func landed(open: Bool) {
+        travelling = false
+        if open { markOpened() } else { item = nil }
+    }
+
+    // MARK: the frames
+
+    private var link: CADisplayLink?
+    private var from: CGFloat = 0
+    private var to: CGFloat = 0
+    private var duration: Double = 0.5
+    private var curve = Bezier(0.25, 0.1, 0.25, 1)
+    private var elapsed: Double = 0
+    private var last: CFTimeInterval?
+    private var done: (() -> Void)?
+
+    /// Moves the progress to `target`, one frame at a time. The clock starts at the first frame drawn and moves at
+    /// most 1/30 s a frame: a busy moment (a page being built, a heavy redraw) slows the motion down for a frame
+    /// instead of skipping it, so every part of it is seen.
+    private func run(to target: CGFloat, duration d: Double, curve c: Bezier, done f: @escaping () -> Void) {
+        stop()
+        from = progress.p
+        to = target
+        duration = d
+        curve = c
+        elapsed = 0
+        last = nil
+        done = f
+        if abs(target - from) < 0.001 { setP(target); done = nil; f(); return }
+        let l = CADisplayLink(target: Ticker(self), selector: #selector(Ticker.tick(_:)))
+        l.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        l.add(to: .main, forMode: .common)
+        link = l
+    }
+
+    fileprivate func tick(_ l: CADisplayLink) {
+        let now = l.targetTimestamp
+        let step = last.map { now - $0 } ?? (now - l.timestamp)
+        last = now
+        elapsed += min(1.0 / 30, max(0, step))
+        let t = min(1, elapsed / duration)
+        setP(from + (to - from) * CGFloat(curve.y(t)))
+        if t >= 1 {
+            let f = done
+            stop()
+            f?()
         }
+    }
+
+    private func stop() {
+        link?.invalidate()
+        link = nil
+        done = nil
     }
 
     private func setP(_ v: CGFloat) {
@@ -153,9 +275,49 @@ final class BookLayer: ObservableObject {
     }
 }
 
+/// The display link holds this, not the layer (a display link keeps its target alive).
+private final class Ticker: NSObject {
+    weak var layer: BookLayer?
+    init(_ l: BookLayer) { layer = l }
+    @MainActor @objc func tick(_ l: CADisplayLink) { layer?.tick(l) }
+}
+
+/// A CSS-style timing curve (cubic Bézier from 0,0 to 1,1): the progress at a moment of the animation.
+struct Bezier {
+    let x1, y1, x2, y2: Double
+    init(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double) { self.x1 = x1; self.y1 = y1; self.x2 = x2; self.y2 = y2 }
+
+    private func bx(_ s: Double) -> Double { 3 * x1 * s * (1 - s) * (1 - s) + 3 * x2 * s * s * (1 - s) + s * s * s }
+    private func by(_ s: Double) -> Double { 3 * y1 * s * (1 - s) * (1 - s) + 3 * y2 * s * s * (1 - s) + s * s * s }
+    private func dx(_ s: Double) -> Double { 3 * x1 * (1 - s) * (1 - s) + 6 * (x2 - x1) * s * (1 - s) + 3 * (1 - x2) * s * s }
+
+    /// y at time x (Newton's method, then halving if it strays)
+    func y(_ x: Double) -> Double {
+        if x <= 0 { return 0 }
+        if x >= 1 { return 1 }
+        var s = x
+        for _ in 0..<8 {
+            let e = bx(s) - x
+            if abs(e) < 1e-5 { return by(s) }
+            let d = dx(s)
+            if abs(d) < 1e-6 { break }
+            s -= e / d
+        }
+        var lo = 0.0, hi = 1.0
+        s = x
+        for _ in 0..<30 {
+            let e = bx(s) - x
+            if abs(e) < 1e-5 { break }
+            if e > 0 { hi = s } else { lo = s }
+            s = (lo + hi) / 2
+        }
+        return by(s)
+    }
+}
+
 // MARK: - the layer on screen
 
-/// Over the library tab (RootView): the scrim, the page, the travelling cover.
+/// Over the tab it was opened in (RootView): the scrim, the page, the travelling cover.
 struct BookLayerView: View {
     @ObservedObject private var layer = BookLayer.shared
     @ObservedObject private var progress = LayerProgress.shared
@@ -163,65 +325,66 @@ struct BookLayerView: View {
     @ObservedObject private var lib = Library.shared
 
     var body: some View {
-        if let id = layer.bookID, router.tab == .library, let b = lib.state.book(id) {
-            LayerStage(p: progress.p, book: b, source: layer.source, travelling: layer.travelling)
-                .onChange(of: router.paths[.library]?.count ?? 0) { n in if n > 0 { layer.dismissNow() } }
+        if let it = layer.item, router.tab == layer.tab {
+            LayerStage(p: progress.p, item: it, book: lib.state.book(it.bookID), source: layer.source, travelling: layer.travelling)
+                .onChange(of: router.paths[layer.tab]?.count ?? 0) { n in if n > 0 { layer.dismissNow() } }
         }
     }
 }
 
-/// Everything the progress moves, worked out on every frame (Animatable: SwiftUI hands it each in-between value).
-private struct LayerStage: View, Animatable {
+/// Everything the progress moves, worked out on every frame (BookLayer sets the progress frame by frame).
+private struct LayerStage: View {
     var p: CGFloat
-    let book: Book
-    let source: CGRect
+    let item: BookLayer.Item
+    let book: Book?
+    let source: CGRect?
     let travelling: Bool
     @Environment(\.look) private var L
 
-    var animatableData: CGFloat {
-        get { p }
-        set { p = newValue }
-    }
-
     var body: some View {
-        // the library fades out early (like Bookly: the other covers and the words go first)
-        let scrim = min(1, p / 0.4)
-        // the page's words come in at the end, as the cover lands
-        let content = max(0, (p - 0.55) / 0.45)
-        let hero = CoverFrames.shared.spots["hero:" + book.id]?.rect ?? defaultHero
-        let r = lerp(source, hero, curve(p))
+        // with a cover travelling: the tab fades out early (like Bookly) and the page's words come in as it lands;
+        // without one: the page simply fades and rises in place
+        let moving = source != nil && book != nil
+        let scrim = moving ? min(1, p / 0.4) : p
+        let content = moving ? max(0, (p - 0.55) / 0.45) : p
         ZStack(alignment: .topLeading) {
             Color(L.bg).opacity(scrim).ignoresSafeArea()
             page
+                .id(item)
+                // each page, once built (also a new one in the same stage): a waiting animation may start
+                .onAppear { BookLayer.shared.stageAppeared() }
                 .opacity(content)
+                .offset(y: moving ? 0 : (1 - p) * 28)
                 .allowsHitTesting(p > 0.98)
         }
         .overlay {
-            // the covers' places are in screen points; this layer starts below the status bar
+            // the covers' places are in screen points, left to right; this layer starts below the status bar
+            // (laid out left to right: in Arabic, .position would mirror x and put the cover on the wrong side)
             GeometryReader { g in
                 let o = g.frame(in: .global).origin
-                if travelling || p < 0.999 {
-                    BookCover(book: book, radius: 6 + 5 * (1 - p), marks: p < 0.5)
+                if moving, let b = book, let src = source, travelling || p < 0.999 {
+                    let hero = CoverFrames.shared.spots["hero:" + b.id]?.rect ?? defaultHero(b)
+                    // straight with the progress: the finger's own pace, or the animation's curve (no second easing)
+                    let r = lerp(src, hero, p)
+                    BookCover(book: b, radius: 6 + 5 * (1 - p), marks: p < 0.5)
+                        .environment(\.layoutDirection, Lang.direction)
                         .frame(width: r.width, height: r.height)
                         .shadow(color: .black.opacity(0.45 * Double(1 - content * 0.4)), radius: 14, y: 10)
                         .position(x: r.midX - o.x, y: r.midY - o.y)
                 }
             }
+            .environment(\.layoutDirection, .leftToRight)
             .allowsHitTesting(false)
         }
-        .environment(\.pageClose, { BookLayer.shared.close() })
+        .environment(\.inBookLayer, true)
     }
 
     @ViewBuilder private var page: some View {
-        if let n = book.novel {
-            NovelPageScreen(novelID: n.novelID, bookID: book.id)
-        } else {
-            BookPage(bookID: book.id)
+        switch item {
+        case .novel(let n, let b): NovelPageScreen(novelID: n, bookID: b)
+        case .book(let b): BookPage(bookID: b)
         }
     }
-
-    /// a soft start and landing over the whole path
-    private func curve(_ x: CGFloat) -> CGFloat { x * x * (3 - 2 * x) }
 
     private func lerp(_ a: CGRect, _ b: CGRect, _ t: CGFloat) -> CGRect {
         CGRect(x: a.minX + (b.minX - a.minX) * t, y: a.minY + (b.minY - a.minY) * t,
@@ -229,7 +392,7 @@ private struct LayerStage: View, Animatable {
     }
 
     /// until the page has said where its cover is: about where a book page puts it
-    private var defaultHero: CGRect {
+    private func defaultHero(_ book: Book) -> CGRect {
         let w: CGFloat = 116, h = w / CGFloat(book.coverAspect)
         let top = (UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.keyWindow?.safeAreaInsets.top ?? 47) + 60
         let screen = UIScreen.main.bounds.width

@@ -63,7 +63,7 @@ struct RootView: View {
         .overlay(alignment: .bottom) { VStack(spacing: 10) { ToastView(); if router.group == .novels { SessionChip() } }.padding(.bottom, 92) }
         .overlay { if splash { SplashView { splash = false }.environment(\.look, L) } }
         .modifier(SessionCover(look: L))
-        .sheet(item: $present.modal) { m in
+        .sheet(item: $present.modal, onDismiss: { present.dismissed() }) { m in
             Group {
                 switch m {
                 case .bookForm(let id): BookFormView(bookID: id)
@@ -121,8 +121,13 @@ private struct SessionCover: ViewModifier {
     @ObservedObject private var session = SessionModel.shared
 
     func body(content: Content) -> some View {
-        content.fullScreenCover(isPresented: $session.showScreen) {
+        // a full-height card (as Apple Music's player): a swipe down minimises it to the chip, as its chevron does
+        content.sheet(isPresented: $session.showScreen, onDismiss: {
+            if SessionModel.shared.timer != nil { SessionModel.shared.minimize() }
+        }) {
             SessionScreen().environment(\.look, look).environment(\.layoutDirection, Lang.direction).environment(\.locale, Lang.locale).environment(\.calendar, Calendar.greg)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
     }
 }
@@ -155,9 +160,9 @@ private struct TabRoot: View {
     @ViewBuilder private var first: some View {
         switch tab {
         case .browse: BrowseTab(look: L)
-        case .updates: UpdatesTab(look: L).id(visit)
-        case .downloads: DownloadsTab(look: L).id(visit)
-        case .history: HistoryTab(look: L).id(visit)
+        case .updates: UpdatesTab(look: L, visit: visit)
+        case .downloads: DownloadsTab(look: L, visit: visit)
+        case .history: HistoryTab(look: L, visit: visit)
         case .library: LibraryView(ns: zoom)
         case .notebook: NotebookView()
         // the goals and stats work out all 40 achievements: only while the tab is open, not on every save behind it

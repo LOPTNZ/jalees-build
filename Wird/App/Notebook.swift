@@ -33,9 +33,6 @@ struct NotebookView: View {
                     Text("دفتري").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink)).id("nbTop")
                     HeaderSessionChip()
                     Spacer()
-                    if tab != "mark" {
-                        Button { add() } label: { Label(NoteKind(rawValue: tab)?.name ?? "", systemImage: "plus") }.buttonStyle(JButtonStyle(look: L, small: true))
-                    }
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -267,18 +264,21 @@ struct NotebookView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
                 ForEach(sorted, id: \.1.id) { b, x in
                     Button { card = ItemRef(book: b.id, kind: "char", item: x.id) } label: { CharTile(book: b, item: x, showBook: bookFilter.isEmpty) }.buttonStyle(.plain)
+                        .noteMenu(book: b, item: x, kind: .char) { edit = ItemRef(book: b.id, kind: "char", item: x.id) }
                 }
             }
         } else if k == .word {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 10)], spacing: 10) {
                 ForEach(sorted, id: \.1.id) { b, x in
                     Button { edit = ItemRef(book: b.id, kind: "word", item: x.id) } label: { WordCard(book: b, item: x, showBook: bookFilter.isEmpty) }.buttonStyle(.plain)
+                        .noteMenu(book: b, item: x, kind: .word) { edit = ItemRef(book: b.id, kind: "word", item: x.id) }
                 }
             }
         } else {
             LazyVStack(spacing: 0) {
                 ForEach(sorted, id: \.1.id) { b, x in
                     Button { edit = ItemRef(book: b.id, kind: k.rawValue, item: x.id) } label: { QuoteRow(book: b, item: x, kind: k, showBook: bookFilter.isEmpty) }.buttonStyle(.plain)
+                        .noteMenu(book: b, item: x, kind: k) { edit = ItemRef(book: b.id, kind: k.rawValue, item: x.id) }
                 }
             }
         }
@@ -501,7 +501,72 @@ struct Avatar: View {
     }
 }
 
+/// An entry held down, wherever it is listed: copy, share as a card (a quote), its book, edit, delete (with undo).
+private struct NoteMenu: ViewModifier {
+    let book: Book
+    let item: NoteItem
+    let kind: NoteKind
+    let edit: () -> Void
+
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            Button { UIPasteboard.general.string = NoteItems.plainText(book, item, kind); Haptics.play("soft"); ToastCenter.shared.show("تم النسخ") } label: {
+                Label("نسخ", systemImage: "doc.on.doc")
+            }
+            if kind == .quote {
+                Button { Flows.quoteCard(book.id, quote: item.id) } label: { Label("مشاركة كبطاقة", systemImage: "square.and.arrow.up") }
+            }
+            Button(action: edit) { Label("تعديل", systemImage: "pencil") }
+            Button { BookLayer.shared.open(book.id) } label: { Label("صفحة «\(book.title)»", systemImage: "book") }
+            Divider()
+            Button(role: .destructive) { NoteItems.delete(book.id, kind, item.id) } label: { Label("حذف", systemImage: "trash") }
+        }
+    }
+}
+
+extension View {
+    func noteMenu(book: Book, item: NoteItem, kind: NoteKind, edit: @escaping () -> Void) -> some View {
+        modifier(NoteMenu(book: book, item: item, kind: kind, edit: edit))
+    }
+}
+
 enum NoteItems {
+    /// The entry as text to copy: a quote with its book, a word with its meaning, a character with its description.
+    static func plainText(_ b: Book, _ x: NoteItem, _ k: NoteKind) -> String {
+        let r = x.raw
+        switch k {
+        case .quote: return "«" + r.str("text") + "»\n— " + b.title + (b.author.isEmpty ? "" : "، " + b.author)
+        case .thought: return [r.str("text"), r.str("passage").isEmpty ? "" : "«" + r.str("passage") + "»"].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        case .word: return [r.str("word"), r.str("meaning"), r.str("tr")].filter { !$0.isEmpty }.joined(separator: " — ")
+        case .char: return [r.str("name"), r.str("desc")].filter { !$0.isEmpty }.joined(separator: ": ")
+        }
+    }
+
+    /// itemDel: a character also leaves the others' relations, and its quotes keep its name as «another person».
+    /// The toast takes it all back.
+    @MainActor
+    static func delete(_ bookID: String, _ k: NoteKind, _ id: String) {
+        guard let b = Library.shared.state.book(bookID), let x = b.items(k).first(where: { $0.id == id }) else { return }
+        let snapshot = b
+        let name = x.raw.str("name")
+        Library.shared.changeBook(bookID) { bb in
+            bb.raw.set(k.listKey, objects: bb.raw.objs(k.listKey).filter { $0.str("id") != id })
+            if k == .char {
+                bb.raw.set("chars", objects: bb.raw.objs("chars").map { c in var c = c; c.set("rel", objects: c.objs("rel").filter { $0.str("to") != id }); return c })
+                bb.raw.set("quotes", objects: bb.raw.objs("quotes").map { q in
+                    var q = q
+                    if q.str("speakerId") == id { q.set("speakerId", "__o"); q.set("speakerName", name) }
+                    return q
+                })
+            }
+        }
+        Haptics.play("warn")
+        let this = ["quote": "هذا الاقتباس", "thought": "هذه الفكرة", "word": "هذه الكلمة", "char": "هذه الشخصية"][k.rawValue] ?? ""
+        ToastCenter.shared.show("تم حذف " + this) {
+            Library.shared.change { st in if let i = st.index(of: snapshot.id) { st.books[i] = snapshot } }
+        }
+    }
+
     /// Where an entry is in its book: «ص 12», «ف 30», «1:05», with the volume for a series.
     static func locLabel(_ b: Book, _ x: NoteItem) -> String {
         guard let loc = x.raw.optNum("loc"), loc > 0 else { return "" }

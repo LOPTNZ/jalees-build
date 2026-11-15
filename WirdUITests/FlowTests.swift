@@ -11,6 +11,8 @@ final class FlowTests: XCTestCase {
         continueAfterFailure = true
         app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_SA"]
+        // the app writes down its own late frames next to the marks (StallWatch)
+        if let d = Self.dir { app.launchEnvironment["JALEES_STALLS"] = d.appendingPathComponent("stalls.txt").path }
         app.launch()
         _ = app.buttons["المكتبة"].waitForExistence(timeout: 15)
         sleep(3) // the splash
@@ -150,6 +152,8 @@ final class FlowTests: XCTestCase {
     /// The notebook: a new quote typed and saved, then searched.
     func test05NotebookQuote() {
         tab("دفتري")
+        // adding is the floating + (its menu), the one way in the notebook
+        if tap(button("إضافة للدفتر"), "notebook +") { sleep(1) }
         tap(button("اقتباس"), "new quote")
         sleep(1)
         // from the notebook the form asks which book (it no longer guesses the last one read)

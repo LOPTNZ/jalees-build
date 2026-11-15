@@ -6,8 +6,9 @@ import UIKit
 struct ProgressTab: View {
     @ObservedObject private var lib = Library.shared
     @Environment(\.look) private var L
-    @State private var sub = "goals"
-    @State private var range = 7
+    // kept across visits and launches (the tab is only built while it is shown)
+    @AppStorage("progress.sub") private var sub = "goals"
+    @AppStorage("progress.range") private var range = 7
 
     var body: some View {
         ScrollViewReader { proxy in

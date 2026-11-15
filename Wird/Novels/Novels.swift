@@ -285,7 +285,21 @@ final class Novels: ObservableObject {
     private var ahead: Task<Void, Never>?
     private let db = DB.shared
 
-    private init() { reload() }
+    private init() {
+        dropOldPreviews()
+        reload()
+    }
+
+    /// Novels only looked at while browsing (never added, nothing saved or read) go after two days, so browsing
+    /// leaves nothing behind.
+    private func dropOldPreviews() {
+        let before = Date().timeIntervalSince1970 - 2 * 86_400
+        db.run("""
+        DELETE FROM novels WHERE (book IS NULL OR book = '') AND source NOT IN ('sample','epub','archive') AND added < ?
+          AND NOT EXISTS (SELECT 1 FROM history h WHERE h.novel = novels.id)
+          AND NOT EXISTS (SELECT 1 FROM chapters c JOIN texts t ON t.chapter = c.id WHERE c.novel = novels.id)
+        """, [before])
+    }
 
     func reload() {
         list = db.query("SELECT * FROM novels ORDER BY COALESCE(opened, added) DESC").map(Novel.init(row:))
@@ -544,7 +558,8 @@ final class Novels: ObservableObject {
 
     /// Looks for new chapters in every novel from a site, three at a time. Returns how many arrived.
     func checkAll(progress: @escaping (String) -> Void) async -> Int {
-        let list = self.list.filter { $0.source != "sample" && $0.source != "epub" && $0.source != "archive" }
+        // novels only being looked at (no book in the library yet) are not followed
+        let list = self.list.filter { $0.source != "sample" && $0.source != "epub" && $0.source != "archive" && !$0.book.isEmpty }
         var found = 0, done = 0
         await withTaskGroup(of: (Int, Int).self) { group in
             var it = list.makeIterator()
