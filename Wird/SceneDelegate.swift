@@ -10,6 +10,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let vc = RootController()
         window.rootViewController = vc
         window.backgroundColor = UIColor(named: "LaunchBG")
+        AppDirection.apply(to: window)
         window.makeKeyAndVisible()
         self.window = window
         AppLock.shared.launched(windowScene)

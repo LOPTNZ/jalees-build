@@ -85,21 +85,25 @@ final class StallWatch: NSObject {
 }
 
 /// The system's own pieces (navigation bars, sheets, menus, text fields, the back swipe) go the app's way, not the
-/// phone's: an Arabic Jalees on an English phone was laid out left to right around its right-to-left screens.
+/// phone's: an Arabic Jalees on an English phone was laid out left to right around its right-to-left screens. One
+/// override on each window, which every view under it inherits (setting it on UIView.appearance() reached every view
+/// the app made, and slowed every screen).
 @MainActor
 enum AppDirection {
     static func apply() {
-        let a: UISemanticContentAttribute = Lang.english ? .forceLeftToRight : .forceRightToLeft
-        UIView.appearance().semanticContentAttribute = a
-        UINavigationBar.appearance().semanticContentAttribute = a
-        UIToolbar.appearance().semanticContentAttribute = a
-        UISearchBar.appearance().semanticContentAttribute = a
-        UITextField.appearance().semanticContentAttribute = a
-        UITextView.appearance().semanticContentAttribute = a
+        for w in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows) { apply(to: w) }
         // from the next launch the whole process runs in the app's language (dates, the keyboard's first choice)
         let want = Lang.english ? "en" : "ar"
         if (UserDefaults.standard.stringArray(forKey: "AppleLanguages") ?? []).first?.hasPrefix(want) != true {
             UserDefaults.standard.set([want], forKey: "AppleLanguages")
+        }
+    }
+
+    static func apply(to w: UIWindow) {
+        if #available(iOS 17.0, *) {
+            w.traitOverrides.layoutDirection = Lang.english ? .leftToRight : .rightToLeft
+        } else {
+            w.semanticContentAttribute = Lang.english ? .forceLeftToRight : .forceRightToLeft
         }
     }
 }
