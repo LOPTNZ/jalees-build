@@ -54,7 +54,7 @@ final class BookLayer: ObservableObject {
 
     /// What the layer shows: a book's page, or a novel's page (its book may be "" while it is only being looked at,
     /// before «أضف لمكتبتك»).
-    enum Item: Equatable {
+    enum Item: Hashable {
         case book(String)
         case novel(Int, String)
         var bookID: String {
