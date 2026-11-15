@@ -429,14 +429,15 @@ final class FlowTests: XCTestCase {
     private func readerChapter() -> Int? {
         let pill = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]+ من [0-9]+$")).firstMatch
         // the buttons show with a tap; a tap that only ends a selection needs one more (the menu button tells)
+        // tapped low on the page: a selection (and its menu) sits where the walks hold the text, mid-screen
         for _ in 0..<4 where !button("القائمة").exists {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.74)).tap()
             sleep(2)
         }
         guard pill.waitForExistence(timeout: 3) else { return nil }
         let n = Int(pill.label.split(separator: " ").first ?? "")
         // the buttons go again, so the next swipe reaches the page
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.74)).tap()
         sleep(1)
         return n
     }
