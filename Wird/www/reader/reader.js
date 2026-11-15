@@ -384,10 +384,12 @@
     var p = +a.getAttribute('data-i'), pe = +b.getAttribute('data-i');
     var s = offsetIn(a, r.startContainer, r.startOffset), e = offsetIn(b, r.endContainer, r.endOffset);
     var ta = plain(sec.text[p]), tb = plain(sec.text[pe]);
-    while (s > 0 && isWordChar(ta[s - 1])) s--;
+    /* whole words, but only the ones the selection is inside: an end that iOS puts at the start of the next word
+       (after the space) or a start just after the previous one must not take that word in */
     while (s < ta.length && /\s/.test(ta[s])) s++;
-    while (e < tb.length && isWordChar(tb[e])) e++;
+    if (s < ta.length && isWordChar(ta[s])) while (s > 0 && isWordChar(ta[s - 1])) s--;
     while (e > 0 && /\s/.test(tb[e - 1])) e--;
+    if (e > 0 && isWordChar(tb[e - 1])) while (e < tb.length && isWordChar(tb[e])) e++;
     var rc = r.getBoundingClientRect();
     var out = { ch: sec.id, chLabel: sec.ch.label, p: p, s: s, pe: pe, e: e, rect: { x: rc.left, y: rc.top, w: rc.width, h: rc.height } };
     /* an existing highlight under the selection grows to cover both, and any other one it touches goes */

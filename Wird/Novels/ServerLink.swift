@@ -6,8 +6,23 @@ import SwiftUI
 @MainActor
 enum ServerLink {
     static var url: String {
-        get { DB.shared.get("server.url") ?? "" }
-        set { DB.shared.set("server.url", newValue.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))) }
+        // read normalised too: an address saved before (without http:// or the port) works as it is
+        get { normalized(DB.shared.get("server.url") ?? "") }
+        set { DB.shared.set("server.url", normalized(newValue)) }
+    }
+
+    /// What was typed, as an address the app can use: http:// added when missing, the server's port (8790) when none
+    /// is given, and nothing after it («100.75.48.114» → «http://100.75.48.114:8790»).
+    static func normalized(_ s: String) -> String {
+        var t = s.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !t.isEmpty else { return "" }
+        if !t.contains("://") { t = "http://" + t }
+        guard var c = URLComponents(string: t), let host = c.host, !host.isEmpty else { return t }
+        if c.port == nil && c.scheme == "http" { c.port = 8790 }
+        c.path = ""
+        c.query = nil
+        c.fragment = nil
+        return c.string ?? t
     }
     static var token: String {
         get { DB.shared.get("server.token") ?? "" }
@@ -43,6 +58,28 @@ enum ServerLink {
         if code == 401 { throw Failure.token }
         guard code == 200 else { throw Failure.status(code) }
         return d
+    }
+
+    /// «جرّب الاتصال», step by step, saying which step failed: the address, reaching it (Tailscale), then the token.
+    static func diagnose() async -> String {
+        guard !url.isEmpty, let h = URL(string: url + "/health") else { return "اكتب عنوان السيرفر، مثل http://100.75.48.114:8790" }
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: URLRequest(url: h, timeoutInterval: 10))
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if code != 200 { return "وصلت لـ\(url) بس اللي ردّ مو سيرفر جليس (ردّ بـ\(code)). تأكد من الرقم بعد النقطتين." }
+        } catch {
+            let why = (error as? URLError)?.code == .timedOut ? "ما ردّ أحد خلال 10 ثواني" : "ما قدرت أتصل"
+            return "\(why) على \(url).\nافتح تطبيق Tailscale على جوالك وتأكد إنه متصل (Connected)، وإن العنوان نفس اللي في رسالة السيرفر."
+        }
+        guard !token.isEmpty else { return "وصلت للسيرفر. باقي تحط الرمز." }
+        do {
+            let n = try await test()
+            return "السيرفر شغّال ويتابع \(n) رواية"
+        } catch Failure.token {
+            return "وصلت للسيرفر، بس الرمز ما طابق (اللي حطيته \(token.count) حرف). انسخ JALEES_TOKEN كامل والصقه بزر «الصق»."
+        } catch {
+            return error.localizedDescription
+        }
     }
 
     /// For «جرّب الاتصال»: how many novels the server follows.
@@ -93,14 +130,25 @@ struct ServerSettings: View {
     @State private var token = ServerLink.token
     @State private var busy = false
     @State private var note: String?
+    @State private var showToken = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             JLabel(text: "سيرفرك (اختياري)")
-            field("http://100.x.x.x:8787", $url, secure: false)
-            field("JALEES_TOKEN", $token, secure: true)
+            field("100.75.48.114:8790", $url, secure: false)
             HStack(spacing: 8) {
-                Button("جرّب الاتصال") { act { "السيرفر شغّال ويتابع \(try await ServerLink.test()) رواية" } }
+                field("JALEES_TOKEN", $token, secure: !showToken)
+                // the token is long: shown to check it, pasted whole
+                Button { showToken.toggle() } label: { Image(systemName: showToken ? "eye.slash" : "eye") }
+                    .buttonStyle(JButtonStyle(look: L, small: true)).accessibilityLabel(showToken ? "إخفاء الرمز" : "إظهار الرمز")
+                Button("الصق") { if let s = UIPasteboard.general.string { token = s } }
+                    .buttonStyle(JButtonStyle(look: L, small: true))
+            }
+            if !url.isEmpty, ServerLink.url != url {
+                Text("يتصل بـ".tr + " " + ServerLink.url).font(JFont.body(12.5)).foregroundStyle(Color(L.ink2)).environment(\.layoutDirection, .leftToRight)
+            }
+            HStack(spacing: 8) {
+                Button("جرّب الاتصال") { busy = true; note = nil; Task { @MainActor in note = await ServerLink.diagnose(); busy = false } }
                 Button("أرسل رواياتي") { act { "السيرفر صار يتابع \(try await ServerLink.followAll()) رواية" } }
                 Button("نسخة الحين") { act { try await ServerLink.backupNow(); return "انحفظت نسخة احتياطية في السيرفر" } }
             }

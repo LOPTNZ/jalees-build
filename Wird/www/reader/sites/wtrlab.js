@@ -9,7 +9,8 @@
      {data:{data:{title, body:[paragraphs], glossary_data:{terms:[[english, chinese], …]}}}}. chapter() reads that JSON
      when it is handed it (names are written ※N⛬ in the text and are replaced by terms[N][0]). Given the chapter page
      it answers { fetch: the POST }, given the POST's answer { fetch: the content URL } (the app's fetch steps).
-   - Search is POST /api/search {text}; the site's GET pages cannot filter by text, so search is not available. */
+   - Search is POST /api/search {text} (JSON {success, data:[series…]}, the same series as the list pages, at most 10,
+     matching the title's words in order); browseURL gives the app that request. */
 (function () {
   'use strict';
   var K = window.SourceKit, abs = K.abs, S = window.Sources = window.Sources || {};
@@ -109,23 +110,31 @@
       };
     },
 
-    /* the novel list pages (10 novels a page); search is POST-only on this site, so it falls back to the plain list */
+    /* the novel list pages (10 novels a page); a search is the site's own POST (one page of up to 10) */
     browseURL: function (kind, page, q) {
+      if (kind === 'search' && q) return { url: ORIGIN + '/api/search', method: 'POST', json: { text: q } };
       var order = kind === 'popular' ? 'view' : 'update';
-      return HOME + '/novel-list?orderBy=' + order + '&order=desc&page=' + (page || 1) +
-             (kind === 'search' && q ? '&text=' + encodeURIComponent(q) : '');
+      return HOME + '/novel-list?orderBy=' + order + '&order=desc&page=' + (page || 1);
     },
     browse: function (doc, url) {
-      var pp = nextData(doc);
-      if (!pp || !Array.isArray(pp.series)) return { items: [], next: false };
-      var items = pp.series.filter(function (s) { return s && s.slug && s.raw_id; }).map(function (s) {
+      var list;
+      if (/\/api\/search/.test(url || '')) {
+        var j = json(doc);
+        list = j && Array.isArray(j.data) ? j.data : [];
+      } else {
+        var pp = nextData(doc);
+        if (!pp || !Array.isArray(pp.series)) return { items: [], next: false };
+        list = pp.series;
+      }
+      var items = list.filter(function (s) { return s && s.slug && s.raw_id; }).map(function (s) {
         var d = s.data || {}, bits = [];
         if (STATUS[s.status]) bits.push(STATUS[s.status]);
         if (s.chapter_count) bits.push(s.chapter_count + ' chapters');
         if (s.rating) bits.push('★ ' + (Math.round(s.rating * 10) / 10));
         return { url: novelUrl(s), title: plain(d.title), cover: d.image || '', meta: bits.join(' · ') };
       });
-      var cur = Number((/[?&]page=(\d+)/.exec(url || '') || [0, 1])[1]), total = Number(pp.count) || 0;
+      if (/\/api\/search/.test(url || '')) return { items: items, next: false };
+      var cur = Number((/[?&]page=(\d+)/.exec(url || '') || [0, 1])[1]), total = Number(nextData(doc).count) || 0;
       return { items: items, next: items.length >= 10 && cur * 10 < total };
     }
   };

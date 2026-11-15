@@ -85,9 +85,30 @@ final class Library: ObservableObject {
         guard !todo.isEmpty else { return }
         DispatchQueue.global(qos: .userInitiated).async {
             for id in todo where cache.object(forKey: id as NSString) == nil {
-                if let d = Store.shared.imageData(id), let i = Library.prepared(d, max: 1200) { cache.setObject(i, forKey: id as NSString) }
+                guard let d = Store.shared.imageData(id) else { continue }
+                if let i = Library.prepared(d, max: 1200) { cache.setObject(i, forKey: id as NSString) }
+                // the carousel's blurred band for the same book, ready before it reaches the middle
+                let soft = ("bdb:" + id) as NSString
+                if cache.object(forKey: soft) == nil, let s = Library.soft(d) { cache.setObject(s, forKey: soft) }
             }
         }
+    }
+
+    /// The blurred band if it is ready (never made here: the carousel must not stop for it).
+    func cachedSoft(_ id: String?) -> UIImage? {
+        guard let id = id, !id.isEmpty else { return nil }
+        return images.object(forKey: ("bdb:" + id) as NSString)
+    }
+
+    /// The blurred band made away from the screen's thread.
+    func softAsync(_ id: String) async -> UIImage? {
+        if let i = cachedSoft(id) { return i }
+        let cache = images
+        return await Task.detached(priority: .userInitiated) { () -> UIImage? in
+            guard let d = Store.shared.imageData(id), let s = Library.soft(d) else { return nil }
+            cache.setObject(s, forKey: ("bdb:" + id) as NSString)
+            return s
+        }.value
     }
 
     /// A picture, made ready to draw once and kept: no bigger than the screen needs (a 3000-pixel photo is cut
@@ -117,17 +138,22 @@ final class Library: ObservableObject {
         guard let id = id, !id.isEmpty else { return nil }
         let key = ("bdb:" + id) as NSString
         if let i = images.object(forKey: key) { return i }
-        guard let small = backdrop(id), let cg = small.cgImage else { return nil }
-        let ci = CIImage(cgImage: cg)
-        // the picture is about 60 px and shown about ten times larger: 2 px here is the old 16 pt on screen
-        let soft = ci.clampedToExtent().applyingGaussianBlur(sigma: 2).cropped(to: ci.extent)
-        guard let out = Self.blurContext.createCGImage(soft, from: ci.extent) else { return small }
-        let i = UIImage(cgImage: out)
+        guard let d = Store.shared.imageData(id), let i = Self.soft(d) else { return nil }
         images.setObject(i, forKey: key)
         return i
     }
 
-    private static let blurContext = CIContext()
+    /// The picture tiny and blurred: about 60 px, shown about ten times larger, so 2 px here is the old 16 pt on
+    /// screen. Safe off the screen's thread.
+    nonisolated static func soft(_ d: Data) -> UIImage? {
+        guard let small = prepared(d, max: 60), let cg = small.cgImage else { return nil }
+        let ci = CIImage(cgImage: cg)
+        let blurred = ci.clampedToExtent().applyingGaussianBlur(sigma: 2).cropped(to: ci.extent)
+        guard let out = blurContext.createCGImage(blurred, from: ci.extent) else { return small }
+        return UIImage(cgImage: out)
+    }
+
+    private nonisolated static let blurContext = CIContext()
 
     nonisolated static func prepared(_ d: Data, max side: CGFloat) -> UIImage? {
         guard let src = CGImageSourceCreateWithData(d as CFData, nil) else { return UIImage(data: d) }

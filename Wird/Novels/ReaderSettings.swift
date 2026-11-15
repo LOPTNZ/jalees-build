@@ -145,12 +145,46 @@ struct ReaderPrefs: Codable, Equatable {
     }
 }
 
-/// A word the owner wants changed everywhere it appears (and, if asked, its forms with و، ف، ب، ل، ك، ال and endings).
+/// A word the owner wants changed everywhere it appears: written loosely (hamza, alef forms, ى/ي, ة/ه and diacritics
+/// don't matter), with, if asked, its forms with و، ف، ب، ل، ك، ال and endings, and more words of the same family
+/// that each become their own word (إله → رب, آلهة → أرباب, ألوهية → ربوبية), all in one rule.
 struct ReplaceRule: Codable, Identifiable, Equatable {
     var id = UUID().uuidString
     var from = ""
     var to = ""
     var forms = true
+    var on = true
+    var more: [Form] = []
+
+    struct Form: Codable, Equatable, Hashable, Identifiable {
+        var id = UUID().uuidString
+        var from = ""
+        /// "" = the rule's own word
+        var to = ""
+    }
+
+    init() {}
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        from = try c.decodeIfPresent(String.self, forKey: .from) ?? ""
+        to = try c.decodeIfPresent(String.self, forKey: .to) ?? ""
+        forms = try c.decodeIfPresent(Bool.self, forKey: .forms) ?? true
+        on = try c.decodeIfPresent(Bool.self, forKey: .on) ?? true
+        more = try c.decodeIfPresent([Form].self, forKey: .more) ?? []
+    }
+
+    /// every word this rule changes, with what it becomes
+    var pairs: [(String, String)] {
+        let base = (from.trimmingCharacters(in: .whitespaces), to)
+        return [base] + more.map { ($0.from.trimmingCharacters(in: .whitespaces), $0.to.isEmpty ? to : $0.to) }
+    }
+}
+
+extension Notification.Name {
+    /// a replacement rule changed: the open reader shows its chapter again, in place
+    static let replaceRulesChanged = Notification.Name("jalees.replaceRulesChanged")
 }
 
 enum Replacer {
@@ -160,27 +194,142 @@ enum Replacer {
 
     static func save(_ list: [ReplaceRule], _ scope: String) {
         let keep = list.filter { !$0.from.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard keep != rules(scope) else { return }
         if let d = try? JSONEncoder().encode(keep), let s = String(data: d, encoding: .utf8) { DB.shared.set("replace." + scope, keep.isEmpty ? nil : s) }
+        cache = [:]
+        NotificationCenter.default.post(name: .replaceRulesChanged, object: scope)
+    }
+
+    // MARK: matching loosely
+
+    private static let marks = "[\\u064B-\\u065F\\u0670\\u0640]*"
+
+    /// a letter's loose class: the forms a writer (or a translator) uses for the same letter
+    private static func cls(_ ch: Character) -> String {
+        switch ch {
+        case "ا", "أ", "إ", "آ", "ٱ": return "[اأإآٱ]"
+        case "ي", "ى", "ئ": return "[يىئ]"
+        case "ه", "ة": return "[هة]"
+        case "و", "ؤ": return "[وؤ]"
+        case "ء": return "[ءأإؤئ]"
+        default: return NSRegularExpression.escapedPattern(for: String(ch))
+        }
+    }
+
+    private static func isMark(_ ch: Character) -> Bool {
+        ch.unicodeScalars.allSatisfy { (0x064B...0x065F).contains($0.value) || $0.value == 0x0670 || $0.value == 0x0640 }
+    }
+
+    /// The word as a pattern: each letter in its loose class, diacritics allowed between letters.
+    static func loose(_ w: String) -> String {
+        w.filter { !isMark($0) }.map { cls($0) + marks }.joined()
+    }
+
+    /// The word reduced to compare words by (no diacritics, one alef, one ya, ه for ة).
+    static func plain(_ w: String) -> String {
+        String(w.filter { !isMark($0) }.map { ch -> Character in
+            switch ch {
+            case "أ", "إ", "آ", "ٱ": return "ا"
+            case "ى", "ئ": return "ي"
+            case "ة": return "ه"
+            case "ؤ": return "و"
+            default: return ch
+            }
+        })
+    }
+
+    private static let edge = "[\\u0600-\\u06FFA-Za-z]"
+    private static let prefixes = "((?:[وف])?(?:[بكل])?(?:ال|لل)?)"
+    private static let suffixes = "((?:ه|ها|هم|هما|هن|ي|ك|كم|كن|كما|نا|ة|ه|ات|ون|ين|ان|تان|تين|ية|يه|يات|يون|يين)?)"
+
+    private static func regex(_ w: String, forms: Bool) -> NSRegularExpression? {
+        let core = loose(w)
+        guard !core.isEmpty else { return nil }
+        let pattern = forms
+            ? "(?<!" + edge + ")" + prefixes + core + suffixes + "(?!" + edge + ")"
+            : "(?<!" + edge + ")()" + core + "()(?!" + edge + ")"
+        return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+    }
+
+    private static var cache: [Int: [(NSRegularExpression, String)]] = [:]
+
+    private static func compiled(_ novel: Int) -> [(NSRegularExpression, String)] {
+        if let c = cache[novel] { return c }
+        let list = (rules(String(novel)) + rules("all")).filter(\.on)
+        // longer words first, so «الإلهية» is not caught as «الإله» + «ية» by a shorter rule
+        let pairs = list.flatMap { r in r.pairs.map { (from: $0.0, to: $0.1, forms: r.forms) } }
+            .filter { !$0.from.isEmpty }
+            .sorted { plain($0.from).count > plain($1.from).count }
+        let out: [(NSRegularExpression, String)] = pairs.compactMap { p in
+            guard let re = regex(p.from, forms: p.forms) else { return nil }
+            return (re, "$1" + NSRegularExpression.escapedTemplate(for: p.to) + "$2")
+        }
+        cache[novel] = out
+        return out
     }
 
     /// The novel's rules first, then the ones for every novel.
     static func apply(_ paras: [String], novel: Int) -> [String] {
-        let list = rules(String(novel)) + rules("all")
-        guard !list.isEmpty else { return paras }
-        let res: [(NSRegularExpression, String)] = list.compactMap { r in
-            let w = NSRegularExpression.escapedPattern(for: r.from.trimmingCharacters(in: .whitespaces))
-            let edge = "[\\u0600-\\u06FFA-Za-z]"
-            let pattern = r.forms
-                ? "(?<!" + edge + ")((?:و|ف|ب|ك|ل)?(?:ال|لل)?)" + w + "((?:ه|ها|هم|هما|هن|ي|ك|كم|كن|نا|ة|ات|ون|ين|ان|تان|تين)?)(?!" + edge + ")"
-                : "(?<!" + edge + ")()" + w + "()(?!" + edge + ")"
-            guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
-            return (re, "$1" + NSRegularExpression.escapedTemplate(for: r.to) + "$2")
-        }
+        let res = compiled(novel)
+        guard !res.isEmpty else { return paras }
         return paras.map { p in
             var s = p
             for (re, t) in res { s = re.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: t) }
             return s
         }
+    }
+
+    // MARK: the word's family in the novel
+
+    /// Words in the novel's saved chapters that look like the same family as `word` (its letters in order, with a
+    /// few more), not already caught by its endings and و/ال forms: «اله» finds الهه، آلهة، ألوهية. With how often
+    /// each appears, most first. The owner picks which belong.
+    static func family(of word: String, novel: Int, skip: Set<String>) async -> [(word: String, count: Int)] {
+        let base = plain(word.trimmingCharacters(in: .whitespaces))
+        guard base.count >= 2 else { return [] }
+        let rows = DB.shared.query("SELECT t.paras FROM texts t JOIN chapters c ON c.id = t.chapter WHERE c.novel = ? ORDER BY c.idx DESC LIMIT 400", [novel])
+        let texts = rows.map { $0.str("paras") }
+        let skipPlain = Set(skip.map(plain))
+        return await Task.detached(priority: .userInitiated) { () -> [(word: String, count: Int)] in
+            var counts: [String: Int] = [:]
+            var shown: [String: String] = [:]
+            let covered = regex(word, forms: true)
+            for t in texts {
+                for raw in t.split(whereSeparator: { !$0.isLetter && !isMark($0) }) {
+                    let w = String(raw)
+                    let p = plain(w)
+                    guard p.count >= base.count, p.count <= base.count + 6, p != base else { continue }
+                    if let re = covered, re.firstMatch(in: w, range: NSRange(w.startIndex..., in: w)) != nil { continue }
+                    let stem = strip(p)
+                    guard stem != base, !skipPlain.contains(stem), inOrder(base, in: stem) else { continue }
+                    counts[stem, default: 0] += 1
+                    if shown[stem] == nil { shown[stem] = w.filter { !isMark($0) } }
+                }
+            }
+            return counts.sorted { $0.value > $1.value }.prefix(30).map { (shown[$0.key] ?? $0.key, $0.value) }
+        }.value
+    }
+
+    /// without و/ف, ب/ك/ل and ال at the front (so «والآلهة» and «آلهة» are one family member)
+    private static func strip(_ w: String) -> String {
+        var s = Substring(w)
+        if s.count > 3, s.first == "و" || s.first == "ف" { s = s.dropFirst() }
+        if s.count > 3, s.first == "ب" || s.first == "ك" || s.first == "ل" { s = s.dropFirst() }
+        if s.count > 4, s.hasPrefix("ال") { s = s.dropFirst(2) } else if s.count > 4, s.hasPrefix("لل") { s = s.dropFirst(2) }
+        return String(s)
+    }
+
+    /// the base's letters appear in order in the word, with at most two others between its first and last
+    private static func inOrder(_ base: String, in w: String) -> Bool {
+        let b = Array(base), x = Array(w)
+        var i = 0, first = -1, last = -1
+        for (j, ch) in x.enumerated() where i < b.count && ch == b[i] {
+            if first < 0 { first = j }
+            last = j
+            i += 1
+        }
+        guard i == b.count else { return false }
+        return (last - first + 1) - b.count <= 2
     }
 }
 

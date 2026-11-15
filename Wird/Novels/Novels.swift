@@ -254,10 +254,18 @@ final class SourceEngine: NSObject, WKNavigationDelegate {
 
     /// One page of a site's novels: «latest», «popular» or «search».
     func browse(_ site: String, kind: String, page: Int, query: String) async throws -> (items: [[String: Any]], more: Bool) {
-        guard let u = try await call("return SourceBrowseURL(site, kind, page, q)", ["site": site, "kind": kind, "page": page, "q": query]) as? String, !u.isEmpty else {
+        // a page address, or a request (a site whose search is a POST with JSON: {url, method, json, headers})
+        let v = try await call("return SourceBrowseURL(site, kind, page, q)", ["site": site, "kind": kind, "page": page, "q": query])
+        let u: String, html: String
+        if let s = v as? String, !s.isEmpty {
+            u = s
+            html = try await Fetcher.html(s)
+        } else if let r = v as? [String: Any], let s = r["url"] as? String, !s.isEmpty {
+            u = s
+            html = try await Fetcher.html(s, method: (r["method"] as? String) ?? "GET", json: r["json"], headers: (r["headers"] as? [String: String]) ?? [:])
+        } else {
             throw NovelError.unknownSite
         }
-        let html = try await Fetcher.html(u)
         let r = (try await run(site, "browse", html: html, url: u) as? [String: Any]) ?? [:]
         return ((r["items"] as? [[String: Any]]) ?? [], (r["next"] as? Bool) ?? false)
     }

@@ -148,6 +148,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(wentAway), name: UIApplication.willResignActiveNotification, object: nil)
         nc.addObserver(self, selector: #selector(cameBack), name: UIApplication.didBecomeActiveNotification, object: nil)
+        nc.addObserver(self, selector: #selector(rulesChanged), name: .replaceRulesChanged, object: nil)
         clock = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.tick() }
     }
 
@@ -379,7 +380,8 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
                 setChrome(!chromeShown)
             }
         case "sel":
-            if (o["on"] as? Bool) == true { setChrome(false); closeOverlays() }
+            selecting = (o["on"] as? Bool) == true
+            if selecting { setChrome(false); closeOverlays() }
         case "markTap":
             openMarkBar(id: o["id"] as? String ?? "", chapter: NovelBridge.num(o["ch"]), rect: rect(o["rect"]))
         case "drop":
@@ -606,8 +608,11 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     }
 
     /// In a right-to-left book a swipe to the right goes forward.
+    /// text is selected (or being selected): a sideways move is the selection's, never a page or chapter turn
+    private var selecting = false
+
     @objc private func swiped(_ g: UISwipeGestureRecognizer) {
-        guard markBar == nil else { return }
+        guard markBar == nil, !selecting else { return }
         let dir = g.direction == .right ? 1 : -1
         if paged {
             // fade and curl pages turn by swiping (slide pages scroll by themselves)
@@ -616,6 +621,22 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         }
         guard settings.prefs.swipeChapters else { return }
         turn(dir)
+    }
+
+    private var rulesWork: DispatchWorkItem?
+
+    /// A replacement rule changed (in the settings over the page, or anywhere): the chapter is shown again where you
+    /// are, with the rules as they are now. Once the typing stops, not on every letter.
+    @objc private func rulesChanged() {
+        rulesWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            guard let self = self, self.chapters.indices.contains(self.index) else { return }
+            let here = self.lastPos
+            let same = NovelBridge.num(here["id"]) == self.chapters[self.index].id
+            self.show(self.index, place: same ? ["p": NovelBridge.num(here["p"]), "o": (here["o"] as? Double) ?? 0] : nil)
+        }
+        rulesWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: w)
     }
 
     @objc func closeTapped() {
@@ -1053,12 +1074,15 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     func openThemes() {
         closeOverlays()
         setChrome(false)
-        let panel = ThemesSheet(settings: settings, close: { [weak self] in self?.dismiss(animated: true) }, customize: { [weak self] in
-            self?.dismiss(animated: true) { self?.openCustomize() }
-        }, reading: { [weak self] in
-            self?.dismiss(animated: true) { self?.openReading() }
+        // one sheet: the panel, and its pages pushed over it (back to the panel, «تم» closes all of it)
+        weak var hostRef: UIViewController?
+        let panel = ThemesSheet(settings: settings, novelID: novel.id, close: { [weak self] in self?.dismiss(animated: true) }, expand: {
+            guard let s = hostRef?.sheetPresentationController else { return }
+            s.animateChanges { s.selectedDetentIdentifier = .large }
         })
-        presentPanel(UIHostingController(rootView: panel), height: 480, tall: false)
+        let host = UIHostingController(rootView: panel)
+        hostRef = host
+        presentPanel(host, height: 480, tall: true)
     }
 
     func openReading() {

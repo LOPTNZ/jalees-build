@@ -20,6 +20,9 @@ struct BookPage: View {
     @State private var sheet: Sheet?
     @State private var openReads: Set<Int> = []
     @State private var askDelete = false
+    /// the sections below the first screen come once the page has opened: building them all in the first frame of
+    /// the opening made it catch
+    @State private var full = false
 
     enum Sheet: Identifiable {
         case progress, target, note, list(String), session(String)
@@ -66,16 +69,23 @@ struct BookPage: View {
                     statusSection(b)
                     ListsRow(bookID: b.id)
                     if b.status == .done || !b.review.isEmpty || !b.moods.isEmpty { reviewSection(b) }
-                    notes(b, .quote, "الاقتباسات", 2, "ما فيه اقتباسات بعد.")
-                    notes(b, .thought, "الأفكار", 2, "سجّل الأفكار اللي يلهمك فيها النص.")
-                    notes(b, .char, "الشخصيات", 4, "أضف الشخصيات عشان تتذكر الكتاب أكثر.")
-                    notes(b, .word, "الكلمات", 2, "أضف الكلمات الجديدة اللي تمر عليك.")
-                    sessionsSection(b)
-                    if !b.history.isEmpty { readsSection(b) }
-                    detailsSection(b)
+                    if full {
+                        notes(b, .quote, "الاقتباسات", 2, "ما فيه اقتباسات بعد.")
+                        notes(b, .thought, "الأفكار", 2, "سجّل الأفكار اللي يلهمك فيها النص.")
+                        notes(b, .char, "الشخصيات", 4, "أضف الشخصيات عشان تتذكر الكتاب أكثر.")
+                        notes(b, .word, "الكلمات", 2, "أضف الكلمات الجديدة اللي تمر عليك.")
+                        sessionsSection(b)
+                        if !b.history.isEmpty { readsSection(b) }
+                        detailsSection(b)
+                    } else {
+                        Color.clear.frame(height: 600)
+                    }
                 }
                 .padding(.horizontal, 16)
             }
+            // in the book layer: once the page has landed (BookLayer.covering); anywhere else: straight away
+            .onAppear { if !inLayer { full = true } }
+            .onReceive(BookLayer.shared.$covering) { c in if c && !full { full = true } }
             .background(PullToClose(bookID: b.id))
             .padding(.bottom, 110)
         }

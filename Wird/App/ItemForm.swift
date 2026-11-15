@@ -433,19 +433,20 @@ struct ItemForm: View {
     // MARK: fields
 
     private func box(_ text: Binding<String>, placeholder: String = "") -> some View {
-        TextField(placeholder, text: text).font(JFont.body(16)).padding(.horizontal, 12).frame(height: 46)
+        TextField(placeholder, text: text).font(JFont.body(16)).foregroundStyle(Color(L.ink)).padding(.horizontal, 12).frame(height: 46)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
     }
 
     private func box(_ v: Binding<Double?>, numeric: Bool) -> some View {
-        TextField("", value: v, format: .number.grouping(.never).locale(Locale(identifier: "en_US_POSIX"))).keyboardType(.numberPad).font(JFont.body(16)).padding(.horizontal, 12).frame(height: 46)
+        // the theme's ink, not the system's: over the theme's field colour it always shows
+        TextField("", value: v, format: .number.grouping(.never).locale(Locale(identifier: "en_US_POSIX"))).keyboardType(.numberPad).font(JFont.body(16)).foregroundStyle(Color(L.ink)).padding(.horizontal, 12).frame(height: 46)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
     }
 
     private func editor(_ text: Binding<String>, quoteFont: Bool, placeholder: String, height: CGFloat = 120) -> some View {
-        TextEditor(text: text).font(quoteFont ? JFont.quote(18) : JFont.body(16)).frame(minHeight: height).scrollContentBackground(.hidden).padding(8)
+        TextEditor(text: text).font(quoteFont ? JFont.quote(18) : JFont.body(16)).foregroundStyle(Color(L.ink)).frame(minHeight: height).scrollContentBackground(.hidden).padding(8)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
             .overlay(alignment: .topLeading) {
                 if text.wrappedValue.isEmpty && !placeholder.isEmpty { Text(placeholder).font(JFont.body(15)).foregroundStyle(Color(L.ink2).opacity(0.7)).padding(14).allowsHitTesting(false) }

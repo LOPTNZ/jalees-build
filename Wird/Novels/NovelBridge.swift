@@ -131,7 +131,9 @@ enum NovelBridge {
             sync(novel, opened: true)
             pageNeedsReload()
         }
-        top(h).present(reader, animated: true)
+        // a sheet that is closing (the quote's form after «اذهب لمكانها») would take the reader away with it: the
+        // reader waits for it to be gone, and never sits on one that is leaving
+        Present.whenClear { top(h).present(reader, animated: true) }
         sync(novel, opened: true)
     }
 
@@ -161,7 +163,7 @@ enum NovelBridge {
 
     static func top(_ from: UIViewController) -> UIViewController {
         var v = from
-        while let p = v.presentedViewController { v = p }
+        while let p = v.presentedViewController, !p.isBeingDismissed { v = p }
         return v
     }
 }

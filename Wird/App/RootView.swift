@@ -57,8 +57,7 @@ struct RootView: View {
             // a book's page over the library, opened in place (Flight.swift)
             BookLayerView()
         }
-        // the web's soft change of tab (animMain('fade')): a short cross-fade, not a cut
-        .animation(.easeInOut(duration: 0.18), value: router.tab)
+        // a tab changes at once, as the system's tab bars do (a fade made every change feel slow)
         // a new language: every page is drawn again in it
         .id(lang.english)
         .safeAreaInset(edge: .bottom, spacing: 0) { TabBar().id(lang.english) }
@@ -109,6 +108,11 @@ struct RootView: View {
             Task { await NewChapters.checkIfDue() }
             // links shared from Safari while Jalees was closed
             SharedAdd.process()
+            // the main tabs are built quietly once the library is up, so even a first visit opens at once
+            // (one at a time, so no single moment is heavy)
+            for (i, t) in Router.Tab.main.enumerated() where !opened.contains(t) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + Double(i) * 0.6) { opened.insert(t) }
+            }
         }
         .onChange(of: router.tab) { t in
             opened.insert(t)
@@ -168,7 +172,7 @@ private struct TabRoot: View {
         case .library: LibraryView(ns: zoom)
         case .notebook: NotebookView()
         // the goals and stats work out all 40 achievements: only while the tab is open, not on every save behind it
-        case .progress: if router.tab == .progress { ProgressTab() } else { Color(L.bg) }
+        case .progress: ProgressTab()
         case .settings: SettingsView()
         }
     }

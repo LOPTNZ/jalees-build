@@ -10,10 +10,12 @@ private let arabicLatn = Lang.locale
 
 struct ThemesSheet: View {
     @ObservedObject var settings: ReaderSettings
+    var novelID: Int = 0
     var close: () -> Void
-    var customize: () -> Void
-    var reading: () -> Void
+    /// the sheet grows to full height when a page is pushed over the panel
+    var expand: () -> Void = {}
     @State private var brightness = Double(UIScreen.main.brightness)
+    @State private var path: [String] = []
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
     private static let modes: [(id: String, anim: String?, name: String, icon: String)] = [
@@ -27,6 +29,22 @@ struct ThemesSheet: View {
     }
 
     var body: some View {
+        NavigationStack(path: $path) {
+            panel
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: String.self) { k in
+                    if k == "customize" {
+                        CustomizeSheet(settings: settings, close: close, embedded: true)
+                    } else {
+                        ReadingSheet(settings: settings, novelID: novelID, close: close, embedded: true)
+                    }
+                }
+        }
+        .environment(\.layoutDirection, Lang.direction)
+        .preferredColorScheme(.dark)
+    }
+
+    private var panel: some View {
         VStack(spacing: 14) {
             HStack {
                 Text("السمات والإعدادات").font(.system(size: 19, weight: .bold))
@@ -89,11 +107,11 @@ struct ThemesSheet: View {
             }
 
             HStack(spacing: 10) {
-                Button(action: customize) {
+                Button { path.append("customize"); expand() } label: {
                     Label("تخصيص السمة", systemImage: "paintbrush").font(.system(size: 15, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 46).background(Color.white.opacity(0.12), in: Capsule())
                 }
-                Button(action: reading) {
+                Button { path.append("reading"); expand() } label: {
                     Label("إعدادات القراءة", systemImage: "gearshape").font(.system(size: 15, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 46).background(Color.white.opacity(0.12), in: Capsule())
                 }
@@ -135,6 +153,8 @@ private struct ThemeTile: View {
 struct CustomizeSheet: View {
     @ObservedObject var settings: ReaderSettings
     var close: () -> Void
+    /// pushed inside the themes panel's stack (back to it), or a sheet of its own
+    var embedded = false
     @State private var importing = false
     @State private var askGoogle = false
     @State private var googleName = ""
@@ -158,7 +178,7 @@ struct CustomizeSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        MaybeStack(on: !embedded) {
             Form {
                 Section("النص") {
                     Picker("الخط", selection: text({ $0.font }, { $0.font = $1 })) {
@@ -267,6 +287,7 @@ struct ReadingSheet: View {
     @ObservedObject var settings: ReaderSettings
     let novelID: Int
     var close: () -> Void
+    var embedded = false
     @State private var menuLayout = ReaderMenuView.layout
 
     private var modeBinding: Binding<String> {
@@ -277,7 +298,7 @@ struct ReadingSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        MaybeStack(on: !embedded) {
             Form {
                 Section("طريقة القراءة") {
                     Picker("الروايات", selection: modeBinding) {
@@ -327,32 +348,130 @@ struct ReadingSheet: View {
     }
 }
 
+/// Its own navigation stack, or none when it is pushed inside another one.
+struct MaybeStack<C: View>: View {
+    let on: Bool
+    @ViewBuilder let content: () -> C
+    var body: some View {
+        if on { NavigationStack { content() } } else { content() }
+    }
+}
+
 // MARK: - قواعد الاستبدال
 
 struct ReplaceRulesView: View {
     let scope: String
     let title: String
     @State private var rules: [ReplaceRule] = []
+    @State private var family: FamilyAsk?
+
+    struct FamilyAsk: Identifiable { let id: String }
 
     var body: some View {
         Form {
-            Section {
-                ForEach($rules) { $r in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack { TextField("الكلمة", text: $r.from); Image(systemName: "arrow.left").foregroundStyle(.secondary); TextField("تصير", text: $r.to) }
-                        Toggle("ومشتقاتها (وال، بال، لل… والضمائر)", isOn: $r.forms).font(.footnote)
+            ForEach($rules) { $r in
+                Section {
+                    HStack {
+                        TextField("الكلمة", text: $r.from)
+                        Image(systemName: "arrow.left").foregroundStyle(.secondary)
+                        TextField("تصير", text: $r.to)
                     }
+                    Toggle("ومشتقاتها (وال، بال، فلل… والضمائر)", isOn: $r.forms).font(.footnote)
+                    ForEach($r.more) { $f in
+                        HStack {
+                            TextField("كلمة من عائلتها", text: $f.from)
+                            Image(systemName: "arrow.left").foregroundStyle(.secondary)
+                            TextField(r.to.isEmpty ? "تصير" : r.to, text: $f.to)
+                        }
+                        .font(.subheadline)
+                    }
+                    .onDelete { $r.wrappedValue.more.remove(atOffsets: $0) }
+                    HStack {
+                        Button { $r.wrappedValue.more.append(.init()) } label: { Label("كلمة من نفس العائلة", systemImage: "plus") }.font(.footnote)
+                        Spacer()
+                        if Int(scope) != nil, !r.from.isEmpty {
+                            Button { family = FamilyAsk(id: r.id) } label: { Label("دوّرها في الرواية", systemImage: "sparkle.magnifyingglass") }
+                                .font(.footnote)
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    Toggle("مفعّلة", isOn: $r.on).font(.footnote)
+                } footer: {
+                    // after this pass (a row's binding must not outlive its rule)
+                    Button("حذف القاعدة", role: .destructive) { let id = r.id; DispatchQueue.main.async { withAnimation { rules.removeAll { $0.id == id } } } }
+                        .font(.footnote)
                 }
-                .onDelete { rules.remove(atOffsets: $0) }
+            }
+            Section {
                 Button { rules.append(ReplaceRule()) } label: { Label("قاعدة جديدة", systemImage: "plus") }
             } footer: {
-                Text("تتطبّق على النص وقت ما ينفتح الفصل، والفصل المحفوظ ما يتغيّر. الجمع المكسور (مثل آلهة) اكتبه قاعدة لحاله.")
+                Text("الهمزات وأشكال الألف والتشكيل ما تفرق (اميليا = إميليا). الكلمات اللي شكلها يختلف (آلهة، ألوهية) حطها في نفس القاعدة كلمة من نفس العائلة، و«دوّرها في الرواية» يلقاها لك. تتطبّق على الفصل المفتوح على طول.")
             }
         }
         .navigationTitle("قواعد الاستبدال · " + title)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { rules = Replacer.rules(scope) }
-        .onDisappear { Replacer.save(rules, scope) }
+        // saved as it changes: the open chapter follows at once (the reader listens)
+        .onChange(of: rules) { Replacer.save($0, scope) }
+        .sheet(item: $family) { f in
+            if let i = rules.firstIndex(where: { $0.id == f.id }), let n = Int(scope) {
+                FamilyPicker(rule: $rules[i], novel: n)
+            }
+        }
+    }
+}
+
+/// «دوّرها في الرواية»: the words of the same family in the novel's saved chapters, to tick into the rule.
+private struct FamilyPicker: View {
+    @Binding var rule: ReplaceRule
+    let novel: Int
+    @Environment(\.dismiss) private var dismiss
+    @State private var found: [(word: String, count: Int)]?
+    @State private var picked: Set<String> = []
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let f = found {
+                    if f.isEmpty {
+                        Text("ما لقيت كلمات قريبة منها في فصولها المحفوظة.").foregroundStyle(.secondary).padding()
+                    } else {
+                        List(f, id: \.word) { w in
+                            Button {
+                                if picked.contains(w.word) { picked.remove(w.word) } else { picked.insert(w.word) }
+                            } label: {
+                                HStack {
+                                    Image(systemName: picked.contains(w.word) ? "checkmark.circle.fill" : "circle")
+                                    Text(w.word)
+                                    Spacer()
+                                    Text("\(w.count)").foregroundStyle(.secondary).monospacedDigit()
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .navigationTitle("عائلة «\(rule.from)»")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("إلغاء") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("أضف \(picked.count)") {
+                        rule.more += picked.sorted().map { ReplaceRule.Form(from: $0, to: "") }
+                        dismiss()
+                    }
+                    .disabled(picked.isEmpty)
+                }
+            }
+            .task {
+                found = await Replacer.family(of: rule.from, novel: novel, skip: Set(rule.more.map(\.from)))
+            }
+        }
+        .environment(\.layoutDirection, Lang.direction)
+        .presentationDetents([.medium, .large])
     }
 }
 

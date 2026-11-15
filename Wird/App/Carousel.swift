@@ -345,6 +345,8 @@ struct CarouselCard: View {
 struct CarouselBand: View {
     let book: Book?
     @Environment(\.look) private var L
+    /// the band made after the book reached the middle (normally it is ready before: Library.prefetch)
+    @State private var made: (id: String, image: UIImage)?
 
     var body: some View {
         GeometryReader { g in
@@ -353,7 +355,7 @@ struct CarouselBand: View {
                 ZStack {
                     if let b = book {
                         Color(UIColor.hslParts(b.hslString) ?? L.primary)
-                        if let img = Library.shared.softBackdrop(b.cover) {
+                        if let img = Library.shared.cachedSoft(b.cover) ?? (made?.id == b.cover ? made?.image : nil) {
                             Image(uiImage: img).resizable().interpolation(.medium).scaledToFill().opacity(0.9)
                         }
                     }
@@ -368,8 +370,13 @@ struct CarouselBand: View {
                 .transition(.opacity)
             }
             .animation(.easeInOut(duration: 0.35), value: book?.id)
+            .animation(.easeInOut(duration: 0.25), value: made?.id)
         }
         .ignoresSafeArea()
+        .task(id: book?.cover) {
+            guard let c = book?.cover, !c.isEmpty, Library.shared.cachedSoft(c) == nil else { return }
+            if let i = await Library.shared.softAsync(c) { made = (c, i) }
+        }
     }
 }
 

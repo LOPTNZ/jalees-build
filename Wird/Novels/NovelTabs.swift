@@ -18,70 +18,127 @@ struct BrowseTab: View {
     @State private var busy: String?
     @State private var note: String?
     @State private var repo = false
+    /// an Arabic search on its way to English for the English sites (EnglishQuery), and what it became
+    @State private var toEnglish: String?
+    @State private var asked = ""
+    @State private var english: String?
+    @ObservedObject private var novels = Novels.shared
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                Text("تصفّح").font(JFont.display(28, .bold)).foregroundStyle(Color(look.ink))
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Color(look.ink2))
                     TextField("ابحث في كل المواقع", text: $query).font(JFont.body(16)).submitLabel(.search).onSubmit { search() }
-                    if !query.isEmpty { Button { query = ""; results = []; searchToken += 1; searching = false } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Color(look.ink2)) } }
+                    if !query.isEmpty { Button { query = ""; results = []; searchToken += 1; searching = false; english = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Color(look.ink2)) } }
                 }
                 .padding(.horizontal, 14).frame(minHeight: 46)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(look.surface)))
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color(look.line), lineWidth: 1))
 
-                if searching { searchProgress }
+                if searching || !siteState.isEmpty { searchProgress }
+                if let e = english {
+                    Label("في المواقع الإنجليزية بحثت عن «\(e)»", systemImage: "character.bubble").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
+                }
                 ForEach(results.indices, id: \.self) { i in
                     let g = results[i]
                     JHeading(look: look, title: siteName(g.site), count: g.items.count)
                     NovelGrid(look: look, items: g.items) { open($0) }
                 }
 
-                JHeading(look: look, title: "المواقع")
-                ForEach(sources.indices, id: \.self) { i in
-                    let s = sources[i]
-                    NavigationLink {
-                        SourceBrowse(look: look, site: s["id"] as? String ?? "", name: s["name"] as? String ?? "")
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "globe").font(.system(size: 20)).foregroundStyle(Color(look.primary)).frame(width: 40, height: 40)
-                                .background(Circle().fill(Color(look.surface2)))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(s["name"] as? String ?? "").font(JFont.body(16, .semibold)).foregroundStyle(Color(look.ink))
-                                Text(URL(string: s["home"] as? String ?? "")?.host ?? "").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.backward").foregroundStyle(Color(look.ink2))
-                        }
-                        .padding(14)
-                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(look.surface)))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color(look.line), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        Button { SiteGate.signIn(s["home"] as? String ?? "") } label: { Label("دخول للموقع", systemImage: "person.crop.circle") }
+                let groups = siteGroups
+                ForEach(groups.indices, id: \.self) { gi in
+                    JHeading(look: look, title: groups[gi].title)
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                        ForEach(groups[gi].sites.indices, id: \.self) { i in siteCard(groups[gi].sites[i]) }
                     }
                 }
-                Text("اضغط مطوّلًا على موقع لتسجيل الدخول فيه، لو كان يطلب حساب أو يتحقق إنك مو روبوت.").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
-                Button { repo = true } label: { Label("مستودع المواقع", systemImage: "shippingbox") }
-                    .buttonStyle(JButtonStyle(look: look, small: true))
-                Text("رابط موقع ما يعرفه جليس؟ الصقه من «إضافة ← رواية من موقع» ويحاول يقرأه لحاله.").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
+
+                // the site repository and the hint, in one card, clear of the tab bar
+                VStack(alignment: .leading, spacing: 10) {
+                    Button { repo = true } label: { Label("مستودع المواقع", systemImage: "shippingbox").frame(maxWidth: .infinity) }
+                        .buttonStyle(JButtonStyle(look: look))
+                    Text("اضغط مطوّلًا على موقع لتسجيل الدخول فيه، لو كان يطلب حساب أو يتحقق إنك مو روبوت.").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
+                    Text("رابط موقع ما يعرفه جليس؟ الصقه من «إضافة ← رواية من موقع» ويحاول يقرأه لحاله.").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(look.surface)))
             }
-            .padding(16)
+            .padding(.horizontal, 16).padding(.top, 8)
+            .padding(.bottom, 130)
         }
         .background(Color(look.bg).ignoresSafeArea())
-        .navigationTitle("تصفّح")
-        .toolbarBackground(Color(look.bg), for: .navigationBar)
+        .toolbar(.hidden, for: .navigationBar)
         .tint(Color(look.primary))
         .preferredColorScheme(look.dark ? .dark : .light)
         .overlay { if let b = busy { BusyCard(look: look, text: b) } }
         .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) { Button("تمام", role: .cancel) {} }
         .task { await loadSources(); await SiteRepo.updateIfDue() }
         .sheet(isPresented: $repo, onDismiss: { Task { try? await Task.sleep(nanoseconds: 800_000_000); await loadSources() } }) { SiteRepoSheet(look: look) }
+        .modifier(EnglishQuery(request: $toEnglish) { en in run(asked, english: en) })
     }
 
-    private func siteName(_ id: String) -> String { (sources.first { ($0["id"] as? String) == id }?["name"] as? String) ?? id }
+    // MARK: the sites
+
+    private struct SiteGroup { let title: String; let sites: [[String: Any]] }
+
+    /// Sites you read from first (most novels first), then Arabic sites, then English ones.
+    private var siteGroups: [SiteGroup] {
+        let counts = Dictionary(grouping: novels.list.filter { !$0.book.isEmpty }, by: \.source).mapValues(\.count)
+        let id = { (s: [String: Any]) in s["id"] as? String ?? "" }
+        let mine = sources.filter { (counts[id($0)] ?? 0) > 0 }.sorted { (counts[id($0)] ?? 0) > (counts[id($1)] ?? 0) }
+        let rest = sources.filter { (counts[id($0)] ?? 0) == 0 }
+        let ar = rest.filter { ($0["lang"] as? String) != "en" }
+        let en = rest.filter { ($0["lang"] as? String) == "en" }
+        return [SiteGroup(title: "مواقع تقرأ منها", sites: mine), SiteGroup(title: "مواقع عربية", sites: ar), SiteGroup(title: "مواقع إنجليزية", sites: en)]
+            .filter { !$0.sites.isEmpty }
+    }
+
+    private func siteCard(_ s: [String: Any]) -> some View {
+        let site = s["id"] as? String ?? "", home = s["home"] as? String ?? ""
+        let mine = novels.list.filter { $0.source == site && !$0.book.isEmpty }.count
+        return NavigationLink {
+            SourceBrowse(look: look, site: site, name: shortName(s))
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top) {
+                    SiteIcon(home: home, name: shortName(s), look: look)
+                    Spacer(minLength: 0)
+                    Text((s["lang"] as? String) == "en" ? "English" : "عربي").font(JFont.body(11, .medium))
+                        .foregroundStyle(Color(look.ink2))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(Color(look.surface2)))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(shortName(s)).font(JFont.body(15.5, .semibold)).foregroundStyle(Color(look.ink)).lineLimit(1)
+                    Text(URL(string: home)?.host?.replacingOccurrences(of: "www.", with: "") ?? "").font(JFont.body(12)).foregroundStyle(Color(look.ink2)).lineLimit(1)
+                        .environment(\.layoutDirection, .leftToRight)
+                }
+                Text(mine > 0 ? "\(mine) في مكتبتك" : " ").font(JFont.body(12)).foregroundStyle(Color(look.primary))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(look.surface)))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color(look.line), lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button { SiteGate.signIn(home) } label: { Label("دخول للموقع", systemImage: "person.crop.circle") }
+            Button { NovelBridge.openSite(home) } label: { Label("افتح الموقع", systemImage: "safari") }
+        }
+    }
+
+    /// the site's name without its tagline («Layl | روايات ويب…» → «Layl»)
+    private func shortName(_ s: [String: Any]) -> String {
+        let id = s["id"] as? String ?? ""
+        if let n = Novel.siteNames[id], n != id { return n }
+        let full = s["name"] as? String ?? id
+        return full.components(separatedBy: CharacterSet(charactersIn: "|—–")).first?.trimmingCharacters(in: .whitespaces) ?? full
+    }
+
+    private func siteName(_ id: String) -> String { sources.first { ($0["id"] as? String) == id }.map(shortName) ?? id }
 
     private func loadSources() async {
         for _ in 0..<3 {
@@ -90,6 +147,8 @@ struct BrowseTab: View {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
     }
+
+    // MARK: searching every site
 
     /// every site at once, each with its own chip: asking, found N, nothing, or failed
     private var searchProgress: some View {
@@ -115,9 +174,26 @@ struct BrowseTab: View {
 
     private func search() {
         let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return }
+        guard !q.isEmpty, !sources.isEmpty else { return }
+        english = nil
+        let hasEnglishSites = sources.contains { ($0["lang"] as? String) == "en" }
+        if SearchWords.hasArabic(q) && hasEnglishSites {
+            // the English sites get it in English: translated first (EnglishQuery calls run)
+            asked = q
+            searching = true
+            toEnglish = q
+        } else {
+            run(q, english: nil)
+        }
+    }
+
+    private func run(_ q: String, english en: String?) {
         let sites = sources.compactMap { $0["id"] as? String }.filter { !$0.isEmpty }
-        guard !sites.isEmpty else { return }
+        let langs = Dictionary(uniqueKeysWithValues: sources.compactMap { s -> (String, String)? in
+            guard let id = s["id"] as? String else { return nil }
+            return (id, s["lang"] as? String ?? "ar")
+        })
+        if let e = en, !e.isEmpty { english = e }
         searchToken += 1
         let mine = searchToken
         searching = true
@@ -127,8 +203,15 @@ struct BrowseTab: View {
             // all the sites at once (the network waits overlap); each result takes its site's place in the list
             await withTaskGroup(of: (String, [[String: Any]]?).self) { group in
                 for site in sites {
+                    let asked = langs[site] == "en" ? (en ?? q) : q
                     group.addTask { @MainActor in
-                        let r = try? await SourceEngine.shared.browse(site, kind: "search", page: 1, query: q)
+                        var r = try? await SourceEngine.shared.browse(site, kind: "search", page: 1, query: asked)
+                        // a site that matches a title's words in order: the other orders of the words, when nothing came
+                        if r?.items.isEmpty ?? false {
+                            for alt in SearchWords.rotations(asked) {
+                                if let a = try? await SourceEngine.shared.browse(site, kind: "search", page: 1, query: alt), !a.items.isEmpty { r = a; break }
+                            }
+                        }
                         return (site, r?.items)
                     }
                 }
@@ -214,10 +297,13 @@ struct SourceBrowse: View {
                 NovelGrid(look: look, items: shown) { open($0) }
                 if loading { ProgressView().frame(maxWidth: .infinity).padding() }
                 else if more {
+                    // the next page comes on its own when the end is reached (the button stays for a slow site)
                     Button("المزيد") { page += 1; load() }.buttonStyle(JButtonStyle(look: look)).frame(maxWidth: .infinity)
+                        .onAppear { if !loading && more { page += 1; load() } }
                 }
             }
             .padding(16)
+            .padding(.bottom, 120)
         }
         .background(Color(look.bg).ignoresSafeArea())
         .navigationTitle(name)
@@ -448,6 +534,8 @@ struct DownloadsTab: View {
             } header: { Text("المحفوظ على جوالك") }
         }
         .scrollContentBackground(.hidden)
+        // room for the floating tab bar under the last row
+        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 96) }
         .environment(\.defaultMinListRowHeight, 52)
         .background(Color(look.bg).ignoresSafeArea())
         .navigationTitle("التحميلات")
@@ -503,6 +591,8 @@ struct HistoryTab: View {
             }
         }
         .scrollContentBackground(.hidden)
+        // room for the floating tab bar under the last row
+        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 96) }
         .environment(\.defaultMinListRowHeight, 52)
         .background(Color(look.bg).ignoresSafeArea())
         .navigationTitle("السجل")
@@ -591,6 +681,8 @@ struct UpdatesTab: View {
             }
         }
         .scrollContentBackground(.hidden)
+        // room for the floating tab bar under the last row
+        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 96) }
         .environment(\.defaultMinListRowHeight, 52)
         .background(Color(look.bg).ignoresSafeArea())
         .navigationTitle("التحديثات")
