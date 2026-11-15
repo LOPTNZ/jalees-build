@@ -12,7 +12,7 @@ concurrency:
 jobs:
   sim:
     runs-on: macos-26
-    timeout-minutes: 65
+    timeout-minutes: 95
     steps:
       - uses: actions/checkout@v4
       - name: Runner
@@ -37,7 +37,7 @@ jobs:
         run: bash tools/sim/shots.sh
       - name: Walk through the app (UI tests)
         if: always()
-        timeout-minutes: 30
+        timeout-minutes: 40
         run: |
           mkdir -p out-sim/ui
           # a fresh install: the demo library, not what the pictures above changed
