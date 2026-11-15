@@ -429,9 +429,9 @@ final class FlowTests: XCTestCase {
     private func readerChapter() -> Int? {
         let pill = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]+ من [0-9]+$")).firstMatch
         // the buttons show with a tap; a tap that only ends a selection needs one more (the menu button tells)
-        for _ in 0..<2 where !button("القائمة").exists {
+        for _ in 0..<4 where !button("القائمة").exists {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            sleep(1)
+            sleep(2)
         }
         guard pill.waitForExistence(timeout: 3) else { return nil }
         let n = Int(pill.label.split(separator: " ").first ?? "")
@@ -562,7 +562,7 @@ final class FlowTests: XCTestCase {
         guard tap(wtr, "WTR-LAB") else { return }
         sleep(4)
         shot("ui69-wtrlab")
-        let field = app.textFields.firstMatch
+        let field = app.textFields["ابحث في WTR-LAB"].firstMatch
         // the field reads as not hittable inside its row: tapped where it is
         if field.waitForExistence(timeout: 6) {
             field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -639,10 +639,16 @@ final class FlowTests: XCTestCase {
         let web = openReader()
         let at = web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42))
         at.press(forDuration: 1.3)
-        sleep(1)
-        shot("ui80-word-selected")
+        sleep(2)
         let toNotebook = app.menuItems["للدفتر"].firstMatch
-        if toNotebook.waitForExistence(timeout: 3) {
+        if !toNotebook.waitForExistence(timeout: 4) {
+            web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).tap()
+            sleep(2)
+            at.press(forDuration: 1.5)
+            sleep(2)
+        }
+        shot("ui80-word-selected")
+        if toNotebook.waitForExistence(timeout: 5) {
             toNotebook.tap()
             sleep(1)
             let word = app.buttons["كلمة"].firstMatch.exists ? app.buttons["كلمة"].firstMatch : app.menuItems["كلمة"].firstMatch
