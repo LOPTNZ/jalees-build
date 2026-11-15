@@ -7,7 +7,7 @@ import UIKit
 
 // MARK: - what is found
 
-struct SearchHit: Identifiable {
+struct GlobalHit: Identifiable {
     enum Kind { case book, quote, thought, word, char, mark, novel }
     let kind: Kind
     let bookID: String
@@ -25,13 +25,13 @@ struct SearchHit: Identifiable {
 }
 
 struct SearchResults {
-    var books: [SearchHit] = []
-    var quotes: [SearchHit] = []
-    var thoughts: [SearchHit] = []
-    var words: [SearchHit] = []
-    var chars: [SearchHit] = []
-    var marks: [SearchHit] = []
-    var novels: [SearchHit] = []
+    var books: [GlobalHit] = []
+    var quotes: [GlobalHit] = []
+    var thoughts: [GlobalHit] = []
+    var words: [GlobalHit] = []
+    var chars: [GlobalHit] = []
+    var marks: [GlobalHit] = []
+    var novels: [GlobalHit] = []
     var isEmpty: Bool { books.isEmpty && quotes.isEmpty && thoughts.isEmpty && words.isEmpty && chars.isEmpty && marks.isEmpty && novels.isEmpty }
 }
 
@@ -60,10 +60,10 @@ enum SearchEngine {
 
     static func run(_ st: AppState, novels: [SearchNovel], toks: [String]) -> SearchResults {
         var r = SearchResults()
-        var titleFirst: [SearchHit] = [], others: [SearchHit] = []
+        var titleFirst: [GlobalHit] = [], others: [GlobalHit] = []
         for b in st.books {
             if !match([b.title, b.author, b.translator, b.narrator, b.cols.joined(separator: " "), b.genres.joined(separator: " ")], toks) { continue }
-            let h = SearchHit(kind: .book, bookID: b.id, title: b.title, detail: b.author)
+            let h = GlobalHit(kind: .book, bookID: b.id, title: b.title, detail: b.author)
             if match([b.title], toks) { titleFirst.append(h) } else { others.append(h) }
         }
         r.books = Array((titleFirst + others).prefix(cap))
@@ -71,29 +71,29 @@ enum SearchEngine {
         for b in st.books {
             for q in b.quotes where r.quotes.count < cap {
                 if match([q.text, q.passage, q.raw.str("note")], toks) {
-                    r.quotes.append(SearchHit(kind: .quote, bookID: b.id, itemID: q.id, title: q.text, detail: q.passage, meta: b.title))
+                    r.quotes.append(GlobalHit(kind: .quote, bookID: b.id, itemID: q.id, title: q.text, detail: q.passage, meta: b.title))
                 }
             }
             for t in b.thoughts where r.thoughts.count < cap {
                 if match([t.text, t.passage], toks) {
-                    r.thoughts.append(SearchHit(kind: .thought, bookID: b.id, itemID: t.id, title: t.text, meta: b.title))
+                    r.thoughts.append(GlobalHit(kind: .thought, bookID: b.id, itemID: t.id, title: t.text, meta: b.title))
                 }
             }
             for w in b.words where r.words.count < cap {
                 let tr = w.raw.str("tr")
                 if match([w.word, w.meaning, tr], toks) {
-                    r.words.append(SearchHit(kind: .word, bookID: b.id, itemID: w.id, title: w.word, detail: [tr, w.meaning].filter { !$0.isEmpty }.joined(separator: " · "), meta: b.title))
+                    r.words.append(GlobalHit(kind: .word, bookID: b.id, itemID: w.id, title: w.word, detail: [tr, w.meaning].filter { !$0.isEmpty }.joined(separator: " · "), meta: b.title))
                 }
             }
             for c in b.chars where r.chars.count < cap {
                 if match([c.name, c.alias, c.desc], toks) {
-                    r.chars.append(SearchHit(kind: .char, bookID: b.id, itemID: c.id, title: c.name, detail: c.alias.isEmpty ? c.desc : c.alias + " · " + c.desc, meta: b.title))
+                    r.chars.append(GlobalHit(kind: .char, bookID: b.id, itemID: c.id, title: c.name, detail: c.alias.isEmpty ? c.desc : c.alias + " · " + c.desc, meta: b.title))
                 }
             }
             for (i, m) in b.marks.enumerated() where r.marks.count < cap {
                 if match([m.str("text"), m.str("note")], toks) {
                     let ch = m.str("chLabel")
-                    r.marks.append(SearchHit(kind: .mark, bookID: b.id, title: m.str("text"), detail: m.str("note"),
+                    r.marks.append(GlobalHit(kind: .mark, bookID: b.id, title: m.str("text"), detail: m.str("note"),
                                              meta: [ch, b.title].filter { !$0.isEmpty }.joined(separator: " · "),
                                              ch: m.int("ch"), p: m.int("p"), idx: i))
                 }
@@ -102,7 +102,7 @@ enum SearchEngine {
 
         for n in novels where r.novels.count < cap {
             if match([n.title, n.author], toks) {
-                r.novels.append(SearchHit(kind: .novel, bookID: "", itemID: String(n.id), title: n.title, detail: n.author, meta: n.site))
+                r.novels.append(GlobalHit(kind: .novel, bookID: "", itemID: String(n.id), title: n.title, detail: n.author, meta: n.site))
             }
         }
         return r
@@ -268,7 +268,7 @@ struct GlobalSearchSheet: View {
 
     // MARK: the results
 
-    @ViewBuilder private func group(_ title: String, _ hits: [SearchHit]) -> some View {
+    @ViewBuilder private func group(_ title: String, _ hits: [GlobalHit]) -> some View {
         if !hits.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(JFont.body(13, .semibold)).foregroundStyle(Color(L.ink2)).padding(.bottom, 4)
@@ -277,7 +277,7 @@ struct GlobalSearchSheet: View {
         }
     }
 
-    private func row(_ h: SearchHit) -> some View {
+    private func row(_ h: GlobalHit) -> some View {
         let quoted = h.kind == .quote || h.kind == .mark
         return Button { open(h) } label: {
             HStack(alignment: .top, spacing: 12) {
@@ -300,7 +300,7 @@ struct GlobalSearchSheet: View {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder private func leading(_ h: SearchHit) -> some View {
+    @ViewBuilder private func leading(_ h: GlobalHit) -> some View {
         if h.kind == .book, let b = Library.shared.state.book(h.bookID) {
             BookCover(book: b, radius: 5, marks: false).frame(width: 38)
         } else {
@@ -332,7 +332,7 @@ struct GlobalSearchSheet: View {
     // MARK: tapping a result
 
     /// The sheet closes first; what opens next waits for it to be gone (Present.whenClear).
-    private func open(_ h: SearchHit) {
+    private func open(_ h: GlobalHit) {
         recents = RecentSearches.add(query)
         let book = h.bookID
         dismiss()
