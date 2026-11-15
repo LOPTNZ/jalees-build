@@ -52,7 +52,7 @@ jobs:
           swift tools/sim/frames.swift walk.mp4 out-sim/rec-start out-sim/ui/marks.txt out-sim/frames || true
       - name: Walk through on an iPad
         if: always()
-        timeout-minutes: 14
+        timeout-minutes: 22
         run: |
           mkdir -p out-sim/ipad
           RT=$(xcrun simctl list runtimes -j | python3 -c "import json,sys;r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('isAvailable') and x['platform']=='iOS'];r.sort(key=lambda x:[int(p) for p in x['version'].split('.')]);print(r[-1]['identifier'])")

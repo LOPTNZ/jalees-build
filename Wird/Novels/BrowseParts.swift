@@ -36,8 +36,9 @@ final class SiteIcons {
         defer { asking.remove(host) }
         let base = scheme + "://" + host
         var tries = [base + "/apple-touch-icon.png", base + "/apple-touch-icon-precomposed.png"]
-        // the home page names its icon
-        if let html = try? await Fetcher.html(home) {
+        // the home page names its icon. A plain request: a site that answers with its robot check is skipped (the
+        // app's own fetcher would ask the owner to pass the check, just for an icon)
+        if let html = await Self.quietHTML(u) {
             for re in [#"<link[^>]+rel=["'][^"']*apple-touch-icon[^"']*["'][^>]*href=["']([^"']+)"#,
                        #"<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]*href=["']([^"']+)"#,
                        #"<link[^>]+href=["']([^"']+)["'][^>]*rel=["'][^"']*icon"#] {
@@ -63,6 +64,16 @@ final class SiteIcons {
             return out
         }
         return nil
+    }
+}
+
+extension SiteIcons {
+    nonisolated static func quietHTML(_ u: URL) async -> String? {
+        var r = URLRequest(url: u, timeoutInterval: 12)
+        r.setValue(Fetcher.ua, forHTTPHeaderField: "User-Agent")
+        guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        let html = String(decoding: d.prefix(200_000), as: UTF8.self)
+        return html.lowercased().contains("challenge-platform") ? nil : html
     }
 }
 
