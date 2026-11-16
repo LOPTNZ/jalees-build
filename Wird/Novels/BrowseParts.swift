@@ -170,6 +170,34 @@ enum SearchWords {
     }
 
     static func hasArabic(_ s: String) -> Bool { s.unicodeScalars.contains { (0x0600...0x06FF).contains($0.value) } }
+
+    /// A name as search compares it: Words.norm (no marks, one hamza form), and every mark of punctuation a space.
+    static func fold(_ s: String) -> String {
+        Words.norm(s).split(whereSeparator: { !$0.isLetter && !$0.isNumber }).joined(separator: " ")
+    }
+
+    /// Search results with the closest names first: the name itself, then names starting with it, holding it, holding
+    /// all its words (in any order); otherwise the site's own order stays.
+    static func ranked(_ items: [[String: Any]], for q: String) -> [[String: Any]] {
+        let want = fold(q)
+        guard !want.isEmpty else { return items }
+        let words = want.split(separator: " ").map(String.init)
+        func score(_ it: [String: Any]) -> Int {
+            let t = fold(it["title"] as? String ?? "")
+            if t == want { return 0 }
+            if t.hasPrefix(want) { return 1 }
+            if t.contains(want) { return 2 }
+            let tw = Set(t.split(separator: " ").map(String.init))
+            if words.allSatisfy({ tw.contains($0) }) { return 3 }
+            return 4
+        }
+        return items.enumerated()
+            .sorted { a, b in
+                let (x, y) = (score(a.element), score(b.element))
+                return x != y ? x < y : a.offset < b.offset
+            }
+            .map(\.element)
+    }
 }
 
 /// A picture from a site (a novel's cover while browsing): kept in memory, fetched with the browser's name and the
@@ -185,22 +213,31 @@ final class RemoteImages {
 
     func cached(_ url: String) -> UIImage? { cache.object(forKey: url as NSString) }
 
+    /// A site's picture as the site's own pages get it: the browser's name, the site as referrer, a second try.
+    /// (Plain requests were refused by some image hosts, and a novel added to the library got no cover.)
+    nonisolated static func data(_ url: String) async -> Data? {
+        guard let u = URL(string: url) else { return nil }
+        for attempt in 0..<2 {
+            if attempt > 0 { try? await Task.sleep(nanoseconds: 700_000_000) }
+            var r = URLRequest(url: u, timeoutInterval: 20)
+            r.setValue(Fetcher.ua, forHTTPHeaderField: "User-Agent")
+            r.setValue("image/avif,image/webp,image/png,image/jpeg,*/*;q=0.8", forHTTPHeaderField: "Accept")
+            if let host = u.host { r.setValue("https://" + host.split(separator: ".").suffix(2).joined(separator: ".") + "/", forHTTPHeaderField: "Referer") }
+            guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200, !d.isEmpty else { continue }
+            return d
+        }
+        return nil
+    }
+
     func load(_ url: String) async -> UIImage? {
         if let i = cached(url) { return i }
         if let t = running[url] { return await t.value }
         let t = Task<UIImage?, Never> { [cache] in
-            guard let u = URL(string: url) else { return nil }
-            for attempt in 0..<2 {
-                if attempt > 0 { try? await Task.sleep(nanoseconds: 700_000_000) }
-                var r = URLRequest(url: u, timeoutInterval: 20)
-                r.setValue(Fetcher.ua, forHTTPHeaderField: "User-Agent")
-                if let host = u.host { r.setValue("https://" + host.split(separator: ".").suffix(2).joined(separator: ".") + "/", forHTTPHeaderField: "Referer") }
-                guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { continue }
-                // decoded small, off the screen's thread
-                let img: UIImage? = await Task.detached(priority: .utility) { Library.prepared(d, max: 400) }.value
-                if let i = img { cache.setObject(i, forKey: url as NSString); return i }
-            }
-            return nil
+            guard let d = await RemoteImages.data(url) else { return nil }
+            // decoded small, off the screen's thread
+            let img: UIImage? = await Task.detached(priority: .utility) { Library.prepared(d, max: 400) }.value
+            if let i = img { cache.setObject(i, forKey: url as NSString) }
+            return img
         }
         running[url] = t
         let out = await t.value
@@ -209,22 +246,25 @@ final class RemoteImages {
     }
 }
 
+/// The picture is kept with its address: a view that is handed another address (a list that changed under it) never
+/// shows the old picture for the new one.
 struct RemoteImage<P: View>: View {
     let url: String
     @ViewBuilder var placeholder: () -> P
-    @State private var img: UIImage?
+    @State private var got: (url: String, image: UIImage)?
 
     var body: some View {
         Group {
-            if let i = img ?? RemoteImages.shared.cached(url) {
+            if let i = RemoteImages.shared.cached(url) ?? (got?.url == url ? got?.image : nil) {
                 Image(uiImage: i).resizable().scaledToFill()
             } else {
                 placeholder()
             }
         }
         .task(id: url) {
-            guard img == nil, !url.isEmpty else { return }
-            img = await RemoteImages.shared.load(url)
+            guard !url.isEmpty, RemoteImages.shared.cached(url) == nil else { return }
+            let want = url
+            if let i = await RemoteImages.shared.load(want), want == url { got = (want, i) }
         }
     }
 }

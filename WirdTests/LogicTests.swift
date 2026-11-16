@@ -128,4 +128,49 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(ServerLink.normalized("https://jalees.example.com"), "https://jalees.example.com")
         XCTAssertEqual(ServerLink.normalized(""), "")
     }
+
+    // MARK: 2.2.1
+
+    /// «deep sea»: the novel named so comes before ones that only hold the words somewhere.
+    func testSearchRanksTheNameFirst() {
+        let items: [[String: Any]] = [
+            ["title": "Lighthouse Survival: The Deep Sea Calls"],
+            ["title": "I Promise You a Love As Deep As the Sea"],
+            ["title": "Deep Sea Embers"],
+            ["title": "deep sea"],
+        ]
+        let titles = SearchWords.ranked(items, for: "Deep sea").compactMap { $0["title"] as? String }
+        XCTAssertEqual(titles, ["deep sea", "Deep Sea Embers", "Lighthouse Survival: The Deep Sea Calls", "I Promise You a Love As Deep As the Sea"])
+        // Arabic: hamza and marks don't matter
+        let ar = SearchWords.ranked([["title": "سيد التمني"], ["title": "لورد الغوامض"]], for: "لُورد")
+        XCTAssertEqual(ar.first?["title"] as? String, "لورد الغوامض")
+    }
+
+    func testTailscaleAddresses() {
+        XCTAssertTrue(ServerLink.isTailscale("100.75.48.114"))
+        XCTAssertTrue(ServerLink.isTailscale("100.127.0.1"))
+        XCTAssertFalse(ServerLink.isTailscale("100.128.0.1"))
+        XCTAssertFalse(ServerLink.isTailscale("192.168.0.194"))
+        XCTAssertFalse(ServerLink.isTailscale("jalees.example.com"))
+    }
+
+    /// A drag starts where the covers are (they follow the finger from there), and letting go settles on a book.
+    func testCarouselDragStartsInPlace() {
+        let car = CarouselState()
+        car.setBooks(["a", "b", "c", "d"], start: "b")
+        XCTAssertEqual(car.pos, 1)
+        car.grab()
+        car.dragTo(1.3)
+        XCTAssertEqual(car.finger, 1.3, accuracy: 0.0001)
+        // no jump: the covers move on the display's clock, not all at once with the touch
+        XCTAssertEqual(car.pos, 1, accuracy: 0.0001)
+        car.go(to: 2)
+        XCTAssertFalse(car.dragging)
+        XCTAssertEqual(car.target, 2)
+    }
+
+    func testNotFoundIsKnown() {
+        if case NovelError.http(404) = NovelError.http(404) {} else { XCTFail() }
+        XCTAssertEqual(NovelError.http(404).localizedDescription, "الصفحة مو موجودة في الموقع (404)")
+    }
 }

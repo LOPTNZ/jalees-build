@@ -568,14 +568,54 @@ final class FlowTests: XCTestCase {
         if field.waitForExistence(timeout: 6) {
             field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             sleep(1)
-            field.typeText("deep sea embers\n")
+            // two words only: the site's finder (most read first) and the ranking bring the novel to the top
+            field.typeText("deep sea\n")
             sleep(8)
             shot("ui70-wtrlab-search")
             // the site may refuse the build machine: then this is noted, not a failure of the app
             XCTExpectFailure("the site may block the build machine's address", strict: false) {
-                XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Deep Sea Embers")).firstMatch.waitForExistence(timeout: 15))
+                let hit = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Deep Sea Embers")).firstMatch
+                XCTAssertTrue(hit.waitForExistence(timeout: 15), "Deep Sea Embers is not among the results")
+                let first = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "deep")).firstMatch
+                XCTAssertTrue(first.label.localizedCaseInsensitiveContains("Deep Sea Embers"), "the closest name is not first: \(first.label)")
             }
         }
+        XCTAssertEqual(app.alerts.count, 0, "an alert came up while browsing")
+        app.navigationBars.buttons.firstMatch.tap()
+        sleep(1)
+    }
+
+    /// A site's list loads one page and waits: nothing more comes until the end of the list is reached, and a page
+    /// that fails never turns into alerts (it once loaded every page by itself, then an alert every second).
+    func test14bSourceStaysPut() {
+        tab("تصفّح")
+        sleep(2)
+        let kol = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "ملوك الروايات")).firstMatch
+        guard tap(kol, "ملوك الروايات") else { return }
+        let list = app.otherElements["browse-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the site's list is missing")
+        sleep(8)
+        let first = Int((list.value as? String) ?? "") ?? 0
+        sleep(15)
+        let later = Int((list.value as? String) ?? "") ?? 0
+        shot("ui73-kol-still")
+        XCTAssertLessThanOrEqual(later, first + 25, "the list kept loading by itself: \(first) → \(later)")
+        XCTAssertEqual(app.alerts.count, 0, "an alert came up on the site's list")
+        // the end of the list brings the next page
+        if first > 0 {
+            for _ in 0..<8 { app.swipeUp(velocity: .fast) }
+            sleep(8)
+            let more = Int((list.value as? String) ?? "") ?? 0
+            shot("ui74-kol-more")
+            XCTExpectFailure("the site may block the build machine's address", strict: false) {
+                XCTAssertGreaterThan(more, first, "the end of the list brought nothing")
+            }
+        }
+        // another tab: no alert follows there either
+        tab("التحديثات")
+        sleep(5)
+        XCTAssertEqual(app.alerts.count, 0, "an alert from the site's list came up in another tab")
+        tab("تصفّح")
         app.navigationBars.buttons.firstMatch.tap()
         sleep(1)
     }

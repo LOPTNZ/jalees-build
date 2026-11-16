@@ -71,8 +71,8 @@ enum NovelLibrary {
     /// A novel found while browsing: its book, and its cover from the site.
     static func adopt(_ r: [String: Any]) async -> String {
         let id = ensureBook(r)
-        if let u = r["cover"] as? String, !u.isEmpty, lib.state.book(id)?.cover == nil, let url = URL(string: u),
-           let (d, _) = try? await URLSession.shared.data(from: url), let img = UIImage(data: d) {
+        if let u = r["cover"] as? String, !u.isEmpty, lib.state.book(id)?.cover == nil,
+           let d = await RemoteImages.data(u), let img = UIImage(data: d) {
             setCover(id, img)
         }
         return id

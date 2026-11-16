@@ -89,9 +89,10 @@
     },
 
     browseURL: function (kind, page, q) {
-      if (kind === 'search') return 'https://kolnovel.com/?s=' + encodeURIComponent(q || '');
-      var base = 'https://kolnovel.com/series/' + (kind === 'popular' ? '?order=popular' : '');
-      return page > 1 ? base + (base.indexOf('?') >= 0 ? '&' : '?') + 'paged=' + page : base;
+      // the site's own page addresses (?paged=N only redirected to them); past the last page it answers 404
+      var at = page > 1 ? 'page/' + page + '/' : '';
+      if (kind === 'search') return 'https://kolnovel.com/' + at + '?s=' + encodeURIComponent(q || '');
+      return 'https://kolnovel.com/series/' + at + (kind === 'popular' ? '?order=popular' : '');
     },
     browse: function (doc, url) {
       var cards = doc.querySelectorAll('article.kol-series-archive__item, article.kol-search__item, article[itemtype*="CreativeWork"]'), items = [], seen = {};

@@ -375,7 +375,7 @@ struct NovelPageView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            CoverView(id: model.s("cover"), title: model.novel.title, author: model.novel.author, color: bookColor)
+            CoverView(id: model.s("cover"), title: model.novel.title, author: model.novel.author, color: bookColor, remote: model.novel.cover)
                 .frame(width: 116, height: 116 / 0.66)
                 .heroSpot(model.bookID)
                 .shadow(color: .black.opacity(0.55), radius: 11, y: 10)
@@ -899,6 +899,8 @@ struct CoverView: View {
     let title: String
     let author: String
     let color: UIColor
+    /// the site's cover, for a novel only being looked at (not in the library yet, so it has no picture of its own)
+    var remote = ""
 
     var body: some View {
         ZStack {
@@ -912,6 +914,8 @@ struct CoverView: View {
             }
             if !id.isEmpty, let img = Store.shared.image(id) {
                 Image(uiImage: img).resizable().scaledToFill()
+            } else if !remote.isEmpty {
+                RemoteImage(url: remote) { EmptyView() }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))

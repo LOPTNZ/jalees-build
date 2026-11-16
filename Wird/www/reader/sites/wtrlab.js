@@ -9,8 +9,9 @@
      {data:{data:{title, body:[paragraphs], glossary_data:{terms:[[english, chinese], …]}}}}. chapter() reads that JSON
      when it is handed it (names are written ※N⛬ in the text and are replaced by terms[N][0]). Given the chapter page
      it answers { fetch: the POST }, given the POST's answer { fetch: the content URL } (the app's fetch steps).
-   - Search is POST /api/search {text} (JSON {success, data:[series…]}, the same series as the list pages, at most 10,
-     matching the title's words in order); browseURL gives the app that request. */
+   - Search is the novel finder, /en/novel-finder?text=…&orderBy=view&order=desc&page=N: the same __NEXT_DATA__ series
+     as the list pages, 10 a page, most read first. (The quick POST /api/search {text} gives only the 10 newest
+     matches, so «deep sea» never reached Deep Sea Embers; its answers are still read, for an old repository copy.) */
 (function () {
   'use strict';
   var K = window.SourceKit, abs = K.abs, S = window.Sources = window.Sources || {};
@@ -110,9 +111,9 @@
       };
     },
 
-    /* the novel list pages (10 novels a page); a search is the site's own POST (one page of up to 10) */
+    /* the novel list pages and the novel finder (10 novels a page) */
     browseURL: function (kind, page, q) {
-      if (kind === 'search' && q) return { url: ORIGIN + '/api/search', method: 'POST', json: { text: q } };
+      if (kind === 'search' && q) return HOME + '/novel-finder?text=' + encodeURIComponent(q) + '&orderBy=view&order=desc&page=' + (page || 1);
       var order = kind === 'popular' ? 'view' : 'update';
       return HOME + '/novel-list?orderBy=' + order + '&order=desc&page=' + (page || 1);
     },

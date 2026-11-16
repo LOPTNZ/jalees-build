@@ -38,6 +38,7 @@ struct RootView: View {
     @State private var visits: [Router.Tab: Int] = [:]
     /// the launch splash, once per launch
     @State private var splash = true
+    @ObservedObject private var keyboard = KeyboardWatch.shared
 
     private var L: JLook { appearance.look }
 
@@ -60,7 +61,8 @@ struct RootView: View {
         // a tab changes at once, as the system's tab bars do (a fade made every change feel slow)
         // a new language: every page is drawn again in it
         .id(lang.english)
-        .safeAreaInset(edge: .bottom, spacing: 0) { TabBar().id(lang.english) }
+        // the bar goes under the keyboard, as the system's does (it rode up on top of it)
+        .safeAreaInset(edge: .bottom, spacing: 0) { if !keyboard.up { TabBar().id(lang.english) } }
         .overlay(alignment: .bottom) { VStack(spacing: 10) { ToastView(); if router.group == .novels { SessionChip() } }.padding(.bottom, 92) }
         .overlay { if splash { SplashView { splash = false }.environment(\.look, L) } }
         .modifier(SessionCover(look: L))
@@ -265,4 +267,26 @@ final class RootController: UIHostingController<AnyView> {
     }
 
     @MainActor required dynamic init?(coder: NSCoder) { fatalError("no storyboard") }
+}
+
+/// Whether the keyboard is up (a real one: an iPad's hardware keyboard only shows a small bar).
+@MainActor
+final class KeyboardWatch: NSObject, ObservableObject {
+    static let shared = KeyboardWatch()
+    @Published private(set) var up = false
+
+    private override init() {
+        super.init()
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(changed(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        nc.addObserver(self, selector: #selector(hidden), name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+
+    @objc private func changed(_ n: Notification) {
+        let end = (n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? .zero
+        let shown = end.height > 120 && end.minY < UIScreen.main.bounds.height - 1
+        if up != shown { up = shown }
+    }
+
+    @objc private func hidden() { if up { up = false } }
 }

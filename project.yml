@@ -6,8 +6,8 @@ options:
   developmentLanguage: ar
 settings:
   base:
-    MARKETING_VERSION: "2.2.0"
-    CURRENT_PROJECT_VERSION: "24"
+    MARKETING_VERSION: "2.2.1"
+    CURRENT_PROJECT_VERSION: "25"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
     IPHONEOS_DEPLOYMENT_TARGET: "16.1"
@@ -75,6 +75,7 @@ targets:
         NSPhotoLibraryUsageDescription: "لاختيار صور الأغلفة والشخصيات"
         NSPhotoLibraryAddUsageDescription: "لحفظ بطاقات الكتب والاقتباسات في صورك"
         NSFaceIDUsageDescription: "لقفل جليس وفتحه بوجهك"
+        NSLocalNetworkUsageDescription: "للوصول إلى سيرفرك على شبكتك أو على Tailscale"
         CFBundleURLTypes:
           - CFBundleURLName: com.abdullah.wird.reader
             CFBundleURLSchemes:

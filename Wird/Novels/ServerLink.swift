@@ -63,13 +63,27 @@ enum ServerLink {
     /// «جرّب الاتصال», step by step, saying which step failed: the address, reaching it (Tailscale), then the token.
     static func diagnose() async -> String {
         guard !url.isEmpty, let h = URL(string: url + "/health") else { return "اكتب عنوان السيرفر، مثل http://100.75.48.114:8790" }
+        // a Tailscale address on the server: is Tailscale up on this phone at all? (its address is 100.64–127.x.x)
+        let host = URL(string: url)?.host ?? ""
+        let mine = Self.tailscaleAddress()
+        if Self.isTailscale(host) && mine == nil {
+            return "Tailscale مو شغّال على جوالك الحين: ما له عنوان 100.x.\nافتح تطبيق Tailscale وشغّله لين يقول Connected، وبعدها جرّب الاتصال مرة ثانية."
+        }
         do {
             let (_, resp) = try await URLSession.shared.data(for: URLRequest(url: h, timeoutInterval: 10))
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             if code != 200 { return "وصلت لـ\(url) بس اللي ردّ مو سيرفر جليس (ردّ بـ\(code)). تأكد من الرقم بعد النقطتين." }
         } catch {
-            let why = (error as? URLError)?.code == .timedOut ? "ما ردّ أحد خلال 10 ثواني" : "ما قدرت أتصل"
-            return "\(why) على \(url).\nافتح تطبيق Tailscale على جوالك وتأكد إنه متصل (Connected)، وإن العنوان نفس اللي في رسالة السيرفر."
+            let ns = error as NSError
+            let detail = "(\(ns.code): \(ns.localizedDescription))"
+            if "\(ns.userInfo)".range(of: "Local network prohibited", options: .caseInsensitive) != nil {
+                return "iOS منع جليس يوصل للشبكة \(detail).\nالإعدادات ← الخصوصية والأمان ← الشبكة المحلية ← فعّل جليس."
+            }
+            let why = (error as? URLError)?.code == .timedOut ? "ما ردّ السيرفر خلال 10 ثواني" : "ما قدرت أتصل على السيرفر"
+            if let me = mine, Self.isTailscale(host) {
+                return "\(why) \(detail).\nجوالك متصل بـTailscale (عنوانه \(me))، والسيرفر ما وصله طلب. افتح \(url)/health في سفاري: لو فتحت، صوّر لي هذي الرسالة؛ لو ما فتحت، تأكد إن الجوال والسيرفر بنفس حساب Tailscale."
+            }
+            return "\(why) على \(url) \(detail).\nتأكد إن العنوان نفس اللي في رسالة السيرفر."
         }
         guard !token.isEmpty else { return "وصلت للسيرفر. باقي تحط الرمز." }
         do {
@@ -80,6 +94,30 @@ enum ServerLink {
         } catch {
             return error.localizedDescription
         }
+    }
+
+    /// 100.64.0.0/10: the addresses Tailscale gives.
+    static func isTailscale(_ host: String) -> Bool {
+        let p = host.split(separator: ".").compactMap { Int($0) }
+        return p.count == 4 && p[0] == 100 && (64...127).contains(p[1])
+    }
+
+    /// This phone's own Tailscale address, when Tailscale is connected (its tunnel has one).
+    static func tailscaleAddress() -> String? {
+        var head: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&head) == 0 else { return nil }
+        defer { freeifaddrs(head) }
+        var p = head
+        while let a = p {
+            p = a.pointee.ifa_next
+            guard let sa = a.pointee.ifa_addr, sa.pointee.sa_family == UInt8(AF_INET) else { continue }
+            var sin = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+            var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            guard inet_ntop(AF_INET, &sin.sin_addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil else { continue }
+            let ip = String(cString: buf)
+            if isTailscale(ip) { return ip }
+        }
+        return nil
     }
 
     /// For «جرّب الاتصال»: how many novels the server follows.

@@ -13,6 +13,9 @@ final class CarouselState: NSObject, ObservableObject {
     var target: Double = 0
     var vel: Double = 0
     var dragging = false
+    /// where the finger has the carousel: the covers follow it on the display's own clock (touches arrive unevenly,
+    /// the screen draws evenly), so a drag never moves in one lump
+    private(set) var finger: Double = 0
     private(set) var ids: [String] = []
     private var link: CADisplayLink?
     private var last: CFTimeInterval = 0
@@ -57,14 +60,26 @@ final class CarouselState: NSObject, ObservableObject {
     /// Moves to a book by its index, the short way round.
     func go(index i: Int) { go(to: pos + offset(i)) }
 
+    /// A finger took hold: the covers stop where they are (also in the middle of a glide) and follow it from there.
+    func grab() {
+        dragging = true
+        target = pos; vel = 0
+        finger = pos
+    }
+
     func dragTo(_ p: Double) {
         if !wraps {
             let maxP = Double(max(0, count - 1))
-            if p < 0 { pos = p * 0.35 } else if p > maxP { pos = maxP + (p - maxP) * 0.35 } else { pos = p }
+            if p < 0 { finger = p * 0.35 } else if p > maxP { finger = maxP + (p - maxP) * 0.35 } else { finger = p }
         } else {
-            pos = p
+            finger = p
         }
-        updateCenter(haptic: true)
+        if UIAccessibility.isReduceMotionEnabled {
+            pos = finger
+            updateCenter(haptic: true)
+        } else {
+            run()
+        }
     }
 
     func run() {
@@ -80,8 +95,18 @@ final class CarouselState: NSObject, ObservableObject {
     @objc private func frame(_ l: CADisplayLink) {
         let dt = last == 0 ? 1.0 / 60 : min(0.034, l.timestamp - last)
         last = l.timestamp
-        // while a finger moves it nothing runs here; the display link stops until the drag ends (go starts it again)
-        if dragging { stop(); return }
+        if dragging {
+            // a step towards the finger every frame (a hair behind it): smooth even when touches come late or in bursts
+            let gap = finger - pos
+            if abs(gap) < 0.0005 {
+                if pos != finger { pos = finger; updateCenter(haptic: true) }
+                stop()
+                return
+            }
+            pos += gap * (1 - exp(-dt / 0.022))
+            updateCenter(haptic: true)
+            return
+        }
         if UIAccessibility.isReduceMotionEnabled {
             pos = target; vel = 0
         } else {
@@ -126,11 +151,18 @@ struct CarouselView: View {
     @ObservedObject private var center = CarouselCenter.shared
     @ObservedObject private var lib = Library.shared
     @Environment(\.look) private var L
-    @State private var axis: Character = " "
-    @State private var startPos: Double = 0
-    @State private var lastX: CGFloat = 0
-    @State private var lastT: Date = .distantPast
-    @State private var speed: Double = 0
+    /// the drag's own bookkeeping, kept out of SwiftUI's state: changing it on every touch redrew the whole column
+    @State private var tr = DragTrack()
+
+    private final class DragTrack {
+        var axis: Character = " "
+        var startPos: Double = 0
+        /// how far the finger had gone before the drag was recognised: left out, so the covers start from where they were
+        var x0: CGFloat = 0
+        var lastX: CGFloat = 0
+        var lastT: CFTimeInterval = 0
+        var speed: Double = 0
+    }
 
     private var flow: Bool { lib.state.settings.carStyle == "flow" }
 
@@ -176,36 +208,43 @@ struct CarouselView: View {
     private func drag(W: CGFloat, coverH: CGFloat, H: CGFloat) -> some Gesture {
         // the distance a finger travels to open the page all the way (the web's D: clamp(H × 0.42, 220, 360))
         let D = min(360, max(220, H * 0.42))
+        let t = tr
         return DragGesture(minimumDistance: 8)
             .onChanged { v in
                 let dx = v.translation.width, dy = v.translation.height
-                if axis == " " {
-                    axis = abs(dx) > abs(dy) * 1.15 ? "x" : (dy < 0 ? "y" : "n")
-                    startPos = car.pos
-                    car.dragging = axis == "x"
-                    lastX = dx; lastT = Date(); speed = 0
-                    if axis == "y" {
+                let now = CACurrentMediaTime()
+                if t.axis == " " {
+                    t.axis = abs(dx) > abs(dy) * 1.15 ? "x" : (dy < 0 ? "y" : "n")
+                    t.x0 = dx; t.lastX = dx; t.lastT = now; t.speed = 0
+                    if t.axis == "x" {
+                        car.grab()
+                        t.startPos = car.pos
+                    }
+                    if t.axis == "y" {
                         // up: the book layer starts, with the middle book
-                        if let id = car.centerID, BookLayer.shared.beginBook(id) {} else { axis = "n" }
+                        if let id = car.centerID, BookLayer.shared.beginBook(id) {} else { t.axis = "n" }
                     }
                 }
-                if axis == "y" { BookLayer.shared.drag(-dy / D); return }
-                guard axis == "x" else { return }
-                car.dragging = true
-                let now = Date(), dt = max(0.001, now.timeIntervalSince(lastT))
-                speed = 0.6 * speed + 0.4 * (Double(dx - lastX) / step(W: W, coverH: coverH) / dt)
-                lastX = dx; lastT = now
-                car.dragTo(startPos + Double(dx) / step(W: W, coverH: coverH))
-                car.vel = speed
+                if t.axis == "y" { BookLayer.shared.drag(-dy / D); return }
+                guard t.axis == "x" else { return }
+                let s = step(W: W, coverH: coverH)
+                let dt = max(0.004, now - t.lastT)
+                t.speed = 0.6 * t.speed + 0.4 * (Double(dx - t.lastX) / s / dt)
+                t.lastX = dx; t.lastT = now
+                car.vel = t.speed   // (the flow style leans the covers with it)
+                car.dragTo(t.startPos + Double(dx - t.x0) / s)
             }
             .onEnded { v in
-                defer { axis = " "; car.dragging = false }
-                if axis == "x" {
-                    var p = car.pos
+                defer { t.axis = " " }
+                if t.axis == "x" {
+                    // a finger that stopped before letting go doesn't throw
+                    let speed = CACurrentMediaTime() - t.lastT > 0.08 ? 0 : t.speed
+                    var p = car.finger
                     if abs(speed) > 1.5 { p += speed * 0.14 }
-                    let base = startPos.rounded()
+                    let base = t.startPos.rounded()
+                    car.vel = speed
                     car.go(to: min(base + 4, max(base - 4, p.rounded())))
-                } else if axis == "y" {
+                } else if t.axis == "y" {
                     // let go past 30 %, or flicked up: the page; otherwise back to the library
                     let p = -v.translation.height / D
                     BookLayer.shared.release(open: p > 0.3 || v.predictedEndTranslation.height < -D * 0.75)

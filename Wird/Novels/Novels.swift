@@ -73,6 +73,8 @@ struct ChapterText {
 enum NovelError: LocalizedError {
     case unknownSite, blocked, empty
     case network(String)
+    /// the site answered with this status (404: the page is not there)
+    case http(Int)
     case parse(String)
     case message(String)
 
@@ -82,6 +84,8 @@ enum NovelError: LocalizedError {
         case .blocked: return "الموقع طلب تحقق أو حجب الطلب"
         case .empty: return "الصفحة وصلت بدون نص الفصل"
         case .network(let m): return "تعذّر الاتصال بالموقع: \(m)"
+        case .http(404): return "الصفحة مو موجودة في الموقع (404)"
+        case .http(let c): return "تعذّر الاتصال بالموقع: الموقع ردّ بالرمز \(c)"
         case .parse(let m): return "ما قدرت أقرأ الصفحة (\(m))"
         case .message(let m): return m
         }
@@ -130,7 +134,7 @@ enum Fetcher {
                     if code == 403, !challenge { throw NovelError.message("الفصل مقفل في الموقع (للمشتركين أو لتطبيق الموقع)") }
                     throw NovelError.blocked
                 }
-                guard (200..<300).contains(code) else { throw NovelError.network("الموقع ردّ بالرمز \(code)") }
+                guard (200..<300).contains(code) else { throw NovelError.http(code) }
                 return String(decoding: data, as: UTF8.self)
             } catch let e as NovelError {
                 throw e
@@ -556,10 +560,10 @@ final class Novels: ObservableObject {
             .map(String.init) ?? ""
         guard novel.cover.isEmpty || novel.cover == og || novel.cover.removingPercentEncoding == og.removingPercentEncoding else { return }
         db.run("UPDATE novels SET cover=? WHERE id=?", [c, novel.id])
-        guard !novel.book.isEmpty, let url = URL(string: c) else { return }
+        guard !novel.book.isEmpty, URL(string: c) != nil else { return }
         let book = novel.book
         Task { @MainActor in
-            guard let (d, _) = try? await URLSession.shared.data(from: url), let img = UIImage(data: d) else { return }
+            guard let d = await RemoteImages.data(c), let img = UIImage(data: d) else { return }
             NovelLibrary.setCover(book, img)
         }
     }

@@ -22,6 +22,8 @@ struct BrowseTab: View {
     @State private var toEnglish: String?
     @State private var asked = ""
     @State private var english: String?
+    /// a search that found nothing, said in the page (an alert came up over whatever tab was open by then)
+    @State private var nothing: String?
     @ObservedObject private var novels = Novels.shared
 
     var body: some View {
@@ -31,7 +33,7 @@ struct BrowseTab: View {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Color(look.ink2))
                     TextField("ابحث في كل المواقع", text: $query).font(JFont.body(16)).submitLabel(.search).onSubmit { search() }
-                    if !query.isEmpty { Button { query = ""; results = []; searchToken += 1; searching = false; english = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Color(look.ink2)) } }
+                    if !query.isEmpty { Button { query = ""; results = []; searchToken += 1; searching = false; english = nil; nothing = nil; siteState = [:] } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Color(look.ink2)) } }
                 }
                 .padding(.horizontal, 14).frame(minHeight: 46)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(look.surface)))
@@ -40,6 +42,9 @@ struct BrowseTab: View {
                 if searching || !siteState.isEmpty { searchProgress }
                 if let e = english {
                     Label("في المواقع الإنجليزية بحثت عن «\(e)»", systemImage: "character.bubble").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
+                }
+                if let q = nothing {
+                    Text("ما لقيت «\(q)» في المواقع. جرّب كلمة وحدة من الاسم، أو اسمه بالإنجليزي.").font(JFont.body(14)).foregroundStyle(Color(look.ink2))
                 }
                 ForEach(results.indices, id: \.self) { i in
                     let g = results[i]
@@ -69,6 +74,7 @@ struct BrowseTab: View {
             .padding(.bottom, 130)
             .readableColumn(900)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(Color(look.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .tint(Color(look.primary))
@@ -198,6 +204,7 @@ struct BrowseTab: View {
         searchToken += 1
         let mine = searchToken
         searching = true
+        nothing = nil
         results = []
         siteState = sites.reduce(into: [:]) { $0[$1] = "" }
         Task { @MainActor in
@@ -218,7 +225,8 @@ struct BrowseTab: View {
                 }
                 for await (site, items) in group {
                     guard mine == searchToken else { continue }
-                    if let items = items, !items.isEmpty {
+                    if var items = items, !items.isEmpty {
+                        items = SearchWords.ranked(items, for: langs[site] == "en" ? (en ?? q) : q)
                         let rank = { (s: String) in sites.firstIndex(of: s) ?? 0 }
                         let at = results.firstIndex { rank($0.site) > rank(site) } ?? results.count
                         withAnimation(.easeOut(duration: 0.2)) { results.insert((site, items), at: at) }
@@ -230,7 +238,7 @@ struct BrowseTab: View {
             }
             guard mine == searchToken else { return }
             searching = false
-            if results.isEmpty { note = "ما لقيت «\(q)» في المواقع" }
+            if results.isEmpty { nothing = q }
         }
     }
 
@@ -258,11 +266,17 @@ struct SourceBrowse: View {
     @State private var note: String?
     @State private var filter = BrowseFilter()
     @State private var filtering = false
+    /// the list didn't come (or its next page): said under the list with a retry, never as an alert (an alert from a
+    /// page in another tab came up over whatever was open)
+    @State private var failed: String?
+    /// the page the end of the list last asked for on its own (it asks once per page, never in a loop)
+    @State private var autoAsked = 0
 
     var body: some View {
         let shown = items.filter { filter.keeps($0) }
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            // lazy: the end of the list is made only when it scrolls into view, so it asks for more only then
+            LazyVStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 0) {
                     ForEach(["latest", "popular"], id: \.self) { k in
                         Button { kind = k; query = ""; reload() } label: {
@@ -296,26 +310,53 @@ struct SourceBrowse: View {
                     }
                 }
                 NovelGrid(look: look, items: shown) { open($0) }
-                if loading { ProgressView().frame(maxWidth: .infinity).padding() }
-                else if more {
-                    // the next page comes on its own when the end is reached (the button stays for a slow site)
-                    Button("المزيد") { page += 1; load() }.buttonStyle(JButtonStyle(look: look)).frame(maxWidth: .infinity)
-                        .onAppear { if !loading && more { page += 1; load() } }
-                }
+                listEnd
             }
+            // (how many novels the list holds, for the walk-through tests: it must not keep loading on its own)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("browse-list")
+            .accessibilityValue("\(items.count)")
             .padding(16)
             .padding(.bottom, 120)
+            .readableColumn(1000)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(Color(look.bg).ignoresSafeArea())
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .overlay { if let b = busy { BusyCard(look: look, text: b) } }
         .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) { Button("تمام", role: .cancel) {} }
-        .task { if items.isEmpty { reload() } }
+        .task { if items.isEmpty && !loading { reload() } }
         .sheet(isPresented: $filtering) { BrowseFilterSheet(look: look, filter: $filter).presentationDetents([.medium, .large]) }
     }
 
-    private func reload() { page = 1; items = []; load() }
+    /// Under the list: loading, what went wrong (with a retry), the next page, or the end.
+    @ViewBuilder private var listEnd: some View {
+        if loading {
+            ProgressView().frame(maxWidth: .infinity).padding()
+        } else if let f = failed {
+            VStack(spacing: 10) {
+                Text(f).font(JFont.body(13.5)).foregroundStyle(Color(look.ink2)).multilineTextAlignment(.center)
+                Button("حاول مرة ثانية") { failed = nil; if items.isEmpty { load() } else { next() } }.buttonStyle(JButtonStyle(look: look))
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 12)
+        } else if more {
+            // the next page comes on its own when the end scrolls into view (once per page); the button is for a slow site
+            Button("المزيد") { next() }.buttonStyle(JButtonStyle(look: look)).frame(maxWidth: .infinity)
+                .onAppear { if autoAsked < page + 1 { autoAsked = page + 1; next() } }
+        } else if items.isEmpty {
+            Text(kind == "search" ? "ما لقيت شي بهذا الاسم في \(name)" : "ما فيه روايات هنا")
+                .font(JFont.body(14)).foregroundStyle(Color(look.ink2)).frame(maxWidth: .infinity).padding(.vertical, 24)
+        }
+    }
+
+    private func reload() { page = 1; items = []; more = false; failed = nil; autoAsked = 0; load() }
+
+    private func next() {
+        guard !loading, more, failed == nil else { return }
+        page += 1
+        load()
+    }
 
     private func load() {
         loading = true
@@ -326,9 +367,22 @@ struct SourceBrowse: View {
                 // the list was switched meanwhile (another tab or search): this answer is stale
                 guard k == kind, p == page, q == query else { return }
                 let have = Set(items.compactMap { $0["url"] as? String })
-                items += r.items.filter { !have.contains(($0["url"] as? String) ?? "") }
-                more = r.more && kind != "search"
-            } catch { note = error.localizedDescription }
+                var fresh = r.items.filter { !have.contains(($0["url"] as? String) ?? "") }
+                // a search: the closest names first within each page (sites sort theirs by date or by views)
+                if k == "search" { fresh = SearchWords.ranked(fresh, for: q) }
+                items += fresh
+                // a page that brought nothing new is the end, whatever the site says (no asking forever)
+                more = r.more && !fresh.isEmpty
+            } catch {
+                guard k == kind, p == page, q == query else { return }
+                if p > 1 {
+                    // the page after the last one: some sites answer «not found» there
+                    page = p - 1
+                    if case NovelError.http(404) = error { more = false } else { failed = "ما جاء الباقي. \(error.localizedDescription)" }
+                } else {
+                    failed = error.localizedDescription
+                }
+            }
             loading = false
         }
     }
@@ -441,30 +495,67 @@ struct BrowseFilterSheet: View {
     }
 }
 
-/// Covers in a grid, three across, with their names under them.
+/// Covers in a grid, three across, with their names under them. Every cell is the same: a cover of one shape (the
+/// picture fills it and is cut to it), two lines for the name, one for the details, so the rows line up.
 struct NovelGrid: View {
     let look: JLook
     let items: [[String: Any]]
     var open: ([String: Any]) -> Void
 
+    /// each novel by its address (a cell keeps its own novel's picture when the list changes); a repeat gets a number
+    private var keyed: [(key: String, item: [String: Any])] {
+        var seen = Set<String>()
+        return items.enumerated().map { n, it in
+            var k = (it["url"] as? String) ?? ""
+            if k.isEmpty || seen.contains(k) { k += "#\(n)" }
+            seen.insert(k)
+            return (k, it)
+        }
+    }
+
     var body: some View {
         // three across on a phone, more on an iPad
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 100, maximum: 170), spacing: 12)], spacing: 16) {
-            ForEach(items.indices, id: \.self) { i in
-                let it = items[i]
-                Button { open(it) } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        RemoteImage(url: it["cover"] as? String ?? "") { Color(look.surface2) }
-                        .frame(maxWidth: .infinity)
-                        .aspectRatio(0.68, contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        Text(it["title"] as? String ?? "").font(JFont.body(13, .medium)).foregroundStyle(Color(look.ink)).lineLimit(2)
-                        if let m = it["meta"] as? String, !m.isEmpty { Text(m).font(JFont.body(11)).foregroundStyle(Color(look.ink2)).lineLimit(1) }
-                    }
-                }
-                .buttonStyle(.plain)
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 98, maximum: 160), spacing: 14, alignment: .top)], alignment: .leading, spacing: 20) {
+            ForEach(keyed, id: \.key) { k in
+                NovelCell(look: look, item: k.item) { open(k.item) }
             }
         }
+    }
+}
+
+private struct NovelCell: View {
+    let look: JLook
+    let item: [String: Any]
+    let tap: () -> Void
+
+    var body: some View {
+        let title = item["title"] as? String ?? ""
+        let meta = item["meta"] as? String ?? ""
+        Button(action: tap) {
+            VStack(alignment: .leading, spacing: 7) {
+                Color(look.surface2)
+                    .aspectRatio(0.68, contentMode: .fit)
+                    .overlay {
+                        RemoteImage(url: item["cover"] as? String ?? "") {
+                            Text(title).font(JFont.display(12, .semibold)).foregroundStyle(Color(look.ink2))
+                                .multilineTextAlignment(.center).lineLimit(4).padding(8)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Color(look.line), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(look.dark ? 0.35 : 0.12), radius: 5, y: 3)
+                Text(title).font(JFont.body(13, .medium)).foregroundStyle(Color(look.ink))
+                    .lineLimit(2).multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
+                Text(meta.isEmpty ? " " : meta).font(JFont.body(11)).foregroundStyle(Color(look.ink2)).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(.isButton)
     }
 }
 
