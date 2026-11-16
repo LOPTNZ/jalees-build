@@ -319,6 +319,11 @@ final class FlowTests: XCTestCase {
         mark("carousel-swipe")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.40)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.40)))
         sleep(2)
+        // a finger put down and moved slowly, held, as the owner does: the first move must glide, not jump a book
+        mark("carousel-slow")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.40)).press(forDuration: 0.15, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.40)),
+                                                                              withVelocity: XCUIGestureVelocity(rawValue: 260), thenHoldForDuration: 0.4)
+        sleep(2)
         mark("open-second")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.40)).tap()
         sleep(2)

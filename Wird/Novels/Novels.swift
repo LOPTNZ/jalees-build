@@ -78,6 +78,9 @@ enum NovelError: LocalizedError {
     case parse(String)
     case message(String)
 
+    /// the site said the page is not there (a list's page after its last one)
+    var notFound: Bool { if case .http(404) = self { return true }; return false }
+
     var errorDescription: String? {
         switch self {
         case .unknownSite: return "هذا الموقع مو مضاف في جليس للحين"
@@ -257,6 +260,16 @@ final class SourceEngine: NSObject, WKNavigationDelegate {
     }
 
     /// One page of a site's novels: «latest», «popular» or «search».
+    /// Whether a site has its own «most read» list (some only have one list: «الأشهر» then showed it twice).
+    func hasPopular(_ site: String) async -> Bool {
+        func url(_ kind: String) async -> String {
+            let v = try? await call("var u = SourceBrowseURL(site, kind, 1, ''); return typeof u === 'string' ? u : JSON.stringify(u)", ["site": site, "kind": kind])
+            return (v as? String) ?? ""
+        }
+        let (a, b) = (await url("latest"), await url("popular"))
+        return !b.isEmpty && a != b
+    }
+
     func browse(_ site: String, kind: String, page: Int, query: String) async throws -> (items: [[String: Any]], more: Bool) {
         // a page address, or a request (a site whose search is a POST with JSON: {url, method, json, headers})
         let v = try await call("return SourceBrowseURL(site, kind, page, q)", ["site": site, "kind": kind, "page": page, "q": query])

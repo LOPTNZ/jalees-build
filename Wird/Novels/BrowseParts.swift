@@ -209,7 +209,8 @@ final class RemoteImages {
     private let cache = NSCache<NSString, UIImage>()
     private var running: [String: Task<UIImage?, Never>] = [:]
 
-    init() { cache.countLimit = 300 }
+    /// by size, not count: three hundred covers held about 130 MB while a long list was browsed
+    init() { cache.totalCostLimit = 48 * 1024 * 1024 }
 
     func cached(_ url: String) -> UIImage? { cache.object(forKey: url as NSString) }
 
@@ -236,7 +237,7 @@ final class RemoteImages {
             guard let d = await RemoteImages.data(url) else { return nil }
             // decoded small, off the screen's thread
             let img: UIImage? = await Task.detached(priority: .utility) { Library.prepared(d, max: 400) }.value
-            if let i = img { cache.setObject(i, forKey: url as NSString) }
+            if let i = img { cache.setObject(i, forKey: url as NSString, cost: Int(i.size.width * i.size.height * i.scale * i.scale * 4)) }
             return img
         }
         running[url] = t

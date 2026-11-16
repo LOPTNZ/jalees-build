@@ -77,6 +77,18 @@ final class NovelPageModel: ObservableObject {
         watcher = NotificationCenter.default.addObserver(forName: .novelPageReload, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
+        coverIfMissing()
+    }
+
+    /// A novel in the library without a picture (its site refused the plain download it used to get): fetched again.
+    private func coverIfMissing() {
+        let site = novel.cover, id = bookID
+        guard !id.isEmpty, !site.isEmpty, Library.shared.state.book(id)?.cover == nil else { return }
+        Task { @MainActor [weak self] in
+            guard let d = await RemoteImages.data(site), let img = UIImage(data: d), Library.shared.state.book(id)?.cover == nil else { return }
+            NovelLibrary.setCover(id, img)
+            self?.reload()
+        }
     }
 
     private var watcher: NSObjectProtocol?

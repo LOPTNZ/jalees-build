@@ -106,7 +106,7 @@ struct BrowseTab: View {
         let site = s["id"] as? String ?? "", home = s["home"] as? String ?? ""
         let mine = novels.list.filter { $0.source == site && !$0.book.isEmpty }.count
         return NavigationLink {
-            SourceBrowse(look: look, site: site, name: shortName(s))
+            SourceBrowse(look: look, site: site, name: shortName(s), english: (s["lang"] as? String) == "en")
         } label: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top) {
@@ -256,6 +256,8 @@ struct SourceBrowse: View {
     let look: JLook
     let site: String
     let name: String
+    /// an English site: an Arabic search goes to it in English (Apple's translation on the phone)
+    var english = false
     @State private var kind = "latest"
     @State private var items: [[String: Any]] = []
     @State private var page = 1
@@ -271,6 +273,12 @@ struct SourceBrowse: View {
     @State private var failed: String?
     /// the page the end of the list last asked for on its own (it asks once per page, never in a loop)
     @State private var autoAsked = 0
+    /// what the site is asked: the typed words, or their English, or another order of them that found something
+    @State private var asked = ""
+    @State private var toEnglish: String?
+    @State private var saidAs: String?
+    /// the site has a «most read» list of its own (else one tab, «الكل»)
+    @State private var popular = true
 
     var body: some View {
         let shown = items.filter { filter.keeps($0) }
@@ -278,9 +286,9 @@ struct SourceBrowse: View {
             // lazy: the end of the list is made only when it scrolls into view, so it asks for more only then
             LazyVStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 0) {
-                    ForEach(["latest", "popular"], id: \.self) { k in
-                        Button { kind = k; query = ""; reload() } label: {
-                            Text(k == "latest" ? "الأحدث" : "الأشهر").font(JFont.body(15, kind == k ? .medium : .regular))
+                    ForEach(popular ? ["latest", "popular"] : ["latest"], id: \.self) { k in
+                        Button { kind = k; query = ""; asked = ""; saidAs = nil; reload() } label: {
+                            Text(k == "popular" ? "الأشهر" : popular ? "الأحدث" : "الكل").font(JFont.body(15, kind == k ? .medium : .regular))
                                 .foregroundStyle(Color(kind == k ? look.onPrimary : look.ink))
                                 .frame(maxWidth: .infinity, minHeight: 40)
                                 .background(kind == k ? Color(look.primary) : Color.clear)
@@ -293,7 +301,7 @@ struct SourceBrowse: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(look.line), lineWidth: 1))
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Color(look.ink2))
-                    TextField("ابحث في \(name)", text: $query).font(JFont.body(15)).submitLabel(.search).onSubmit { kind = "search"; reload() }
+                    TextField("ابحث في \(name)", text: $query).font(JFont.body(15)).submitLabel(.search).onSubmit { search() }
                     Button { filtering = true } label: {
                         Image(systemName: filter.isOn ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                             .font(.system(size: 20)).foregroundStyle(Color(filter.isOn ? look.primary : look.ink2))
@@ -302,6 +310,9 @@ struct SourceBrowse: View {
                 }
                 .padding(.horizontal, 12).frame(minHeight: 42)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(look.surface)))
+                if kind == "search", let a = saidAs {
+                    Label("بحثت عن «\(a)»", systemImage: "character.bubble").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
+                }
                 if filter.isOn {
                     HStack {
                         Text("يطابق \(shown.count) من \(items.count)").font(JFont.body(13)).foregroundStyle(Color(look.ink2))
@@ -326,8 +337,31 @@ struct SourceBrowse: View {
         .navigationBarTitleDisplayMode(.inline)
         .overlay { if let b = busy { BusyCard(look: look, text: b) } }
         .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) { Button("تمام", role: .cancel) {} }
-        .task { if items.isEmpty && !loading { reload() } }
+        .task {
+            if items.isEmpty && !loading { reload() }
+            popular = await SourceEngine.shared.hasPopular(site)
+        }
         .sheet(isPresented: $filtering) { BrowseFilterSheet(look: look, filter: $filter).presentationDetents([.medium, .large]) }
+        .modifier(EnglishQuery(request: $toEnglish) { en in
+            asked = (en ?? "").isEmpty ? query.trimmingCharacters(in: .whitespaces) : en!
+            saidAs = asked == query.trimmingCharacters(in: .whitespaces) ? nil : asked
+            reload()
+        })
+    }
+
+    private func search() {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { kind = "latest"; asked = ""; saidAs = nil; reload(); return }
+        kind = "search"
+        saidAs = nil
+        if english && SearchWords.hasArabic(q) {
+            // an English site: the Arabic words in English first (EnglishQuery calls reload)
+            items = []; loading = true
+            toEnglish = q
+        } else {
+            asked = q
+            reload()
+        }
     }
 
     /// Under the list: loading, what went wrong (with a retry), the next page, or the end.
@@ -360,12 +394,22 @@ struct SourceBrowse: View {
 
     private func load() {
         loading = true
-        let (k, p, q) = (kind, page, query)
+        let (k, p, q) = (kind, page, asked)
         Task {
             do {
-                let r = try await SourceEngine.shared.browse(site, kind: k, page: p, query: q)
+                var r = try await SourceEngine.shared.browse(site, kind: k, page: p, query: q)
+                // a site that matches a name's words in order: other orders of them, when nothing came
+                if k == "search", p == 1, r.items.isEmpty {
+                    for alt in SearchWords.rotations(q) {
+                        if let a = try? await SourceEngine.shared.browse(site, kind: k, page: 1, query: alt), !a.items.isEmpty {
+                            r = (a.items, false)
+                            saidAs = alt
+                            break
+                        }
+                    }
+                }
                 // the list was switched meanwhile (another tab or search): this answer is stale
-                guard k == kind, p == page, q == query else { return }
+                guard k == kind, p == page, q == asked else { return }
                 let have = Set(items.compactMap { $0["url"] as? String })
                 var fresh = r.items.filter { !have.contains(($0["url"] as? String) ?? "") }
                 // a search: the closest names first within each page (sites sort theirs by date or by views)
@@ -374,11 +418,11 @@ struct SourceBrowse: View {
                 // a page that brought nothing new is the end, whatever the site says (no asking forever)
                 more = r.more && !fresh.isEmpty
             } catch {
-                guard k == kind, p == page, q == query else { return }
+                guard k == kind, p == page, q == asked else { return }
                 if p > 1 {
                     // the page after the last one: some sites answer «not found» there
                     page = p - 1
-                    if case NovelError.http(404) = error { more = false } else { failed = "ما جاء الباقي. \(error.localizedDescription)" }
+                    if (error as? NovelError)?.notFound == true { more = false } else { failed = "ما جاء الباقي. \(error.localizedDescription)" }
                 } else {
                     failed = error.localizedDescription
                 }

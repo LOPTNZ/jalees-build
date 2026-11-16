@@ -76,7 +76,9 @@ final class Library: ObservableObject {
 
     // MARK: pictures (same files as before: Application Support/Wird/img/<id>)
 
-    private let images: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.countLimit = 120; return c }()
+    /// by size (covers are decoded up to 1200 px: 120 of them could hold several hundred MB)
+    private let images: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.countLimit = 160; c.totalCostLimit = 200 * 1024 * 1024; return c }()
+    nonisolated static func cost(_ i: UIImage) -> Int { Int(i.size.width * i.size.height * i.scale * i.scale * 4) }
 
     /// Reads and decodes covers in the background, so a cover coming into view is already ready.
     func prefetch(_ ids: [String]) {
@@ -86,10 +88,10 @@ final class Library: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             for id in todo where cache.object(forKey: id as NSString) == nil {
                 guard let d = Store.shared.imageData(id) else { continue }
-                if let i = Library.prepared(d, max: 1200) { cache.setObject(i, forKey: id as NSString) }
+                if let i = Library.prepared(d, max: 1200) { cache.setObject(i, forKey: id as NSString, cost: Library.cost(i)) }
                 // the carousel's blurred band for the same book, ready before it reaches the middle
                 let soft = ("bdb:" + id) as NSString
-                if cache.object(forKey: soft) == nil, let s = Library.soft(d) { cache.setObject(s, forKey: soft) }
+                if cache.object(forKey: soft) == nil, let s = Library.soft(d) { cache.setObject(s, forKey: soft, cost: Library.cost(s)) }
             }
         }
     }
@@ -106,7 +108,7 @@ final class Library: ObservableObject {
         let cache = images
         return await Task.detached(priority: .userInitiated) { () -> UIImage? in
             guard let d = Store.shared.imageData(id), let s = Library.soft(d) else { return nil }
-            cache.setObject(s, forKey: ("bdb:" + id) as NSString)
+            cache.setObject(s, forKey: ("bdb:" + id) as NSString, cost: Library.cost(s))
             return s
         }.value
     }
@@ -117,7 +119,7 @@ final class Library: ObservableObject {
         guard let id = id, !id.isEmpty else { return nil }
         if let i = images.object(forKey: id as NSString) { return i }
         guard let d = Store.shared.imageData(id), let i = Self.prepared(d, max: 1200) else { return nil }
-        images.setObject(i, forKey: id as NSString)
+        images.setObject(i, forKey: id as NSString, cost: Library.cost(i))
         return i
     }
 
@@ -128,7 +130,7 @@ final class Library: ObservableObject {
         let key = ("bd:" + id) as NSString
         if let i = images.object(forKey: key) { return i }
         guard let d = Store.shared.imageData(id), let i = Self.prepared(d, max: 60) else { return nil }
-        images.setObject(i, forKey: key)
+        images.setObject(i, forKey: key, cost: Library.cost(i))
         return i
     }
 
@@ -139,7 +141,7 @@ final class Library: ObservableObject {
         let key = ("bdb:" + id) as NSString
         if let i = images.object(forKey: key) { return i }
         guard let d = Store.shared.imageData(id), let i = Self.soft(d) else { return nil }
-        images.setObject(i, forKey: key)
+        images.setObject(i, forKey: key, cost: Library.cost(i))
         return i
     }
 
@@ -168,7 +170,7 @@ final class Library: ObservableObject {
         guard let d = img.jpegData(compressionQuality: quality) else { return nil }
         let id = prefix + uid()
         Store.shared.putImage(id, dataURL: "data:image/jpeg;base64," + d.base64EncodedString())
-        images.setObject(img, forKey: id as NSString)
+        images.setObject(img, forKey: id as NSString, cost: Library.cost(img))
         return id
     }
 
