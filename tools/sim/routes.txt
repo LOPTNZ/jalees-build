@@ -30,3 +30,18 @@ enphone-form 8 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute form
 enphone-reader-themes 10 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute reader-themes
 enphone-reader-reading 10 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute reader-reading
 enphone-reader-marks 10 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute reader-marks
+# an English book in the reader (left to right), and the line guide (one column, or its own column of two)
+reader-guide 10 -JaleesRoute reader-guide
+readeren 10 -JaleesRoute readeren
+readeren-guide 10 -JaleesRoute readeren-guide
+readeren-paged 10 -JaleesRoute readeren-paged
+readeren-curl 10 -JaleesRoute readeren-curl
+en-readeren-guide 10 -JaleesLang en -JaleesRoute readeren-guide
+# the iPad pass (pad-*): an English iPad with an Arabic Jalees, and the reader's two pages sideways
+pad-en-reader-reading 12 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute reader-reading
+pad-en-reader-themes 12 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute reader-themes
+pad-en-settings 10 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute settings
+pad-ar-reader-reading 12 -JaleesRoute reader-reading
+pad-land-reader-guide 14 -JaleesLandscape -JaleesRoute reader-guide
+pad-land-readeren-guide 14 -JaleesLandscape -JaleesRoute readeren-guide
+pad-land-readeren-paged 14 -JaleesLandscape -JaleesRoute readeren-paged

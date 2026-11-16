@@ -13,6 +13,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         AppDirection.apply(to: window)
         window.makeKeyAndVisible()
         self.window = window
+        if ProcessInfo.processInfo.arguments.contains("-JaleesLandscape"), #available(iOS 16.0, *) {
+            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight)) { e in NSLog("jalees landscape: %@", e.localizedDescription) }
+        }
         AppLock.shared.launched(windowScene)
         Task { @MainActor in
             NovelBridge.host = vc

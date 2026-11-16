@@ -5,11 +5,14 @@ set -uo pipefail
 [ -f build/Build/Products/Debug-iphonesimulator/Wird.app/Wird ] || { echo "the build failed: no app to install"; exit 1; }
 APP=build/Build/Products/Debug-iphonesimulator/Wird.app
 BID=com.abdullah.wird.reader
-OUT=out-sim
+OUT=${SHOTS_OUT:-out-sim}
+# SHOTS_DEVICE: another device type (the iPad pass takes only the lines whose name starts with "pad-")
+DEVTYPE=${SHOTS_DEVICE:-iPhone 13}
+DEVNAME=${SHOTS_NAME:-Jalees13}
 mkdir -p "$OUT"
 RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "import json,sys;r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('isAvailable') and x['platform']=='iOS'];r.sort(key=lambda x:[int(p) for p in x['version'].split('.')]);print(r[-1]['identifier'])")
 echo "runtime: $RUNTIME"
-DEV=$(xcrun simctl create Jalees13 "iPhone 13" "$RUNTIME" 2>/dev/null) || DEV=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print([x['udid'] for k in d for x in d[k] if 'iPhone' in x['name']][-1])")
+DEV=$(xcrun simctl create "$DEVNAME" "$DEVTYPE" "$RUNTIME" 2>/dev/null) || DEV=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print([x['udid'] for k in d for x in d[k] if 'iPhone' in x['name']][-1])")
 echo "device: $DEV"
 t0=$(date +%s)
 xcrun simctl boot "$DEV"
@@ -23,6 +26,7 @@ DATA=$(xcrun simctl get_app_container "$DEV" "$BID" data 2>/dev/null) && mkdir -
 while read -r name wait args; do
   [ -z "${name:-}" ] && continue
   case "$name" in \#*) continue;; esac
+  if [ -n "${SHOTS_DEVICE:-}" ]; then case "$name" in pad-*) ;; *) continue;; esac; else case "$name" in pad-*) continue;; esac; fi
   xcrun simctl terminate "$DEV" "$BID" > /dev/null 2>&1 || true
   # shellcheck disable=SC2086
   # the phone's language is Arabic, unless the line names another (an English phone with an Arabic Jalees)

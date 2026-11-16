@@ -35,6 +35,13 @@ jobs:
           test -f build/Build/Products/Debug-iphonesimulator/Wird.app/Wird
       - name: Open the screens and take pictures
         run: bash tools/sim/shots.sh
+      - name: Pictures on an iPad
+        if: always()
+        timeout-minutes: 15
+        run: |
+          TYPE=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys;t=[x for x in json.load(sys.stdin)['devicetypes'] if x['name'].startswith('iPad Pro 11') or x['name'].startswith('iPad Air 11')];print(t[-1]['identifier'])")
+          SHOTS_DEVICE="$TYPE" SHOTS_NAME=JaleesPadShots SHOTS_OUT=out-sim/pad bash tools/sim/shots.sh || true
+          xcrun simctl shutdown JaleesPadShots || true
       - name: A test server on a Tailscale-style address
         if: always()
         run: |
