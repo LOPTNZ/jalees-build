@@ -6,7 +6,6 @@ import UIKit
 struct LibraryView: View {
     let ns: Namespace.ID
     @ObservedObject private var lib = Library.shared
-    @ObservedObject private var center = CarouselCenter.shared
     @Environment(\.look) private var L
     @State private var sheet: LibSheet?
 
@@ -50,7 +49,7 @@ struct LibraryView: View {
             }
         }
         .background {
-            if carousel { CarouselBand(book: lib.state.book(center.id ?? "") ?? books.first) } else { Color(L.bg).ignoresSafeArea() }
+            if carousel { CarouselBand(books: books) } else { Color(L.bg).ignoresSafeArea() }
         }
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $sheet) { s in

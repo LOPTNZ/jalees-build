@@ -361,15 +361,23 @@ private struct CarouselStage: View {
         let X = [0, 0.115 * c + s1, 0.15 * c + s1 + s2, 0.18 * c + s1 + s2 + s3]
         let i = min(2, Int(a.rounded(.down))), f = a - Double(i)
         func lerp(_ x: Double, _ y: Double) -> Double { x + (y - x) * f }
-        return Place(x: CGFloat(-sg * lerp(X[i], X[i + 1])), scale: CGFloat(lerp(S[i], S[i + 1])), rot: 0, z: 100 - ab * 10,
-                     dim: lerp(D[i], D[i + 1]), op: ab < 2.2 ? 1 : max(0, (3 - ab) / 0.8))
+        // between the middle and the first place either side the covers part a little as they pass each other
+        let part = i == 0 ? 0.1 * c * sin(Double.pi * f) : 0
+        return Place(x: CGFloat(-sg * (lerp(X[i], X[i + 1]) + part)), scale: CGFloat(lerp(S[i], S[i + 1])), rot: 0, z: 100 - ab * 10,
+                     dim: lerp(D[i], D[i + 1]), op: ab < 2.2 ? Self.swap(ab) : max(0, (3 - ab) / 0.8))
+    }
+
+    /// The cover in front fades to half as it nears halfway to the next place, where the one behind comes in front at
+    /// half: the change of the front cover is a short dissolve, never a cut in one frame.
+    static func swap(_ ab: Double) -> Double {
+        ab > 0.38 && ab < 0.5 ? 1 - 0.5 * (ab - 0.38) / 0.12 : 1
     }
 
     /// side covers turned away like a shelf of records (02-library.js flowL)
     private func flowPlace(_ o: Double, W: CGFloat, tilt: Double) -> Place {
         let a = abs(o), sg: Double = o > 0 ? 1 : (o < 0 ? -1 : 0), m = min(a, 1), e = max(0, a - 1)
         return Place(x: CGFloat(-sg * Double(W) * (0.25 * m + 0.105 * e)), scale: CGFloat(1 - 0.16 * m - 0.02 * e), rot: sg * m * 58 + tilt * 0.5,
-                     z: 100 - a * 10, dim: min(0.7, 0.3 * m + 0.08 * e), op: a > 4.3 ? max(0, (4.9 - a) / 0.6) : 1)
+                     z: 100 - a * 10, dim: min(0.7, 0.3 * m + 0.08 * e), op: a > 4.3 ? max(0, (4.9 - a) / 0.6) : Self.swap(a))
     }
 }
 
@@ -396,24 +404,20 @@ struct CarouselCard: View {
     }
 }
 
-/// The soft colour behind the carousel: the middle book's cover, blurred and darkened, fading into the page.
+/// The soft colour behind the carousel: the middle book's cover, blurred and darkened, fading into the page. It moves
+/// with the covers: the books either side of the position, the next one showing through as far as the carousel has
+/// gone towards it (the whole band changing in one frame, as the middle book changed, read as a jump).
 struct CarouselBand: View {
-    let book: Book?
+    let books: [Book]
+    @ObservedObject private var car = CarouselState.shared
     @Environment(\.look) private var L
-    /// the band made after the book reached the middle (normally it is ready before: Library.prefetch)
-    @State private var made: (id: String, image: UIImage)?
 
     var body: some View {
         GeometryReader { g in
             ZStack(alignment: .top) {
                 Color(L.bg)
                 ZStack {
-                    if let b = book {
-                        Color(UIColor.hslParts(b.hslString) ?? L.primary)
-                        if let img = Library.shared.cachedSoft(b.cover) ?? (made?.id == b.cover ? made?.image : nil) {
-                            Image(uiImage: img).resizable().interpolation(.medium).scaledToFill().opacity(0.9)
-                        }
-                    }
+                    ForEach(layers, id: \.book.id) { l in BandLayer(book: l.book).opacity(l.op) }
                     Color.black.opacity(0.42)
                 }
                 .frame(width: g.size.width, height: g.size.height * 0.62)
@@ -421,16 +425,40 @@ struct CarouselBand: View {
                 // fades into the page's colour (the same look as a mask over it, without a mask's extra pass per frame)
                 .overlay(LinearGradient(stops: [.init(color: Color(L.bg).opacity(0), location: 0.62), .init(color: Color(L.bg), location: 1)],
                                         startPoint: .top, endPoint: .bottom))
-                .id(book?.id)
-                .transition(.opacity)
             }
-            .animation(.easeInOut(duration: 0.35), value: book?.id)
-            .animation(.easeInOut(duration: 0.25), value: made?.id)
         }
         .ignoresSafeArea()
-        .task(id: book?.cover) {
-            guard let c = book?.cover, !c.isEmpty, Library.shared.cachedSoft(c) == nil else { return }
-            if let i = await Library.shared.softAsync(c) { made = (c, i) }
+    }
+
+    /// the book at or before the position, whole, and the one after it over it as far as the position has gone
+    private var layers: [(book: Book, op: Double)] {
+        guard !car.ids.isEmpty else { if let b = books.first { return [(book: b, op: 1)] } else { return [] } }
+        let lo = car.pos.rounded(.down), f = car.pos - lo
+        let a = car.index(lo), b = car.index(lo + 1)
+        var out: [(book: Book, op: Double)] = []
+        if let x = books.first(where: { $0.id == car.ids[a] }) { out.append((book: x, op: 1)) }
+        if b != a, f > 0.002, let y = books.first(where: { $0.id == car.ids[b] }) { out.append((book: y, op: f)) }
+        return out
+    }
+}
+
+/// One book's band: its colour at once, its blurred cover over it (ready beforehand: Library.prefetch).
+private struct BandLayer: View {
+    let book: Book
+    @Environment(\.look) private var L
+    /// the band made after the book came near (normally it is ready before)
+    @State private var made: (id: String, image: UIImage)?
+
+    var body: some View {
+        ZStack {
+            Color(UIColor.hslParts(book.hslString) ?? L.primary)
+            if let img = Library.shared.cachedSoft(book.cover) ?? (made?.id == book.cover ? made?.image : nil) {
+                Image(uiImage: img).resizable().interpolation(.medium).scaledToFill().opacity(0.9).transition(.opacity)
+            }
+        }
+        .task(id: book.cover) {
+            guard let c = book.cover, Library.shared.cachedSoft(c) == nil else { return }
+            if let i = await Library.shared.softAsync(c) { withAnimation(.easeInOut(duration: 0.25)) { made = (c, i) } }
         }
     }
 }

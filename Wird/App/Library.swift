@@ -83,12 +83,13 @@ final class Library: ObservableObject {
     /// Reads and decodes covers in the background, so a cover coming into view is already ready.
     func prefetch(_ ids: [String]) {
         let cache = images
-        let todo = ids.filter { !$0.isEmpty && cache.object(forKey: $0 as NSString) == nil }
+        // a cover kept while its band was let go (or the other way round) is made again too
+        let todo = ids.filter { !$0.isEmpty && (cache.object(forKey: $0 as NSString) == nil || cache.object(forKey: ("bdb:" + $0) as NSString) == nil) }
         guard !todo.isEmpty else { return }
         DispatchQueue.global(qos: .userInitiated).async {
-            for id in todo where cache.object(forKey: id as NSString) == nil {
+            for id in todo {
                 guard let d = Store.shared.imageData(id) else { continue }
-                if let i = Library.prepared(d, max: 1200) { cache.setObject(i, forKey: id as NSString, cost: Library.cost(i)) }
+                if cache.object(forKey: id as NSString) == nil, let i = Library.prepared(d, max: 1200) { cache.setObject(i, forKey: id as NSString, cost: Library.cost(i)) }
                 // the carousel's blurred band for the same book, ready before it reaches the middle
                 let soft = ("bdb:" + id) as NSString
                 if cache.object(forKey: soft) == nil, let s = Library.soft(d) { cache.setObject(s, forKey: soft, cost: Library.cost(s)) }
