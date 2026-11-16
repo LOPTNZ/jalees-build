@@ -185,7 +185,8 @@ final class FlowTests: XCTestCase {
                 if tap(buttonStarting("بطاقة الاقتباس"), "quote card") {
                     sleep(2)
                     shot("ui22b-quote-card")
-                    app.swipeDown(velocity: .fast)
+                    // its close button (on an iPad the card is a sheet in the middle: a swipe there moves the picture)
+                    if button("إغلاق").exists { button("إغلاق").tap() } else { app.swipeDown(velocity: .fast) }
                     sleep(1)
                 }
             }
@@ -568,6 +569,13 @@ final class FlowTests: XCTestCase {
         guard tap(wtr, "WTR-LAB") else { return }
         sleep(4)
         shot("ui69-wtrlab")
+        // a short page (ten novels) once froze the list: it must answer, and ask for no more than fills the screen
+        let list = app.otherElements["browse-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "WTR-LAB's list does not answer")
+        let n0 = Int((list.value as? String) ?? "") ?? 0
+        sleep(10)
+        let n1 = Int((list.value as? String) ?? "") ?? 0
+        XCTAssertLessThanOrEqual(n1, max(n0, 10) + 30, "WTR-LAB's list kept loading by itself: \(n0) → \(n1)")
         let field = app.textFields["ابحث في WTR-LAB"].firstMatch
         // the field reads as not hittable inside its row: tapped where it is
         if field.waitForExistence(timeout: 6) {

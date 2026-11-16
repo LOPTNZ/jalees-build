@@ -25,6 +25,8 @@ struct BrowseTab: View {
     /// a search that found nothing, said in the page (an alert came up over whatever tab was open by then)
     @State private var nothing: String?
     @ObservedObject private var novels = Novels.shared
+    /// the simulator check's route `site-<id>`: that site's list, opened as a tap on its card does
+    @State private var debugSite: String?
 
     var body: some View {
         ScrollView {
@@ -84,7 +86,15 @@ struct BrowseTab: View {
         .task { await loadSources(); await SiteRepo.updateIfDue() }
         .sheet(isPresented: $repo, onDismiss: { Task { try? await Task.sleep(nanoseconds: 800_000_000); await loadSources() } }) { SiteRepoSheet(look: look) }
         .modifier(EnglishQuery(request: $toEnglish) { en in run(asked, english: en) })
+        .onReceive(NotificationCenter.default.publisher(for: .browseSite)) { n in debugSite = n.object as? String }
+        .navigationDestination(isPresented: Binding(get: { debugSite != nil && debugSource != nil }, set: { if !$0 { debugSite = nil } })) {
+            if let s = debugSource {
+                SourceBrowse(look: look, site: debugSite ?? "", name: shortName(s), english: (s["lang"] as? String) == "en")
+            }
+        }
     }
+
+    private var debugSource: [String: Any]? { sources.first { ($0["id"] as? String) == debugSite } }
 
     // MARK: the sites
 
@@ -279,12 +289,15 @@ struct SourceBrowse: View {
     @State private var saidAs: String?
     /// the site has a «most read» list of its own (else one tab, «الكل»)
     @State private var popular = true
+    /// the list's visible height: the next page is asked for when the end comes within reach of it
+    @State private var viewH: CGFloat = 800
 
     var body: some View {
         let shown = items.filter { filter.keeps($0) }
         ScrollView {
-            // lazy: the end of the list is made only when it scrolls into view, so it asks for more only then
-            LazyVStack(alignment: .leading, spacing: 14) {
+            // a plain stack around the (lazy) grid: a lazy stack around a lazy grid froze the app on a site with short
+            // pages (WTR-LAB: ten novels), its end just under the screen. The end is found from the scroll position.
+            VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 0) {
                     ForEach(popular ? ["latest", "popular"] : ["latest"], id: \.self) { k in
                         Button { kind = k; query = ""; asked = ""; saidAs = nil; reload() } label: {
@@ -328,9 +341,15 @@ struct SourceBrowse: View {
             .accessibilityIdentifier("browse-list")
             .accessibilityValue("\(items.count)")
             .padding(16)
+            .background(GeometryReader { g in Color.clear.preference(key: ListBottom.self, value: g.frame(in: .named("browse")).maxY) })
             .padding(.bottom, 120)
             .readableColumn(1000)
         }
+        .coordinateSpace(name: "browse")
+        .background(GeometryReader { g in Color.clear.preference(key: ListHeight.self, value: g.size.height) })
+        .onPreferenceChange(ListHeight.self) { h in if h > 0 { viewH = h } }
+        // the next page when the end of the list comes within half a screen of view (once per page)
+        .onPreferenceChange(ListBottom.self) { bottom in if bottom < viewH * 1.5 { nearEnd() } }
         .scrollDismissesKeyboard(.interactively)
         .background(Color(look.bg).ignoresSafeArea())
         .navigationTitle(name)
@@ -375,9 +394,8 @@ struct SourceBrowse: View {
             }
             .frame(maxWidth: .infinity).padding(.vertical, 12)
         } else if more {
-            // the next page comes on its own when the end scrolls into view (once per page); the button is for a slow site
+            // the next page comes on its own as the end nears (nearEnd); the button is for a slow site
             Button("المزيد") { next() }.buttonStyle(JButtonStyle(look: look)).frame(maxWidth: .infinity)
-                .onAppear { if autoAsked < page + 1 { autoAsked = page + 1; next() } }
         } else if items.isEmpty {
             Text(kind == "search" ? "ما لقيت شي بهذا الاسم في \(name)" : "ما فيه روايات هنا")
                 .font(JFont.body(14)).foregroundStyle(Color(look.ink2)).frame(maxWidth: .infinity).padding(.vertical, 24)
@@ -385,6 +403,14 @@ struct SourceBrowse: View {
     }
 
     private func reload() { page = 1; items = []; more = false; failed = nil; autoAsked = 0; load() }
+
+    /// The end of the list is near: its next page, once (a page that brings the end near again asks for one more,
+    /// so a short page fills the screen; nothing is asked while a page is on its way or one failed).
+    private func nearEnd() {
+        guard more, !loading, failed == nil, !items.isEmpty, autoAsked < page + 1 else { return }
+        autoAsked = page + 1
+        next()
+    }
 
     private func next() {
         guard !loading, more, failed == nil else { return }
@@ -417,8 +443,10 @@ struct SourceBrowse: View {
                 items += fresh
                 // a page that brought nothing new is the end, whatever the site says (no asking forever)
                 more = r.more && !fresh.isEmpty
+                NSLog("jalees browse: %@ %@ p%ld +%ld = %ld more %@", site, k, p, fresh.count, items.count, more ? "yes" : "no")
             } catch {
                 guard k == kind, p == page, q == asked else { return }
+                NSLog("jalees browse: %@ %@ p%ld failed %@", site, k, p, error.localizedDescription)
                 if p > 1 {
                     // the page after the last one: some sites answer «not found» there
                     page = p - 1
@@ -918,4 +946,20 @@ struct UpdatesTab: View {
         f.dateFormat = "d MMMM"
         return f.string(from: d)
     }
+}
+
+/// Where the bottom of a site's list is, in its scroll view (SourceBrowse asks for the next page as it nears).
+private struct ListBottom: PreferenceKey {
+    static var defaultValue: CGFloat = .infinity
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private struct ListHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+extension Notification.Name {
+    /// for the simulator check: a site's list, opened from تصفّح
+    static let browseSite = Notification.Name("jalees.browseSite")
 }

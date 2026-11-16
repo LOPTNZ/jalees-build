@@ -28,6 +28,13 @@ while read -r name wait args; do
   xcrun simctl launch "$DEV" "$BID" -AppleLanguages "(ar)" -AppleLocale ar_SA $args > /dev/null || echo "launch failed: $name"
   sleep "$wait"
   xcrun simctl io "$DEV" screenshot --type=jpeg "$OUT/$name.jpg" > /dev/null 2>&1 && echo "shot: $name"
+  # a site's list: where the app's threads are (a frozen app shows its main thread busy, not waiting)
+  case "$name" in site-*)
+    pid=$(pgrep -f "Wird.app/Wird" | head -1)
+    [ -n "$pid" ] && sample "$pid" 3 -file "$OUT/$name.sample.txt" > /dev/null 2>&1 && echo "sampled: $name"
+    sleep 5
+    xcrun simctl io "$DEV" screenshot --type=jpeg "$OUT/$name-later.jpg" > /dev/null 2>&1 || true;;
+  esac
 done < tools/sim/routes.txt
 # crash reports of the app, if any (the simulator's apps write them on the Mac)
 mkdir -p "$OUT/crash"

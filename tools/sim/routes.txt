@@ -20,3 +20,6 @@ live-layl 30 -JaleesRoute live https://layl.io/novels/necromancer-thief 5
 live-wetriedtls 30 -JaleesRoute live https://wetriedtls.com/series/a-regressors-tale-of-cultivation 1
 live-wtrlab 30 -JaleesRoute live https://wtr-lab.com/en/novel/114527/soul-land-koi-fish-martial-soul-luck-based-soul-master 1
 live-generic 30 -JaleesRoute live https://novelfull.com/shadow-slave.html 1
+# a site's list: the app is sampled there too (site-*.sample.txt), so a freeze shows where it is
+site-wtrlab 25 -JaleesRoute site-wtrlab
+site-kolnovel 20 -JaleesRoute site-kolnovel

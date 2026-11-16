@@ -50,6 +50,8 @@ jobs:
           TEST_RUNNER_SHOTS="$PWD/out-sim/ui" xcodebuild test -project Wird.xcodeproj -scheme Wird             -destination 'platform=iOS Simulator,name=Jalees13' -derivedDataPath build             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=""             2>&1 | tee test.log | grep -E "error:|Test Case .*(passed|failed)|: error|XCTAssert|not found|TEST (SUCCEEDED|FAILED)" || true
           kill -INT $REC 2>/dev/null; wait $REC 2>/dev/null || true
           swift tools/sim/frames.swift walk.mp4 out-sim/rec-start out-sim/ui/marks.txt out-sim/frames || true
+          # what the sites' lists asked for during the walk (a list must not keep loading by itself)
+          xcrun simctl spawn Jalees13 log show --last 60m --predicate 'process == "Wird"' --style compact 2>/dev/null | grep -i "jalees browse" | tail -300 > out-sim/ui/browse.log || true
       - name: Walk through on an iPad
         if: always()
         timeout-minutes: 22

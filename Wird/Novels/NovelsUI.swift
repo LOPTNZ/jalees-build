@@ -1,7 +1,8 @@
 import UIKit
 
 /// Screens for pictures and checks on the simulator. Launch with `-JaleesRoute <route>`:
-/// `tab-<tab>` (a tab: library, notebook, progress, settings, browse, updates, downloads, history), `page` (the
+/// `tab-<tab>` (a tab: library, notebook, progress, settings, browse, updates, downloads, history), `site-<id>` (a
+/// site's list in تصفّح), `page` (the
 /// built-in sample novel's page), `reader` and `reader-<what>` (see ReaderViewController.debug), `epub` / `epub-read`,
 /// and `live <series url> <chapter number>` (adds a real novel and opens that chapter).
 @MainActor
@@ -118,6 +119,11 @@ enum DebugRoute {
                 let n = Int(route.split(separator: "-").last ?? "") ?? -1
                 let id = n >= 0 && n < st.books.count ? st.books[n].id : (st.lastBookId() ?? "")
                 if let b = st.book(id) { try? await Task.sleep(nanoseconds: 600_000_000); OpenBook.open(b) }
+            } else if route.hasPrefix("site-") {
+                // a site's list in تصفّح (site-wtrlab), as a tap on its card opens it
+                Router.shared.select(.browse)
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                NotificationCenter.default.post(name: .browseSite, object: String(route.dropFirst(5)))
             } else if route == "page" {
                 Router.shared.select(.browse)
                 NovelBridge.showPage(novel: sample.id, book: book, openIndex: nil)
