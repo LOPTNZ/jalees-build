@@ -23,3 +23,10 @@ live-generic 30 -JaleesRoute live https://novelfull.com/shadow-slave.html 1
 # a site's list: the app is sampled there too (site-*.sample.txt), so a freeze shows where it is
 site-wtrlab 25 -JaleesRoute site-wtrlab
 site-kolnovel 20 -JaleesRoute site-kolnovel
+# an English phone with an Arabic Jalees (the owner's iPad): nothing may be mirrored
+enphone-library 8 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute tab-library
+enphone-settings 8 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute settings
+enphone-form 8 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute form
+enphone-reader-themes 10 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute reader-themes
+enphone-reader-reading 10 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute reader-reading
+enphone-reader-marks 10 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute reader-marks

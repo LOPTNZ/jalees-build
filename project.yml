@@ -55,10 +55,11 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         UIRequiresFullScreen: true
         UIViewControllerBasedStatusBarAppearance: true
-        # your own server answers over plain http inside Tailscale (100.x addresses), and some novel sites are http
+        # your own server answers over plain http inside Tailscale (100.x addresses), and some novel sites are http.
+        # Only NSAllowsArbitraryLoads: with NSAllowsLocalNetworking beside it iOS ignores it, and a Tailscale address
+        # is not "local", so the server was refused (-1022) while Safari opened it
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-          NSAllowsLocalNetworking: true
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
           UISceneConfigurations:

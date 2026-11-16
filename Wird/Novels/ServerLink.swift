@@ -76,6 +76,9 @@ enum ServerLink {
         } catch {
             let ns = error as NSError
             let detail = "(\(ns.code): \(ns.localizedDescription))"
+            if ns.code == NSURLErrorAppTransportSecurityRequiresSecureConnection {
+                return "iOS رفض اتصال جليس بعنوان http \(detail).\nهذا خلل في جليس نفسه مو في السيرفر: صوّر لي هذي الرسالة."
+            }
             if "\(ns.userInfo)".range(of: "Local network prohibited", options: .caseInsensitive) != nil {
                 return "iOS منع جليس يوصل للشبكة \(detail).\nالإعدادات ← الخصوصية والأمان ← الشبكة المحلية ← فعّل جليس."
             }

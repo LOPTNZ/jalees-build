@@ -25,7 +25,11 @@ while read -r name wait args; do
   case "$name" in \#*) continue;; esac
   xcrun simctl terminate "$DEV" "$BID" > /dev/null 2>&1 || true
   # shellcheck disable=SC2086
-  xcrun simctl launch "$DEV" "$BID" -AppleLanguages "(ar)" -AppleLocale ar_SA $args > /dev/null || echo "launch failed: $name"
+  # the phone's language is Arabic, unless the line names another (an English phone with an Arabic Jalees)
+  case " $args " in
+    *" -AppleLanguages "*) xcrun simctl launch "$DEV" "$BID" $args > /dev/null || echo "launch failed: $name";;
+    *) xcrun simctl launch "$DEV" "$BID" -AppleLanguages "(ar)" -AppleLocale ar_SA $args > /dev/null || echo "launch failed: $name";;
+  esac
   sleep "$wait"
   xcrun simctl io "$DEV" screenshot --type=jpeg "$OUT/$name.jpg" > /dev/null 2>&1 && echo "shot: $name"
   # a site's list: where the app's threads are (a frozen app shows its main thread busy, not waiting)

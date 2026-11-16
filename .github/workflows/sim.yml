@@ -35,8 +35,17 @@ jobs:
           test -f build/Build/Products/Debug-iphonesimulator/Wird.app/Wird
       - name: Open the screens and take pictures
         run: bash tools/sim/shots.sh
-      - name: Walk through the app (UI tests)
+      - name: A test server on a Tailscale-style address
         if: always()
+        run: |
+          # the owner's server is plain http on 100.x (Tailscale): WirdTests/NetworkTests reaches this one from inside the app
+          sudo ifconfig lo0 alias 100.64.0.1 up || true
+          mkdir -p "$RUNNER_TEMP/srv" && printf '{"ok":true,"novels":0,"checking":false}' > "$RUNNER_TEMP/srv/health"
+          ( cd "$RUNNER_TEMP/srv" && nohup python3 -m http.server 8790 --bind 100.64.0.1 > "$RUNNER_TEMP/srv.log" 2>&1 & )
+          sleep 1; curl -s -m 5 http://100.64.0.1:8790/health || echo "test server not reachable"
+      - name: Walk through the app (UI tests)
+        # a commit named "… quick" (QUICK=1 bash tools/push_build.sh) stops after the pictures
+        if: always() && !contains(github.event.head_commit.message, 'quick')
         timeout-minutes: 40
         run: |
           mkdir -p out-sim/ui
@@ -58,7 +67,7 @@ jobs:
           # what the sites' lists asked for during the walk (a list must not keep loading by itself)
           xcrun simctl spawn Jalees13 log show --last 60m --predicate 'process == "Wird"' --style compact 2>/dev/null | grep -i "jalees browse" | tail -300 > out-sim/ui/browse.log || true
       - name: Walk through on an iPad
-        if: always()
+        if: always() && !contains(github.event.head_commit.message, 'quick')
         timeout-minutes: 22
         run: |
           mkdir -p out-sim/ipad
