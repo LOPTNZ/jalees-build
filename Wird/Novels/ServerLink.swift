@@ -121,7 +121,7 @@ enum ServerLink {
     }
 
     /// 100.64.0.0/10: the addresses Tailscale gives.
-    static func isTailscale(_ host: String) -> Bool {
+    nonisolated static func isTailscale(_ host: String) -> Bool {
         let p = host.split(separator: ".").compactMap { Int($0) }
         return p.count == 4 && p[0] == 100 && (64...127).contains(p[1])
     }

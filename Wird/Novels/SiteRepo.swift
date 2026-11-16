@@ -59,8 +59,11 @@ enum SiteRepo {
     /// Reads the index and downloads every site that is new or has a higher version. Returns what changed.
     @discardableResult
     static func update() async throws -> (added: [String], updated: [String]) {
-        // https only: a site file runs inside the engine page, so it must not travel over a line anyone can change
-        guard let base = URL(string: url), base.scheme?.lowercased() == "https", let host = base.host?.lowercased() else { throw Failure.badLink }
+        // https only (a site file runs inside the engine page, so it must not travel over a line anyone can change),
+        // except your own server inside Tailscale, whose line is already encrypted end to end
+        guard let base = URL(string: url), let host = base.host?.lowercased(),
+              base.scheme?.lowercased() == "https" || (base.scheme?.lowercased() == "http" && ServerLink.isTailscale(host)) else { throw Failure.badLink }
+        let scheme = base.scheme?.lowercased() ?? "https"
         let (d, r) = try await URLSession.shared.data(from: base)
         if let code = (r as? HTTPURLResponse)?.statusCode, code != 200 { throw Failure.http(code) }
         guard let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let list = o["sites"] as? [[String: Any]] else { throw Failure.badIndex }
@@ -72,7 +75,7 @@ enum SiteRepo {
             let version = (s["version"] as? Int) ?? Int((s["version"] as? String) ?? "") ?? 1
             if let h = have[id], h.version >= version { continue }
             // a file on another host than the index's is not taken
-            guard fileURL.scheme?.lowercased() == "https", fileURL.host?.lowercased() == host else { continue }
+            guard fileURL.scheme?.lowercased() == scheme, fileURL.host?.lowercased() == host else { continue }
             guard let got = try? await URLSession.shared.data(from: fileURL), (got.1 as? HTTPURLResponse)?.statusCode == 200,
                   got.0.count < 600_000, let text = String(data: got.0, encoding: .utf8), text.contains("Sources") else { continue }
             // an index that lists a sha256 for the file must be matched by it (old indexes without one still work)

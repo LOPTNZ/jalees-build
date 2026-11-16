@@ -229,7 +229,11 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
 
     /// Asks the library (where the book's highlights and notebook live), by the names the web library had.
     func library(_ body: String, _ args: [String: Any] = [:], done: ((Any?) -> Void)? = nil) {
-        done?(NovelLibrary.call(body, args))
+        // the call first, then the answer: `done?(NovelLibrary.call(…))` skipped the call itself when nobody waited for
+        // an answer (optional chaining does not evaluate the argument), so a highlight, its removal and the reading
+        // session were never saved
+        let r = NovelLibrary.call(body, args)
+        done?(r)
     }
 
     private func applyTheme() {

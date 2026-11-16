@@ -26,7 +26,8 @@ struct NotebookView: View {
     @State private var holdDone = false
     @State private var lastY: CGFloat = 0
 
-    private static let tabs: [(String, String)] = [("quote", "اقتباسات"), ("thought", "أفكار"), ("word", "كلمات"), ("char", "شخصيات"), ("mark", "تظليلات")]
+    /// the highlights next to the quotes: both are passages kept from books (and on screen without scrolling the row)
+    private static let tabs: [(String, String)] = [("quote", "اقتباسات"), ("mark", "تظليلات"), ("thought", "أفكار"), ("word", "كلمات"), ("char", "شخصيات")]
 
     var body: some View {
         ScrollViewReader { proxy in

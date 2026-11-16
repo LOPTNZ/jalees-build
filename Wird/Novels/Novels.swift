@@ -751,7 +751,8 @@ final class Novels: ObservableObject {
 
     /// The chapter's text: the saved copy when there is one, otherwise from the site (and then saved).
     func text(_ ch: ChapterRow, source: String, refresh: Bool = false) async throws -> ChapterText {
-        if !refresh, let t = stored(ch.id) { return t }
+        // (the built-in sample is made fresh each time: its English copy for the simulator's English-book checks)
+        if !refresh, source != "sample", let t = stored(ch.id) { return t }
         if let running = loading[ch.id] { return try await running.value }
         let task = Task<ChapterText, Error> { [db] in
             let t: ChapterText

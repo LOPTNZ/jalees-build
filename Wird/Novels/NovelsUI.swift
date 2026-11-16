@@ -134,6 +134,13 @@ enum DebugRoute {
                 let parts = route.split(separator: "-")
                 if parts.count > 1, let h = NovelBridge.host {
                     try? await Task.sleep(nanoseconds: 2_500_000_000)
+                    // a cold start (an iPad turned sideways) can take longer to bring the reader up: wait for it
+                    var waited = 0
+                    while !(NovelBridge.top(h) is ReaderViewController) && waited < 20 {
+                        try? await Task.sleep(nanoseconds: 400_000_000)
+                        waited += 1
+                    }
+                    try? await Task.sleep(nanoseconds: 600_000_000)
                     (NovelBridge.top(h) as? ReaderViewController)?.debug(String(parts[1]))
                 }
             }

@@ -69,6 +69,23 @@ final class FlowTests: XCTestCase {
 
     private func tab(_ name: String) { tap(button(name), "tab " + name); sleep(1) }
 
+    /// A chip in a row that scrolls sideways (the notebook's lists): the row is dragged until the chip is on screen.
+    private func chip(_ label: String) -> XCUIElement {
+        let e = buttonStarting(label)
+        guard e.waitForExistence(timeout: 4) else { return e }
+        var n = 0
+        while !e.isHittable && n < 6 {
+            let y = max(0.05, min(0.95, e.frame.midY / app.frame.height))
+            // off the left edge: drag the row to the right; off the right edge: to the left
+            let left = e.frame.midX < app.frame.midX
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.3 : 0.7, dy: y))
+            from.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.8 : 0.2, dy: y)))
+            sleep(1)
+            n += 1
+        }
+        return e
+    }
+
     /// Scrolls until the element sits clear of the tab bar (a tap under it would land on a tab).
     private func reveal(_ e: XCUIElement) {
         var n = 0
@@ -191,11 +208,11 @@ final class FlowTests: XCTestCase {
                 }
             }
         }
-        tap(buttonStarting("أفكار"), "thoughts list")
+        tap(chip("أفكار"), "thoughts list")
         shot("ui23-thoughts")
-        tap(buttonStarting("شخصيات"), "characters")
+        tap(chip("شخصيات"), "characters")
         shot("ui24-characters")
-        tap(buttonStarting("معلومات"), "highlights")
+        tap(chip("تظليلات"), "highlights")
         shot("ui25-highlights")
     }
 
@@ -670,7 +687,7 @@ final class FlowTests: XCTestCase {
     /// The word review: its start (ways to review), a card, and back out.
     func test17WordReview() {
         tab("دفتري")
-        tap(buttonStarting("كلمات"), "words")
+        tap(chip("كلمات"), "words")
         sleep(1)
         guard tap(buttonStarting("اختبار"), "review") else { return }
         sleep(1)
@@ -721,7 +738,7 @@ final class FlowTests: XCTestCase {
         tap(button("إغلاق"), "close the reader")
         sleep(2)
         tab("دفتري")
-        tap(buttonStarting("كلمات"), "words")
+        tap(chip("كلمات"), "words")
         sleep(1)
         let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "حارس المكتبة")).firstMatch
         guard tap(row, "the word from the sample novel") else { return }
@@ -802,9 +819,9 @@ final class FlowTests: XCTestCase {
 
         // and in the notebook, the same highlight with its note
         tab("دفتري")
-        tap(buttonStarting("تظليلات"), "highlights")
+        tap(chip("تظليلات"), "highlights")
         sleep(1)
-        tap(buttonStarting("ملاحظات"), "notes")
+        tap(chip("ملاحظات"), "notes")
         sleep(1)
         shot("ui87-notebook-notes")
         let inNotebook = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", note)).firstMatch
