@@ -47,8 +47,13 @@ jobs:
           REC=$!
           for i in $(seq 1 60); do grep -q "Recording started" rec.log && break; sleep 0.1; done
           python3 -c 'import time; print(time.time())' > out-sim/rec-start
+          mkdir -p out-sim/ui/samples
+          # the app sampled every 30 s: a long freeze shows what its threads were doing
+          ( while true; do sleep 30; for pid in $(pgrep -f "Wird.app/Wird"); do sample "$pid" 1 -file "out-sim/ui/samples/$(date +%H%M%S)-$pid.txt" > /dev/null 2>&1; done; done ) &
+          SAMPLER=$!
           TEST_RUNNER_SHOTS="$PWD/out-sim/ui" xcodebuild test -project Wird.xcodeproj -scheme Wird             -destination 'platform=iOS Simulator,name=Jalees13' -derivedDataPath build             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=""             2>&1 | tee test.log | grep -E "error:|Test Case .*(passed|failed)|: error|XCTAssert|not found|TEST (SUCCEEDED|FAILED)" || true
           kill -INT $REC 2>/dev/null; wait $REC 2>/dev/null || true
+          kill $SAMPLER 2>/dev/null || true
           swift tools/sim/frames.swift walk.mp4 out-sim/rec-start out-sim/ui/marks.txt out-sim/frames || true
           # what the sites' lists asked for during the walk (a list must not keep loading by itself)
           xcrun simctl spawn Jalees13 log show --last 60m --predicate 'process == "Wird"' --style compact 2>/dev/null | grep -i "jalees browse" | tail -300 > out-sim/ui/browse.log || true
@@ -61,7 +66,11 @@ jobs:
           TYPE=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys;t=[x for x in json.load(sys.stdin)['devicetypes'] if x['name'].startswith('iPad Pro 11') or x['name'].startswith('iPad Air 11')];print(t[-1]['identifier'])")
           echo "ipad: $TYPE on $RT"
           xcrun simctl create JaleesPad "$TYPE" "$RT" || true
+          mkdir -p out-sim/ipad/samples
+          ( while true; do sleep 30; for pid in $(pgrep -f "Wird.app/Wird"); do sample "$pid" 1 -file "out-sim/ipad/samples/$(date +%H%M%S)-$pid.txt" > /dev/null 2>&1; done; done ) &
+          SAMPLER=$!
           TEST_RUNNER_SHOTS="$PWD/out-sim/ipad" xcodebuild test -project Wird.xcodeproj -scheme Wird             -destination 'platform=iOS Simulator,name=JaleesPad' -derivedDataPath build             -only-testing:WirdUITests/FlowTests/test01Tabs -only-testing:WirdUITests/FlowTests/test03BookPage             -only-testing:WirdUITests/FlowTests/test05NotebookQuote -only-testing:WirdUITests/FlowTests/test10ReaderChapters             -only-testing:WirdUITests/FlowTests/test14BrowseSites             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=""             2>&1 | tee test-ipad.log | grep -E "error:|Test Case .*(passed|failed)|: error|XCTAssert|not found|TEST (SUCCEEDED|FAILED)" || true
+          kill $SAMPLER 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

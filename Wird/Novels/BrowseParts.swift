@@ -222,7 +222,9 @@ final class RemoteImages {
             if attempt > 0 { try? await Task.sleep(nanoseconds: 700_000_000) }
             var r = URLRequest(url: u, timeoutInterval: 20)
             r.setValue(Fetcher.ua, forHTTPHeaderField: "User-Agent")
-            r.setValue("image/avif,image/webp,image/png,image/jpeg,*/*;q=0.8", forHTTPHeaderField: "Accept")
+            // no AVIF: image servers that are offered it send it, and its decoder (no hardware for it before the
+            // iPhone 15 Pro) is slow and once held the whole app (Library.decodeQueue)
+            r.setValue("image/webp,image/jpeg,image/png,*/*;q=0.5", forHTTPHeaderField: "Accept")
             if let host = u.host { r.setValue("https://" + host.split(separator: ".").suffix(2).joined(separator: ".") + "/", forHTTPHeaderField: "Referer") }
             guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200, !d.isEmpty else { continue }
             return d
@@ -235,8 +237,8 @@ final class RemoteImages {
         if let t = running[url] { return await t.value }
         let t = Task<UIImage?, Never> { [cache] in
             guard let d = await RemoteImages.data(url) else { return nil }
-            // decoded small, off the screen's thread
-            let img: UIImage? = await Task.detached(priority: .utility) { Library.prepared(d, max: 400) }.value
+            // decoded small, off the screen's thread and off the shared pool (Library.decodeQueue)
+            let img: UIImage? = await Library.decoded(d, max: 400)
             if let i = img { cache.setObject(i, forKey: url as NSString, cost: Int(i.size.width * i.size.height * i.scale * i.scale * 4)) }
             return img
         }

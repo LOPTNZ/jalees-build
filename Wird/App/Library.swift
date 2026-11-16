@@ -103,15 +103,29 @@ final class Library: ObservableObject {
         return images.object(forKey: ("bdb:" + id) as NSString)
     }
 
-    /// The blurred band made away from the screen's thread.
+    /// The blurred band made away from the screen's thread (on the decode queue).
     func softAsync(_ id: String) async -> UIImage? {
         if let i = cachedSoft(id) { return i }
         let cache = images
-        return await Task.detached(priority: .userInitiated) { () -> UIImage? in
-            guard let d = Store.shared.imageData(id), let s = Library.soft(d) else { return nil }
-            cache.setObject(s, forKey: ("bdb:" + id) as NSString, cost: Library.cost(s))
-            return s
-        }.value
+        return await withCheckedContinuation { (c: CheckedContinuation<UIImage?, Never>) in
+            Library.decodeQueue.async {
+                guard let d = Store.shared.imageData(id), let s = Library.soft(d) else { c.resume(returning: nil); return }
+                cache.setObject(s, forKey: ("bdb:" + id) as NSString, cost: Library.cost(s))
+                c.resume(returning: s)
+            }
+        }
+    }
+
+    /// Pictures are decoded on a queue of their own, one at a time, never on the shared pool that async work runs on.
+    /// A site's AVIF covers, decoded there side by side, held every thread of that pool inside Apple's AV1 decoder,
+    /// which then waited for a thread that never came: nothing async ran again, and the app stopped answering.
+    nonisolated static let decodeQueue = DispatchQueue(label: "jalees.decode", qos: .userInitiated)
+
+    /// A picture decoded (and made no bigger than `side`) on the decode queue.
+    nonisolated static func decoded(_ d: Data, max side: CGFloat) async -> UIImage? {
+        await withCheckedContinuation { (c: CheckedContinuation<UIImage?, Never>) in
+            decodeQueue.async { c.resume(returning: prepared(d, max: side)) }
+        }
     }
 
     /// A picture, made ready to draw once and kept: no bigger than the screen needs (a 3000-pixel photo is cut

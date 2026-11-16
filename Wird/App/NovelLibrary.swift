@@ -72,7 +72,7 @@ enum NovelLibrary {
     static func adopt(_ r: [String: Any]) async -> String {
         let id = ensureBook(r)
         if let u = r["cover"] as? String, !u.isEmpty, lib.state.book(id)?.cover == nil,
-           let d = await RemoteImages.data(u), let img = UIImage(data: d) {
+           let d = await RemoteImages.data(u), let img = await Library.decoded(d, max: 1200) {
             setCover(id, img)
         }
         return id

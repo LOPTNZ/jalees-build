@@ -85,7 +85,7 @@ final class NovelPageModel: ObservableObject {
         let site = novel.cover, id = bookID
         guard !id.isEmpty, !site.isEmpty, Library.shared.state.book(id)?.cover == nil else { return }
         Task { @MainActor [weak self] in
-            guard let d = await RemoteImages.data(site), let img = UIImage(data: d), Library.shared.state.book(id)?.cover == nil else { return }
+            guard let d = await RemoteImages.data(site), let img = await Library.decoded(d, max: 1200), Library.shared.state.book(id)?.cover == nil else { return }
             NovelLibrary.setCover(id, img)
             self?.reload()
         }
