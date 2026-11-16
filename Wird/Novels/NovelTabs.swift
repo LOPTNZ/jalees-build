@@ -289,8 +289,6 @@ struct SourceBrowse: View {
     @State private var saidAs: String?
     /// the site has a «most read» list of its own (else one tab, «الكل»)
     @State private var popular = true
-    /// the list's visible height: the next page is asked for when the end comes within reach of it
-    @State private var viewH: CGFloat = 800
 
     var body: some View {
         let shown = items.filter { filter.keeps($0) }
@@ -333,7 +331,7 @@ struct SourceBrowse: View {
                         Button("إلغاء التصفية") { filter = BrowseFilter() }.font(JFont.body(13, .medium)).foregroundStyle(Color(look.primary))
                     }
                 }
-                NovelGrid(look: look, items: shown) { open($0) }
+                NovelGrid(look: look, items: shown, open: { open($0) }, last: NearEnd.byScroll ? nil : { nearEnd() })
                 listEnd
             }
             // (how many novels the list holds, for the walk-through tests: it must not keep loading on its own)
@@ -341,15 +339,11 @@ struct SourceBrowse: View {
             .accessibilityIdentifier("browse-list")
             .accessibilityValue("\(items.count)")
             .padding(16)
-            .background(GeometryReader { g in Color.clear.preference(key: ListBottom.self, value: g.frame(in: .named("browse")).maxY) })
             .padding(.bottom, 120)
             .readableColumn(1000)
         }
-        .coordinateSpace(name: "browse")
-        .background(GeometryReader { g in Color.clear.preference(key: ListHeight.self, value: g.size.height) })
-        .onPreferenceChange(ListHeight.self) { h in if h > 0 { viewH = h } }
         // the next page when the end of the list comes within half a screen of view (once per page)
-        .onPreferenceChange(ListBottom.self) { bottom in if bottom < viewH * 1.5 { nearEnd() } }
+        .modifier(NearEnd { nearEnd() })
         .scrollDismissesKeyboard(.interactively)
         .background(Color(look.bg).ignoresSafeArea())
         .navigationTitle(name)
@@ -573,6 +567,8 @@ struct NovelGrid: View {
     let look: JLook
     let items: [[String: Any]]
     var open: ([String: Any]) -> Void
+    /// the last cell came into view (a site's list on iOS before 18 asks for its next page then: NearEnd)
+    var last: (() -> Void)? = nil
 
     /// each novel by its address (a cell keeps its own novel's picture when the list changes); a repeat gets a number
     private var keyed: [(key: String, item: [String: Any])] {
@@ -590,6 +586,7 @@ struct NovelGrid: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 98, maximum: 160), spacing: 14, alignment: .top)], alignment: .leading, spacing: 20) {
             ForEach(keyed, id: \.key) { k in
                 NovelCell(look: look, item: k.item) { open(k.item) }
+                    .onAppear { if let l = last, k.key == keyed.last?.key { l() } }
             }
         }
     }
@@ -948,15 +945,26 @@ struct UpdatesTab: View {
     }
 }
 
-/// Where the bottom of a site's list is, in its scroll view (SourceBrowse asks for the next page as it nears).
-private struct ListBottom: PreferenceKey {
-    static var defaultValue: CGFloat = .infinity
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
+/// A site's list nears its end: the scroll view's own geometry (iOS 18), as the end comes within half a screen of
+/// view, and again whenever the list grows while it is still that near (a short page fills the screen). Positions
+/// read through preferences stopped arriving while scrolling on iOS 26; before 18, the grid's last cell says it.
+private struct NearEnd: ViewModifier {
+    let near: () -> Void
 
-private struct ListHeight: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+    static var byScroll: Bool { if #available(iOS 18.0, *) { return true } else { return false } }
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollGeometryChange(for: CGFloat.self) { g in
+                let close = g.contentSize.height > 0 && g.contentOffset.y + g.containerSize.height > g.contentSize.height - g.containerSize.height * 0.5
+                return close ? g.contentSize.height : -1
+            } action: { _, h in
+                if h > 0 { near() }
+            }
+        } else {
+            content
+        }
+    }
 }
 
 extension Notification.Name {
