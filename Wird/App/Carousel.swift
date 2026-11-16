@@ -480,16 +480,18 @@ final class CarouselBandView: UIView {
         CATransaction.setDisableActions(true)
         if car.ids.isEmpty {
             show(lower, first)
-            upper.opacity = 0
+            upper.isHidden = true
         } else {
             let lo = car.pos.rounded(.down), f = car.pos - lo
             let a = car.ids[car.index(lo)], b = car.ids[car.index(lo + 1)]
             show(lower, a)
+            // the upper layer only while it shows (at rest it is left out of drawing altogether)
             if b != a && f > 0.002 {
                 show(upper, b)
                 upper.opacity = Float(f)
+                upper.isHidden = false
             } else {
-                upper.opacity = 0
+                upper.isHidden = true
             }
         }
         CATransaction.commit()
