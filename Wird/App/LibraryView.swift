@@ -49,7 +49,7 @@ struct LibraryView: View {
             }
         }
         .background {
-            if carousel { CarouselBand(books: books) } else { Color(L.bg).ignoresSafeArea() }
+            if carousel { CarouselBand(books: books).ignoresSafeArea() } else { Color(L.bg).ignoresSafeArea() }
         }
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $sheet) { s in

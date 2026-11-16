@@ -8,7 +8,9 @@ import QuartzCore
 final class CarouselState: NSObject, ObservableObject {
     static let shared = CarouselState()
 
-    @Published var pos: Double = 0
+    @Published var pos: Double = 0 { didSet { band?.update() } }
+    /// the band behind the covers, set straight on every step (not through SwiftUI)
+    weak var band: CarouselBandView?
     @Published private(set) var centerID: String?
     var target: Double = 0
     var vel: Double = 0
@@ -406,59 +408,111 @@ struct CarouselCard: View {
 
 /// The soft colour behind the carousel: the middle book's cover, blurred and darkened, fading into the page. It moves
 /// with the covers: the books either side of the position, the next one showing through as far as the carousel has
-/// gone towards it (the whole band changing in one frame, as the middle book changed, read as a jump).
-struct CarouselBand: View {
+/// gone towards it (the whole band changing in one frame, as the middle book changed, read as a jump). Drawn by Core
+/// Animation layers that the carousel's own clock sets (CarouselState.pos): redrawn by SwiftUI on every frame, it
+/// halved the frames of a swipe.
+struct CarouselBand: UIViewRepresentable {
     let books: [Book]
-    @ObservedObject private var car = CarouselState.shared
     @Environment(\.look) private var L
 
-    var body: some View {
-        GeometryReader { g in
-            ZStack(alignment: .top) {
-                Color(L.bg)
-                ZStack {
-                    ForEach(layers, id: \.book.id) { l in BandLayer(book: l.book).opacity(l.op) }
-                    Color.black.opacity(0.42)
-                }
-                .frame(width: g.size.width, height: g.size.height * 0.62)
-                .clipped()
-                // fades into the page's colour (the same look as a mask over it, without a mask's extra pass per frame)
-                .overlay(LinearGradient(stops: [.init(color: Color(L.bg).opacity(0), location: 0.62), .init(color: Color(L.bg), location: 1)],
-                                        startPoint: .top, endPoint: .bottom))
-            }
-        }
-        .ignoresSafeArea()
-    }
+    func makeUIView(context: Context) -> CarouselBandView { CarouselBandView() }
 
-    /// the book at or before the position, whole, and the one after it over it as far as the position has gone
-    private var layers: [(book: Book, op: Double)] {
-        guard !car.ids.isEmpty else { if let b = books.first { return [(book: b, op: 1)] } else { return [] } }
-        let lo = car.pos.rounded(.down), f = car.pos - lo
-        let a = car.index(lo), b = car.index(lo + 1)
-        var out: [(book: Book, op: Double)] = []
-        if let x = books.first(where: { $0.id == car.ids[a] }) { out.append((book: x, op: 1)) }
-        if b != a, f > 0.002, let y = books.first(where: { $0.id == car.ids[b] }) { out.append((book: y, op: f)) }
-        return out
+    func updateUIView(_ v: CarouselBandView, context: Context) {
+        v.page = L.bg
+        v.fallback = L.primary
+        v.books = Dictionary(books.map { ($0.id, $0) }, uniquingKeysWith: { x, _ in x })
+        v.first = books.first?.id
+        CarouselState.shared.band = v
+        v.update()
     }
 }
 
-/// One book's band: its colour at once, its blurred cover over it (ready beforehand: Library.prefetch).
-private struct BandLayer: View {
-    let book: Book
-    @Environment(\.look) private var L
-    /// the band made after the book came near (normally it is ready before)
-    @State private var made: (id: String, image: UIImage)?
+final class CarouselBandView: UIView {
+    /// the book at or before the position, and the one after it over it (as much as the position has gone towards it)
+    private let lower = CALayer(), upper = CALayer()
+    private let shade = CALayer(), fade = CAGradientLayer()
+    var books: [String: Book] = [:]
+    var first: String?
+    var fallback: UIColor = .gray
+    var page: UIColor = .black { didSet { if page != oldValue { colours() } } }
+    /// covers whose band is being made (asked for once)
+    private var making: Set<String> = []
 
-    var body: some View {
-        ZStack {
-            Color(UIColor.hslParts(book.hslString) ?? L.primary)
-            if let img = Library.shared.cachedSoft(book.cover) ?? (made?.id == book.cover ? made?.image : nil) {
-                Image(uiImage: img).resizable().interpolation(.medium).scaledToFill().opacity(0.9).transition(.opacity)
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+        accessibilityElementsHidden = true
+        for l in [lower, upper] {
+            l.contentsGravity = .resizeAspectFill
+            l.masksToBounds = true
+            l.minificationFilter = .linear
+            l.magnificationFilter = .linear
+            layer.addSublayer(l)
+        }
+        shade.backgroundColor = UIColor.black.withAlphaComponent(0.42).cgColor
+        layer.addSublayer(shade)
+        fade.locations = [0.62, 1]
+        layer.addSublayer(fade)
+        colours()
+    }
+
+    required init?(coder: NSCoder) { fatalError("no storyboard") }
+
+    private func colours() {
+        backgroundColor = page
+        fade.colors = [page.withAlphaComponent(0).cgColor, page.cgColor]
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let band = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height * 0.62)
+        for l in [lower, upper, shade, fade] { l.frame = band }
+        CATransaction.commit()
+    }
+
+    /// Where the carousel is now: called on every step of its position.
+    func update() {
+        let car = CarouselState.shared
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if car.ids.isEmpty {
+            show(lower, first)
+            upper.opacity = 0
+        } else {
+            let lo = car.pos.rounded(.down), f = car.pos - lo
+            let a = car.ids[car.index(lo)], b = car.ids[car.index(lo + 1)]
+            show(lower, a)
+            if b != a && f > 0.002 {
+                show(upper, b)
+                upper.opacity = Float(f)
+            } else {
+                upper.opacity = 0
             }
         }
-        .task(id: book.cover) {
-            guard let c = book.cover, Library.shared.cachedSoft(c) == nil else { return }
-            if let i = await Library.shared.softAsync(c) { withAnimation(.easeInOut(duration: 0.25)) { made = (c, i) } }
+        CATransaction.commit()
+    }
+
+    /// what each layer shows (its book, whether its picture was ready, its colour): set again only when it changes
+    private var keyLower = "", keyUpper = ""
+
+    private func show(_ l: CALayer, _ id: String?) {
+        let book = id.flatMap { books[$0] }
+        let img = Library.shared.cachedSoft(book?.cover)
+        let key = (book?.id ?? "") + (img == nil ? "-" : "+") + (book?.hslString ?? "")
+        if l === lower { if key == keyLower { return }; keyLower = key } else { if key == keyUpper { return }; keyUpper = key }
+        l.backgroundColor = (book.flatMap { UIColor.hslParts($0.hslString) } ?? fallback).cgColor
+        l.contents = img?.cgImage
+        // the band is normally ready before (Library.prefetch); else it is made now, then shown
+        if img == nil, let c = book?.cover, !making.contains(c) {
+            making.insert(c)
+            Task { @MainActor [weak self] in
+                _ = await Library.shared.softAsync(c)
+                self?.making.remove(c)
+                self?.update()
+            }
         }
     }
 }
