@@ -825,6 +825,20 @@ final class FlowTests: XCTestCase {
         var a = open("reader-reading")
         shot("ui90-enphone-reading")
         a.terminate()
+        // as on the owner's iPad: the device in English and no language given to the app (it runs in its own Arabic)
+        let plain = XCUIApplication()
+        plain.launchArguments = ["-JaleesRoute", "reader-reading"]
+        plain.launch()
+        sleep(9)
+        shot("ui90b-plain-reading")
+        plain.terminate()
+        let plainGuide = XCUIApplication()
+        plainGuide.launchArguments = ["-JaleesRoute", "reader-guide"]
+        plainGuide.launch()
+        sleep(9)
+        let pg = plainGuide.buttons["دليل السطر"].firstMatch
+        if pg.waitForExistence(timeout: 4) { pg.tap(); sleep(1); shot("ui90c-plain-guide-menu") }
+        plainGuide.terminate()
         a = open("reader-themes")
         shot("ui91-enphone-themes")
         // the page-turn style menu in the sheet (a system menu)

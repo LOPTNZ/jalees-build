@@ -130,6 +130,8 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // the reader's own menus and sheets follow the app's language, whatever the phone's is
+        if #available(iOS 17.0, *) { traitOverrides.layoutDirection = Lang.english ? .leftToRight : .rightToLeft }
         buildChrome()
         view.addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:))))
         view.addGestureRecognizer(pullPan)
@@ -1123,6 +1125,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     func sheetHost<V: View>(_ v: V, large: Bool = false) -> UIViewController {
         let host = UIHostingController(rootView: v.environment(\.layoutDirection, Lang.direction).environment(\.locale, Lang.locale))
         host.overrideUserInterfaceStyle = .dark
+        // UIKit's pieces in the sheet (its lists, menus) go the same way as its SwiftUI: when the two disagreed,
+        // the lists were drawn mirrored (the owner's iPad)
+        if #available(iOS 17.0, *) { host.traitOverrides.layoutDirection = Lang.english ? .leftToRight : .rightToLeft }
         host.modalPresentationStyle = .pageSheet
         if let s = host.sheetPresentationController {
             s.detents = large ? [.large()] : [.medium(), .large()]

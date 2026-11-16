@@ -333,8 +333,8 @@ enum TextSearch {
         var out: [SearchHit] = []
         for r in rows {
             let ch = r.int("ch")
-            guard let d = r.str("paras").data(using: .utf8), let paras = try? JSONSerialization.jsonObject(with: d) as? [String] else { continue }
-            let paras = ChapterText.readable(paras)
+            guard let d = r.str("paras").data(using: .utf8), let stored = try? JSONSerialization.jsonObject(with: d) as? [String] else { continue }
+            let paras = ChapterText.readable(stored)
             var nth = 0
             for p in paras {
                 let s = p.replacingOccurrences(of: "\u{0640}", with: "")

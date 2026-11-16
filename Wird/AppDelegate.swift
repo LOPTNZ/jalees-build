@@ -92,7 +92,16 @@ final class StallWatch: NSObject {
 /// the app made, and slowed every screen).
 @MainActor
 enum AppDirection {
+    /// every window that comes up later gets it too (the system makes windows of its own for some menus and sheets,
+    /// on the iPad especially: without the override they were laid out the phone's way inside an Arabic Jalees)
+    private static var watching: NSObjectProtocol?
+
     static func apply() {
+        if watching == nil {
+            watching = NotificationCenter.default.addObserver(forName: UIWindow.didBecomeVisibleNotification, object: nil, queue: .main) { n in
+                MainActor.assumeIsolated { if let w = n.object as? UIWindow { apply(to: w) } }
+            }
+        }
         for w in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows) { apply(to: w) }
         // from the next launch the whole process runs in the app's language (dates, the keyboard's first choice)
         let want = Lang.english ? "en" : "ar"
@@ -103,7 +112,9 @@ enum AppDirection {
 
     static func apply(to w: UIWindow) {
         if #available(iOS 17.0, *) {
-            w.traitOverrides.layoutDirection = Lang.english ? .leftToRight : .rightToLeft
+            let d: UITraitEnvironmentLayoutDirection = Lang.english ? .leftToRight : .rightToLeft
+            if w.traitOverrides.contains(UITraitLayoutDirection.self), w.traitOverrides.layoutDirection == d { return }
+            w.traitOverrides.layoutDirection = d
         } else {
             w.semanticContentAttribute = Lang.english ? .forceLeftToRight : .forceRightToLeft
         }
