@@ -10,7 +10,13 @@ enum EpubStore {
     }
 
     /// Open archives, kept while the app runs (reading a section or a picture needs no reopening).
-    private static var open: [String: ZipFile] = [:]
+    private struct Opened {
+        let zip: ZipFile
+        let url: URL
+        let date: Date?
+        let size: Int
+    }
+    private static var open: [String: Opened] = [:]
     private static let lock = NSLock()
 
     /// A path inside the book, from a folder and a link (handles "../" and percent escapes).
@@ -34,12 +40,21 @@ enum EpubStore {
 
     static func zip(_ id: String) throws -> ZipFile {
         lock.lock(); defer { lock.unlock() }
-        if let z = open[id] { return z }
+        // the book's file lives outside the app (Files, iCloud), so it can be replaced or evicted while the app
+        // runs: the kept archive is dropped when the file's date or size is no longer what it was
+        if let o = open[id] {
+            let scoped = o.url.startAccessingSecurityScopedResource()
+            let now = ZipFile.signature(o.url)
+            if scoped { o.url.stopAccessingSecurityScopedResource() }
+            if now.date == o.date, now.size == o.size { return o.zip }
+            open[id] = nil
+        }
         let u = try fileURL(id)
         let scoped = u.startAccessingSecurityScopedResource()
         defer { if scoped { u.stopAccessingSecurityScopedResource() } }
+        let sig = ZipFile.signature(u)
         let z = try ZipFile(url: u)
-        open[id] = z
+        open[id] = Opened(zip: z, url: u, date: sig.date, size: sig.size)
         return z
     }
 
@@ -59,6 +74,12 @@ enum EpubStore {
     static func add(_ url: URL) throws -> Added {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        // the same file (name and size) added before: that book opens, no second copy of it
+        let sig = ZipFile.signature(url)
+        let sameKey = "epubsame." + url.lastPathComponent + "|" + String(sig.size)
+        if let s = DB.shared.get(sameKey), let old = Int(s), let novel = Novels.shared.novel(old) {
+            return Added(novel: novel, cover: nil)
+        }
         let mark = try url.bookmarkData()
         let z = try ZipFile(url: url)
         let opfPath = try rootFile(z)
@@ -69,9 +90,10 @@ enum EpubStore {
         if let nav = opf.navHref, let d = try? z.read(full(nav)) { titles = TOC.fromNav(d, base: (full(nav) as NSString).deletingLastPathComponent) }
         if titles.isEmpty, let ncx = opf.ncxHref, let d = try? z.read(full(ncx)) { titles = TOC.fromNCX(d, base: (full(ncx) as NSString).deletingLastPathComponent) }
 
+        // no readable sections: a book that opens to nothing is not made
+        guard !opf.spine.isEmpty else { throw Failure(errorDescription: "ما لقيت فصول تنقرأ في هذا الملف") }
         let id = UUID().uuidString
         DB.shared.set(key(id), mark.base64EncodedString())
-        lock.lock(); open[id] = z; lock.unlock()
         let db = DB.shared
         var novelID = 0
         var n = 0
@@ -88,6 +110,7 @@ enum EpubStore {
         }
         Novels.shared.reload()
         guard let novel = Novels.shared.novel(novelID) else { throw Failure(errorDescription: "ما انحفظ الكتاب") }
+        DB.shared.set(sameKey, String(novelID))
         let cover = opf.coverHref.flatMap { try? z.read(full($0)) }
         return Added(novel: novel, cover: cover)
     }
@@ -119,9 +142,64 @@ enum EpubStore {
         let z = try zip(id)
         let html = String(decoding: try z.read(path), as: UTF8.self)
         let url = "wirdapp://app/epub/" + id + "/" + path
+        let (title, paras) = try await paragraphs(html: html, url: url) { file in
+            // file: wirdapp://app/epub/<id>/<path inside the book>
+            guard let u = URL(string: file) else { return nil }
+            let parts = u.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+            guard parts.count >= 3 else { return nil }
+            guard let data = try? z.read(parts[2...].joined(separator: "/")) else { return nil }
+            return String(decoding: data, as: UTF8.self)
+        }
+        return ChapterText(title: title, paras: paras.isEmpty ? [" "] : paras, removed: 0)
+    }
+
+    // MARK: footnotes
+
+    /// A footnote's reference stays in a paragraph as this one character; the k-th one of the section is notes["k"].
+    static let noteMark = "\u{E000}"
+    /// The section's notes follow its paragraphs as one last paragraph: this prefix, then a JSON object {"1": "text"}
+    /// (the reader page takes it off and shows the notes in a small window).
+    static let notesPrefix = "\u{FFFC}notes:"
+
+    /// A section's title and paragraphs (reference marks in the text, notes as the last paragraph). `file` gives the
+    /// XHTML of another file of the book (an absolute wirdapp://app/epub/<id>/<path> address) for notes kept there.
+    @MainActor
+    static func paragraphs(html: String, url: String, file: (String) -> String?) async throws -> (String, [String]) {
         guard let d = try await SourceEngine.shared.run("epub", "chapter", html: html, url: url) as? [String: Any] else { throw NovelError.parse("epub") }
-        let paras = (d["paras"] as? [String]) ?? []
-        return ChapterText(title: (d["title"] as? String) ?? "", paras: paras.isEmpty ? [" "] : paras, removed: 0)
+        var paras = (d["paras"] as? [String]) ?? []
+        var notes: [String: String] = [:]
+        if let n = d["notes"] as? [String: Any] {
+            for (k, v) in n { if let s = v as? String, !s.isEmpty { notes[k] = s } }
+        }
+        // notes kept in other files: each file is opened once and asked for all its ids
+        if let refs = d["refs"] as? [[String: Any]], !refs.isEmpty, let base = URL(string: url) {
+            let allowed = CharacterSet(charactersIn: "%#").union(.urlPathAllowed)
+            var byFile: [String: [(k: String, id: String)]] = [:]
+            var order: [String] = []
+            for r in refs {
+                guard let kn = r["k"] as? NSNumber, let href = r["href"] as? String,
+                      let enc = href.addingPercentEncoding(withAllowedCharacters: allowed),
+                      let u = URL(string: enc, relativeTo: base)?.absoluteURL,
+                      var c = URLComponents(url: u, resolvingAgainstBaseURL: true) else { continue }
+                let id = c.fragment ?? ""
+                c.fragment = nil
+                guard !id.isEmpty, let key = c.url?.absoluteString else { continue }
+                if byFile[key] == nil { order.append(key) }
+                byFile[key, default: []].append((kn.stringValue, id))
+            }
+            for key in order {
+                guard let items = byFile[key], let other = file(key) else { continue }
+                let ids = Array(Set(items.map { $0.id }))
+                let list = ids.joined(separator: ",").addingPercentEncoding(withAllowedCharacters: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_.,"))) ?? ""
+                guard let r = try? await SourceEngine.shared.run("epub", "notes", html: other, url: key + "#" + list) as? [String: Any],
+                      let found = r["notes"] as? [String: Any] else { continue }
+                for it in items { if let s = found[it.id] as? String, !s.isEmpty { notes[it.k] = s } }
+            }
+        }
+        if !notes.isEmpty, let data = try? JSONSerialization.data(withJSONObject: notes), let json = String(data: data, encoding: .utf8) {
+            paras.append(notesPrefix + json)
+        }
+        return ((d["title"] as? String) ?? "", paras)
     }
 
     /// A picture or other file from inside a book, for the reader page (wirdapp://app/epub/<id>/<path>).

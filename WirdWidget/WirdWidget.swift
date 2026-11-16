@@ -73,6 +73,36 @@ extension View {
 
 let teal = Color(red: 0.36, green: 0.76, blue: 0.68)
 
+// MARK: - the app lock is on
+
+/// What every widget shows while the app lock is on: no book, quote or number, only that Jalees is locked.
+struct LockedWidgetView: View {
+    let family: WidgetFamily
+
+    private var accessory: Bool {
+        switch family {
+        case .accessoryCircular, .accessoryRectangular, .accessoryInline: return true
+        default: return false
+        }
+    }
+
+    var body: some View {
+        Group {
+            if family == .accessoryInline {
+                Label("جليس مقفل", systemImage: "lock.fill")
+            } else {
+                VStack(spacing: 6) {
+                    Image(systemName: "lock.fill").font(.title2)
+                    Text("جليس مقفل").font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.center)
+                }
+                .foregroundColor(accessory ? nil : .white)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .widgetBackground(accessory ? AnyView(Color.clear) : AnyView(Color(red: 0.04, green: 0.07, blue: 0.06)), pad: accessory ? 0 : 14)
+    }
+}
+
 // MARK: - home & lock screen widget
 
 struct BookWidgetView: View {
@@ -102,6 +132,14 @@ struct BookWidgetView: View {
     }
 
     @ViewBuilder private var content: some View {
+        if snap?.locked == true {
+            LockedWidgetView(family: family)
+        } else {
+            unlockedContent
+        }
+    }
+
+    @ViewBuilder private var unlockedContent: some View {
         switch family {
         case .accessoryCircular: circular
         case .accessoryRectangular: rectangular
@@ -383,6 +421,7 @@ struct QuoteEntry: TimelineEntry {
     let date: Date
     let quote: WQuote?
     let accent: String?
+    var locked = false
 }
 
 struct QuoteProvider: TimelineProvider {
@@ -413,16 +452,17 @@ struct QuoteProvider: TimelineProvider {
     func getSnapshot(in context: Context, completion: @escaping (QuoteEntry) -> Void) {
         let (s, _) = WidgetData.load()
         let q = QuoteProvider.pick(s?.quotes ?? [], for: Date()) ?? (context.isPreview ? QuoteProvider.sample : nil)
-        completion(QuoteEntry(date: Date(), quote: q, accent: s?.accent))
+        completion(QuoteEntry(date: Date(), quote: s?.locked == true ? nil : q, accent: s?.accent, locked: s?.locked == true))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuoteEntry>) -> Void) {
         let (s, _) = WidgetData.load()
         let now = Date()
         let midnight = Calendar.greg.startOfDay(for: now.addingTimeInterval(86_400))
-        let list = s?.quotes ?? []
-        let entries = [QuoteEntry(date: now, quote: QuoteProvider.pick(list, for: now), accent: s?.accent),
-                       QuoteEntry(date: midnight, quote: QuoteProvider.pick(list, for: midnight), accent: s?.accent)]
+        let locked = s?.locked == true
+        let list = locked ? [] : (s?.quotes ?? [])
+        let entries = [QuoteEntry(date: now, quote: QuoteProvider.pick(list, for: now), accent: s?.accent, locked: locked),
+                       QuoteEntry(date: midnight, quote: QuoteProvider.pick(list, for: midnight), accent: s?.accent, locked: locked)]
         completion(Timeline(entries: entries, policy: .after(midnight.addingTimeInterval(120))))
     }
 }
@@ -438,7 +478,9 @@ struct QuoteWidgetView: View {
 
     var body: some View {
         Group {
-            if family == .accessoryRectangular {
+            if entry.locked {
+                LockedWidgetView(family: family)
+            } else if family == .accessoryRectangular {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.quote.map { "«\($0.t)»" } ?? "احفظ اقتباسًا في دفترك")
                         .font(.system(size: 13, weight: .semibold, design: .serif))
@@ -502,7 +544,9 @@ struct NovelsWidgetView: View {
 
     var body: some View {
         Group {
-            if family == .accessoryRectangular {
+            if entry.snap?.locked == true {
+                LockedWidgetView(family: family)
+            } else if family == .accessoryRectangular {
                 VStack(alignment: .leading, spacing: 1) {
                     if let n = list.first {
                         Text(n.t).font(.system(size: 13, weight: .semibold)).lineLimit(1)

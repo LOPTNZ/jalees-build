@@ -10,6 +10,9 @@ final class Store {
     private let root: URL
     private let imgDir: URL
     private var keptPrevious = false
+    /// the latest data a save could not write, and how many saves in a row failed (both used on the queue only)
+    private var unsaved: Data?
+    private var failures = 0
 
     private init() {
         let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Wird", isDirectory: true)
@@ -46,7 +49,37 @@ final class Store {
                 try? self.fm.copyItem(at: self.stateURL, to: prev)
                 self.keptPrevious = true
             }
-            try? data.write(to: self.stateURL, options: .atomic)
+            self.write(data)
+        }
+    }
+
+    /// Writes the library file. A failed write (a full disk, say) is logged and the data kept as unsaved: the next save
+    /// replaces it with newer data, and if none comes it is tried once more after 5 s. Failing twice in a row tells the owner.
+    /// (Runs on the store's queue.)
+    private func write(_ data: Data) {
+        do {
+            try data.write(to: stateURL, options: .atomic)
+            failures = 0
+            unsaved = nil
+        } catch {
+            failures += 1
+            unsaved = data
+            NSLog("jalees store: saving the library failed (%d in a row): %@", failures, String(describing: error))
+            if failures == 1 {
+                queue.asyncAfter(deadline: .now() + 5) { if let d = self.unsaved { self.write(d) } }
+            } else if failures == 2 {
+                Task { @MainActor in ToastCenter.shared.show("ما انحفظت بياناتك. تأكد أن في الجوال مساحة فاضية") }
+            }
+        }
+    }
+
+    /// The library as it is now, kept under its own name (never overwritten). Used before a restore replaces it.
+    func keepSnapshot(_ json: String, as name: String) {
+        guard let data = json.data(using: .utf8), !data.isEmpty else { return }
+        queue.async {
+            let dst = self.root.appendingPathComponent(name)
+            guard !self.fm.fileExists(atPath: dst.path) else { return }
+            do { try data.write(to: dst, options: .atomic) } catch { NSLog("jalees store: keeping %@ failed: %@", name, String(describing: error)) }
         }
     }
 

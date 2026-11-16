@@ -24,8 +24,19 @@ final class AppSchemeHandler: NSObject, WKURLSchemeHandler {
             let rest = String(path.dropFirst(6))
             if let slash = rest.firstIndex(of: "/") {
                 let inner = String(rest[rest.index(after: slash)...])
-                data = EpubStore.resource(String(rest[..<slash]), inner)
-                mime = AppSchemeHandler.mime((inner as NSString).pathExtension)
+                let book = String(rest[..<slash])
+                let kind = AppSchemeHandler.mime((inner as NSString).pathExtension)
+                // unpacking a picture takes time: it is done off the main thread, and the answer is given only if
+                // the page has not cancelled the request meanwhile (a stopped task must not be called)
+                pending.insert(ObjectIdentifier(task))
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    let d = EpubStore.resource(book, inner)
+                    DispatchQueue.main.async {
+                        guard let self = self, self.pending.remove(ObjectIdentifier(task)) != nil else { return }
+                        self.answer(task, url, d, kind)
+                    }
+                }
+                return
             }
         } else if path.hasPrefix("/userfonts/") {
             // fonts the owner added for reading (FontStore)
@@ -35,9 +46,17 @@ final class AppSchemeHandler: NSObject, WKURLSchemeHandler {
             mime = AppSchemeHandler.mime(file.pathExtension)
         } else {
             let file = root.appendingPathComponent(String(path.dropFirst())).standardizedFileURL
-            if file.path.hasPrefix(root.path) { data = try? Data(contentsOf: file) }
+            // with the slash: a folder named «www-other» next to «www» is not inside it
+            if file.path.hasPrefix(root.path.hasSuffix("/") ? root.path : root.path + "/") { data = try? Data(contentsOf: file) }
             mime = AppSchemeHandler.mime(file.pathExtension)
         }
+        answer(task, url, data, mime)
+    }
+
+    /// the requests being answered off the main thread (touched on the main thread only)
+    private var pending = Set<ObjectIdentifier>()
+
+    private func answer(_ task: WKURLSchemeTask, _ url: URL, _ data: Data?, _ mime: String) {
         var headers = ["Content-Type": mime, "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*"]
         if let d = data {
             headers["Content-Length"] = String(d.count)
@@ -53,7 +72,7 @@ final class AppSchemeHandler: NSObject, WKURLSchemeHandler {
         }
     }
 
-    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) { pending.remove(ObjectIdentifier(task)) }
 
     static func mime(_ ext: String) -> String {
         switch ext.lowercased() {

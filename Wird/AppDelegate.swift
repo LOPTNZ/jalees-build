@@ -17,6 +17,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         if let f = ProcessInfo.processInfo.environment["JALEES_STALLS"] { StallWatch.start(f) }
         AppDirection.apply()
         LangState.onChange = { DispatchQueue.main.async { AppDirection.apply() } }
+        // the system's search bars keep their clear button while there are words, not only while typing
+        UITextField.appearance(whenContainedInInstancesOf: [UISearchBar.self]).clearButtonMode = .always
         return true
     }
 

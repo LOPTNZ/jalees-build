@@ -169,6 +169,39 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(car.target, 2)
     }
 
+    private func utc(_ s: String) -> Double { ISO8601DateFormatter().date(from: s)!.timeIntervalSince1970 }
+
+    /// Daily allowances start again at midnight in California (PST in winter, PDT in summer), plus a minute.
+    func testGeminiResetIsPacificMidnight() {
+        // 02:00 PST on 16 Nov -> reset at 00:00 PST on 17 Nov = 08:00 UTC
+        XCTAssertEqual(GeminiKeyRotation.nextReset(after: utc("2026-11-16T10:00:00Z")), utc("2026-11-17T08:01:00Z"))
+        // 23:30 PST on 16 Nov is already 17 Nov in UTC; still the same reset
+        XCTAssertEqual(GeminiKeyRotation.nextReset(after: utc("2026-11-17T07:30:00Z")), utc("2026-11-17T08:01:00Z"))
+        // summer: 05:00 PDT on 1 Jul -> 00:00 PDT on 2 Jul = 07:00 UTC
+        XCTAssertEqual(GeminiKeyRotation.nextReset(after: utc("2026-07-01T12:00:00Z")), utc("2026-07-02T07:01:00Z"))
+    }
+
+    /// The first key that isn't out is used; a key that ran out is skipped until its reset, then key 1 is back.
+    func testGeminiKeyRotation() {
+        let ids = ["a", "b", "c"]
+        let now = utc("2026-11-16T10:00:00Z")
+        let reset = GeminiKeyRotation.nextReset(after: now)
+        XCTAssertEqual(GeminiKeyRotation.pick(ids: ids, outUntil: [:], now: now), "a")
+        XCTAssertEqual(GeminiKeyRotation.pick(ids: ids, outUntil: ["a": reset], now: now), "b")
+        XCTAssertEqual(GeminiKeyRotation.pick(ids: ids, outUntil: ["a": reset, "b": reset], now: now), "c")
+        XCTAssertNil(GeminiKeyRotation.pick(ids: ids, outUntil: ["a": reset, "b": reset, "c": reset], now: now))
+        // b is out but a is fine: a stays first
+        XCTAssertEqual(GeminiKeyRotation.pick(ids: ids, outUntil: ["b": reset], now: now), "a")
+        // after the reset key 1 is used again
+        XCTAssertEqual(GeminiKeyRotation.pick(ids: ids, outUntil: ["a": reset, "b": reset], now: reset + 1), "a")
+        XCTAssertEqual(GeminiKeyRotation.usable(ids: ids, outUntil: ["a": reset], now: now), ["b", "c"])
+    }
+
+    func testGeminiKeyIsMasked() {
+        XCTAssertEqual(GeminiKeyRotation.mask("AIzaSyABCDEFGHIJKLMNOP1234"), "AIza…1234")
+        XCTAssertEqual(GeminiKeyRotation.mask("short"), "••••••")
+    }
+
     func testNotFoundIsKnown() {
         if case NovelError.http(404) = NovelError.http(404) {} else { XCTFail() }
         XCTAssertEqual(NovelError.http(404).localizedDescription, "الصفحة مو موجودة في الموقع (404)")

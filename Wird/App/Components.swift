@@ -18,9 +18,13 @@ struct BookCover: View {
     var body: some View {
         let s = lib.state.settings.show
         ZStack {
-            Generated(book: book)
+            // the drawn cover (title and author) only when there is no picture: under a picture its words showed
+            // through whenever the cover faded (the carousel's dissolve between two books)
             if let img = lib.image(book.cover) {
+                Color(UIColor.hslParts(book.hslString) ?? UIColor(hex: "#2f5c53"))
                 Image(uiImage: img).resizable().scaledToFill()
+            } else {
+                Generated(book: book)
             }
             if marks { overlays(s) }
         }
@@ -89,6 +93,32 @@ struct BookCover: View {
                 }
             }
         }
+    }
+}
+
+/// The clear button of a search field: there whenever the field has words (not only while typing), so what was
+/// searched goes in one tap. `cleared` runs after (a search's results go with its words).
+struct ClearButton: ViewModifier {
+    @Binding var text: String
+    var color: Color
+    var cleared: () -> Void = {}
+    func body(content: Content) -> some View {
+        HStack(spacing: 6) {
+            content
+            if !text.isEmpty {
+                Button { text = ""; cleared() } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 17)).foregroundStyle(color)
+                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).accessibilityLabel("مسح")
+            }
+        }
+    }
+}
+
+extension View {
+    func clearButton(_ text: Binding<String>, _ color: Color, cleared: @escaping () -> Void = {}) -> some View {
+        modifier(ClearButton(text: text, color: color, cleared: cleared))
     }
 }
 

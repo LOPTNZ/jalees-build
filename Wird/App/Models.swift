@@ -190,7 +190,11 @@ struct Session: JSONBacked, Identifiable {
 enum NoteKind: String, CaseIterable {
     case quote, thought, word, char
     var listKey: String { ["quote": "quotes", "thought": "thoughts", "word": "words", "char": "chars"][rawValue]! }
-    var name: String { ["quote": "اقتباس", "thought": "خاطرة", "word": "كلمة", "char": "شخصية"][rawValue]! }
+    /// one name for each kind everywhere (the notebook's «أفكار» are «فكرة», in the reader too)
+    var name: String { ["quote": "اقتباس", "thought": "فكرة", "word": "كلمة", "char": "شخصية"][rawValue]! }
+    /// the kind with «ال»: «حذف الاقتباس أيضًا»
+    var the: String { ["quote": "الاقتباس", "thought": "الفكرة", "word": "الكلمة", "char": "الشخصية"][rawValue]! }
+    var symbol: String { ["quote": "quote.opening", "thought": "lightbulb", "word": "character.book.closed", "char": "person"][rawValue]! }
 }
 
 /// A quote, thought or word (each kind uses its own fields; all are kept).

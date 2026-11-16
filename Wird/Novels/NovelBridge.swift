@@ -109,7 +109,7 @@ enum NovelBridge {
     static func openReader(novel: Int, book: String?, index: Int?, chapter: Int?, paragraph: Int?) {
         guard let h = host, let n = Novels.shared.novel(novel) else { return }
         let chapters = Novels.shared.chapters(novel)
-        guard !chapters.isEmpty else { return }
+        guard !chapters.isEmpty else { Toaster.show("ما فيه فصول تنقرأ في هذا الكتاب"); return }
         var at = 0
         var place: (p: Int, o: Double)?
         if let i = index {
@@ -197,6 +197,7 @@ final class Downloads: ObservableObject {
     func cancel() { waiting.removeAll() }
 
     private func run(source: String) async {
+        var lastReload = 0
         while let id = waiting.first {
             if let ch = Novels.shared.chapter(id), !ch.saved {
                 // each chapter's own novel decides the site (the queue can hold chapters of several novels)
@@ -207,13 +208,20 @@ final class Downloads: ObservableObject {
                     if source == "kolnovel" && ReaderSettings.shared.prefs.comments {
                         await Comments.keepAll(chapterURL: ch.url, chapter: ch.id, novel: ch.novel)
                     }
+                } catch NovelError.blocked {
+                    // the site wants its check and it was not passed: the whole run stops, with one message
+                    waiting.removeAll()
+                    Toaster.show("الموقع طلب تحقق ما انحل، وقفت التحميل. افتح فصل من الموقع وحلّ التحقق، وبعدها حمّل مرة ثانية.")
+                    break
                 } catch { failed += 1 }
                 try? await Task.sleep(nanoseconds: 350_000_000)
             } else {
                 done += 1
             }
-            if !waiting.isEmpty { waiting.removeFirst() }
-            if done % 10 == 0 { NovelBridge.pageNeedsReload() }
+            // cancel() may have emptied the queue (or add() refilled it) while this chapter loaded: only remove this one
+            if waiting.first == id { waiting.removeFirst() }
+            // the page reloads on real progress only, every ten chapters
+            if done >= lastReload + 10 { lastReload = done; NovelBridge.pageNeedsReload() }
         }
         running = false
         NovelBridge.pageNeedsReload()

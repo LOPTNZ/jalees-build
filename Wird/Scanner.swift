@@ -19,6 +19,17 @@ final class BarcodeScanner: NSObject, DataScannerViewControllerDelegate, UIAdapt
         AVCaptureDevice.requestAccess(for: .video) { granted in
             DispatchQueue.main.async {
                 guard granted, DataScannerViewController.isSupported, DataScannerViewController.isAvailable else {
+                    // not a silent failure: the user is told why, with a way to the Settings page when it is the permission
+                    let a = UIAlertController(title: (granted ? "الماسح ما يشتغل هنا" : "الكاميرا مو مسموحة").tr,
+                                              message: (granted ? "الكاميرا أو الماسح غير متاح على هذا الجهاز الحين." : "اسمح لجليس باستخدام الكاميرا من الإعدادات عشان يمسح الباركود.").tr,
+                                              preferredStyle: .alert)
+                    if !granted {
+                        a.addAction(UIAlertAction(title: "الإعدادات".tr, style: .default) { _ in
+                            if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
+                        })
+                    }
+                    a.addAction(UIAlertAction(title: "تم".tr, style: .cancel))
+                    presenter.present(a, animated: true)
                     self.finish(nil)
                     return
                 }

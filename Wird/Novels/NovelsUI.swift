@@ -40,6 +40,8 @@ enum DebugRoute {
             }
             // every check starts from the default way of reading
             if !route.contains("paged") && !route.contains("curl") { ReaderSettings.shared.prefs.mode = route.contains("swipe") ? "continuous" : "chapter" }
+            // readeren, readeren-guide, readeren-paged…: the reader on an English book (the sample's English text)
+            Sample.english = route.hasPrefix("readeren")
             guard let sample = Sample.ensure() else { return }
             let book = ensureBook(sample)
             if route.hasPrefix("tab-") {

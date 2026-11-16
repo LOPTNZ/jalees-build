@@ -89,8 +89,11 @@
         if (j && j.error) return { error: String(j.error) };
         /* step 1: from the chapter page (or its address), ask for the text the way the site's reader does */
         var m = /\/novel\/(\d+)\/[^\/]+\/chapter-(\d+)/.exec(url || '');
+        /* the site gives each chapter in two translations: its AI one, and the web (Google) one; the app says which
+           after the address's # (#jt=web) when the owner chose it for the novel */
+        var tr = /#.*\bjt=web\b/.test(url || '') ? 'web' : 'ai';
         if (m) return { fetch: { url: ORIGIN + '/api/reader/get', method: 'POST',
-                                 json: { translate: 'ai', language: 'en', raw_id: Number(m[1]), chapter_no: Number(m[2]) } } };
+                                 json: { translate: tr, language: 'en', raw_id: Number(m[1]), chapter_no: Number(m[2]) } } };
         return { error: 'no-content' };
       }
       var terms = (j.data.data.glossary_data && j.data.data.glossary_data.terms) || [];

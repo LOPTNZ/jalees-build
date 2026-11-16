@@ -101,15 +101,19 @@ enum NovelArchive {
         db.transaction {
             nid = Int(db.run("INSERT INTO novels(source,url,title,author,cover,summary,status,total,added,updated) VALUES('archive',?,?,?,?,?,?,?,?,?)",
                              [key, r.title, r.author, "", r.summary, "", r.chapters.count, now, now]))
+            // 0: the insert failed (the same address added at once): nothing goes under another novel
+            guard nid != 0 else { return }
             for (i, c) in r.chapters.enumerated() {
                 let cid = Int(db.run("INSERT INTO chapters(novel,idx,num,title,url) VALUES(?,?,?,?,?)",
                                      [nid, i, c.num, c.title, c.url.isEmpty ? "\(key)#\(c.n)" : c.url + "#archive"]))
+                guard cid != 0 else { continue }
                 let json = String(data: (try? JSONSerialization.data(withJSONObject: c.paras)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
                 let words = c.paras.reduce(0) { $0 + $1.split(whereSeparator: { $0.isWhitespace }).count }
                 db.run("INSERT INTO texts(chapter,title,paras,removed,fetched) VALUES(?,?,?,?,?)", [cid, c.title, json, 0, now])
                 db.run("UPDATE chapters SET words=? WHERE id=?", [words, cid])
             }
         }
+        guard nid != 0 else { Toaster.show("«\(r.title)» مستورد من قبل"); return }
         Novels.shared.reload()
         let book = NovelLibrary.ensureBook(["id": nid, "title": r.title, "author": r.author, "url": r.series, "site": "archive",
                                             "total": r.chapters.count, "complete": true, "genres": [String]()])

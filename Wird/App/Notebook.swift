@@ -1,7 +1,8 @@
 import SwiftUI
 import UIKit
 
-// دفتري (inventory-2, 2.1–2.2): quotes, thoughts, words, characters and highlights («معلومات») from every book.
+// دفتري (inventory-2, 2.1–2.2): quotes, thoughts, words, characters and highlights («تظليلات», with their notes) from every
+// book. A quote, thought or word taken from a novel's text is also highlighted there (reader 2.3): it is listed once, here.
 
 struct NotebookView: View {
     @ObservedObject private var lib = Library.shared
@@ -13,6 +14,8 @@ struct NotebookView: View {
     @State private var query = ""
     @State private var favOnly = false
     @State private var markColor: String?
+    /// a highlight whose note is being written
+    @State private var noteFor: MarkRef?
     @State private var edit: ItemRef?
     @State private var card: ItemRef?
     @State private var review = false
@@ -23,7 +26,7 @@ struct NotebookView: View {
     @State private var holdDone = false
     @State private var lastY: CGFloat = 0
 
-    private static let tabs: [(String, String)] = [("quote", "اقتباسات"), ("thought", "أفكار"), ("word", "كلمات"), ("char", "شخصيات"), ("mark", "معلومات")]
+    private static let tabs: [(String, String)] = [("quote", "اقتباسات"), ("thought", "أفكار"), ("word", "كلمات"), ("char", "شخصيات"), ("mark", "تظليلات")]
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -74,6 +77,9 @@ struct NotebookView: View {
         .sheet(item: $edit) { r in ItemForm(ref: r).environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
         .sheet(item: $card) { r in CharacterCard(bookID: r.book, charID: r.item ?? "").environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
         .sheet(isPresented: $review) { WordReview(bookID: bookFilter.isEmpty ? nil : bookFilter).environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
+        .sheet(item: $noteFor) { r in
+            NoteSheet(text: r.mark.str("text"), note: r.mark.str("note"), dark: L.dark) { NovelLibrary.setMarkNote(r.book, r.mark.str("id"), $0) }
+        }
     }
 
     // MARK: the floating + (03-app's FAB): a fan of the four kinds and a photographed quote
@@ -192,7 +198,7 @@ struct NotebookView: View {
     }
 
     private func count(_ k: String) -> Int {
-        if k == "mark" { return lib.state.books.reduce(0) { $0 + $1.marks.count } }
+        if k == "mark" { return lib.state.books.reduce(0) { $0 + $1.plainMarks.count } }
         guard let kind = NoteKind(rawValue: k) else { return 0 }
         return lib.state.books.reduce(0) { $0 + $1.items(kind).count }
     }
@@ -200,7 +206,7 @@ struct NotebookView: View {
     // MARK: filters
 
     private var filters: some View {
-        let books = lib.state.books.filter { b in tab == "mark" ? !b.marks.isEmpty : !(NoteKind(rawValue: tab).map { b.items($0) } ?? []).isEmpty }
+        let books = lib.state.books.filter { b in tab == "mark" ? !b.plainMarks.isEmpty : !(NoteKind(rawValue: tab).map { b.items($0) } ?? []).isEmpty }
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Menu {
@@ -220,6 +226,7 @@ struct NotebookView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Color(L.ink2))
                     TextField("بحث", text: $query).font(JFont.body(15)).autocorrectionDisabled()
+                        .clearButton($query, Color(L.ink2))
                 }
                 .padding(.horizontal, 12).frame(height: 44)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
@@ -304,20 +311,28 @@ struct NotebookView: View {
 
     @ViewBuilder private var marks: some View {
         let labels = lib.state.settings.markLabels
-        let all: [(Book, JSONObject)] = lib.state.books.filter { bookFilter.isEmpty || $0.id == bookFilter }.flatMap { b in b.marks.map { (b, $0) } }
+        // a highlight that is a quote's, thought's or word's place is listed as that entry, in its own tab
+        let all: [(Book, JSONObject)] = lib.state.books.filter { bookFilter.isEmpty || $0.id == bookFilter }.flatMap { b in b.plainMarks.map { (b, $0) } }
             .sorted { $0.1.num("at") > $1.1.num("at") }
-        let info = MarkColor.allCases.first { (labels[$0.rawValue] ?? "") == "معلومة" }?.rawValue
-        let col = markColor ?? (info.flatMap { i in all.contains { $0.1.str("color") == i } ? i : nil } ?? "")
+        // "" all, "__note" the ones with your words, else a colour (its name is the owner's category)
+        let col = markColor ?? ""
         let counts = Dictionary(grouping: all, by: { $0.1.str("color") }).mapValues(\.count)
+        let noted = all.filter { !$0.1.str("note").isEmpty }.count
         let q = Words.norm(query)
-        let shown = all.filter { b, m in (col.isEmpty || m.str("color") == col) && (q.isEmpty || Words.norm([m.str("text"), m.str("note"), b.title].joined(separator: " ")).contains(q)) }
+        let shown = all.filter { b, m in
+            (col.isEmpty || (col == "__note" ? !m.str("note").isEmpty : m.str("color") == col))
+                && (q.isEmpty || Words.norm([m.str("text"), m.str("note"), b.title].joined(separator: " ")).contains(q))
+        }
         if all.isEmpty {
-            Text("حدد نص وأنت تقرأ رواية أو كتاب واختر «للدفتر ← معلومة»، أو ظلّله بلون له اسم (معلومة، مضحك، تلميح…)، ويتجمّع هنا.")
+            Text("حدد نص وأنت تقرأ رواية أو كتاب واختر «تظليل» أو «ملاحظة». لكل لون اسم تختاره (معلومة، مضحك، تلميح…)، وكل اللي ظلّلته يتجمّع هنا. الاقتباسات والأفكار والكلمات اللي تحفظها من النص تنظلّل فيه وتطلع في قوائمها.")
                 .font(JFont.body(14)).foregroundStyle(Color(L.ink2)).padding(.top, 16)
         } else {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     JChip(look: L, text: "الكل", on: col.isEmpty) { markColor = "" }
+                    if noted > 0 {
+                        JChip(look: L, text: "ملاحظات", count: noted, on: col == "__note") { markColor = "__note" }
+                    }
                     ForEach(MarkColor.allCases.filter { counts[$0.rawValue] != nil }, id: \.self) { c in
                         JChip(look: L, text: name(c, labels), count: counts[c.rawValue], dot: UIColor(hex: c.hex), on: col == c.rawValue) { markColor = c.rawValue }
                     }
@@ -342,6 +357,20 @@ struct NotebookView: View {
                         .overlay(alignment: .bottom) { Rectangle().fill(Color(L.line)).frame(height: 1) }
                     }
                     .buttonStyle(.plain)
+                    // the same highlight the reader shows: its note and its deletion reach the open page too
+                    .contextMenu {
+                        Button { noteFor = MarkRef(book: b.id, mark: m) } label: {
+                            Label(m.str("note").isEmpty ? "إضافة ملاحظة" : "تعديل الملاحظة", systemImage: "note.text")
+                        }
+                        Button { UIPasteboard.general.string = m.str("text"); Haptics.play("soft"); ToastCenter.shared.show("تم النسخ") } label: {
+                            Label("نسخ", systemImage: "doc.on.doc")
+                        }
+                        if b.novel != nil {
+                            Button { openMark(b, m) } label: { Label("افتح مكانه في القارئ", systemImage: "book") }
+                        }
+                        Divider()
+                        Button(role: .destructive) { NoteItems.deleteMark(b.id, m.str("id")) } label: { Label("حذف", systemImage: "trash") }
+                    }
                 }
             }
         }
@@ -381,6 +410,15 @@ struct ItemRef: Identifiable {
     var fromNotebook = false
     /// fields filled in for a new entry (the reader: the selected text, the chapter, its place in the novel)
     var prefill: [String: Any]? = nil
+    /// opened over the reader: «افتح مكانه في القارئ» is not offered (the reader is right there)
+    var inReader = false
+}
+
+/// A highlight of a book, for its note's sheet.
+struct MarkRef: Identifiable {
+    let id = UUID()
+    let book: String
+    let mark: JSONObject
 }
 
 extension Notification.Name {
@@ -422,6 +460,11 @@ struct QuoteRow: View {
             if !r.str("text").isEmpty {
                 Text(kind == .quote && item.img == nil ? "«" + r.str("text") + "»" : r.str("text")).font(JFont.quote(19)).foregroundStyle(Color(L.ink)).lineSpacing(5)
                     .spoiler(r.bool("spoiler"))
+            }
+            // a quote's note (the words a highlight had when it became this quote, or written in its form)
+            if kind == .quote && !r.str("note").isEmpty {
+                Text(r.str("note")).font(JFont.quote(15.5)).foregroundStyle(Color(L.ink2)).padding(.leading, 10)
+                    .overlay(alignment: .leading) { Rectangle().fill(Color(L.line)).frame(width: 3) }
             }
             if kind == .thought && !r.str("passage").isEmpty {
                 Text(r.str("passage")).font(JFont.quote(16)).foregroundStyle(Color(L.ink2)).padding(.leading, 10)
@@ -559,6 +602,8 @@ enum NoteItems {
         let name = x.raw.str("name")
         Library.shared.changeBook(bookID) { bb in
             bb.raw.set(k.listKey, objects: bb.raw.objs(k.listKey).filter { $0.str("id") != id })
+            // a quote (thought, word) taken from the text goes with its highlight there: they are one thing
+            if k != .char { bb.marks = bb.marks.filter { $0.str("item") != id } }
             if k == .char {
                 bb.raw.set("chars", objects: bb.raw.objs("chars").map { c in var c = c; c.set("rel", objects: c.objs("rel").filter { $0.str("to") != id }); return c })
                 bb.raw.set("quotes", objects: bb.raw.objs("quotes").map { q in
@@ -571,6 +616,18 @@ enum NoteItems {
         Haptics.play("warn")
         let this = ["quote": "هذا الاقتباس", "thought": "هذه الفكرة", "word": "هذه الكلمة", "char": "هذه الشخصية"][k.rawValue] ?? ""
         ToastCenter.shared.show("تم حذف " + this) {
+            Library.shared.change { st in if let i = st.index(of: snapshot.id) { st.books[i] = snapshot } }
+        }
+    }
+
+    /// A highlight deleted from the notebook (the open reader follows); the toast takes it back.
+    @MainActor
+    static func deleteMark(_ bookID: String, _ id: String) {
+        guard let b = Library.shared.state.book(bookID) else { return }
+        let snapshot = b
+        NovelLibrary.markDel(bookID, id)
+        Haptics.play("warn")
+        ToastCenter.shared.show("تم حذف التظليل") {
             Library.shared.change { st in if let i = st.index(of: snapshot.id) { st.books[i] = snapshot } }
         }
     }

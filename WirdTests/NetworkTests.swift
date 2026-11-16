@@ -32,10 +32,10 @@ final class NetworkTests: XCTestCase {
     func testServerDiagnosisReachesTheServer() async throws {
         // the address only: the diagnosis stops after reaching it and asks for the token (none is set here)
         _ = try await get("/health")
-        let before = (DB.shared.get("server.url"), DB.shared.get("server.token"))
-        defer { DB.shared.set("server.url", before.0); DB.shared.set("server.token", before.1) }
+        let before = (DB.shared.get("server.url"), ServerLink.token)
+        defer { DB.shared.set("server.url", before.0); ServerLink.token = before.1 }
         ServerLink.url = base
-        DB.shared.set("server.token", nil)
+        ServerLink.token = ""
         let said = await ServerLink.diagnose()
         // with no Tailscale on the build machine the diagnosis says so first; that is not what is checked here
         if said.contains("Tailscale مو شغّال") { throw XCTSkip("the simulator has no 100.x address of its own") }

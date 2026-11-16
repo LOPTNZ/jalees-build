@@ -141,6 +141,7 @@ struct CoverSearchSheet: View {
         JSheet(title: "غلاف من الإنترنت", action: sel >= 0 ? ("استخدم الغلاف", { pick() }) : nil) {
             HStack(spacing: 8) {
                 TextField("اسم الكتاب أو المؤلف أو ISBN", text: $q).font(JFont.body(16)).submitLabel(.search).onSubmit { run() }
+                    .clearButton($q, Color(L.ink2))
                     .padding(.horizontal, 12).frame(height: 46)
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
                 Button("ابحث") { run() }.buttonStyle(JButtonStyle(look: L, primary: true)).disabled(busy)

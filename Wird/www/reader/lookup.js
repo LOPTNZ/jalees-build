@@ -31,7 +31,10 @@ function gbItem(v){var i=v.volumeInfo||{},ids=i.industryIdentifiers||[],img=i.im
 function abjSearch(q){return netDoc('https://www.abjjad.com/search?kw='+encodeURIComponent(q)).then(function(doc){
   return $$('ul.listing > li',doc).slice(0,12).map(function(li){var a=$('h3 a',li)||$('a.img',li),img=$('a.img img',li),au=$('.author a',li);if(!a)return null;
     var t=tx(a.textContent)||tx(img&&img.getAttribute('alt')),src=img?img.getAttribute('src')||'':'';if(!t)return null;
-    return {src:'abj',title:t,author:tx(au&&au.textContent),pages:null,lang:scriptLang(t),cover:src,thumb:src,url:'https://www.abjjad.com'+(a.getAttribute('href')||'')}}).filter(Boolean)})}
+    /* the link must stay on www.abjjad.com whatever the page's href says (an absolute or // link would leave it) */
+    var u='';try{var uu=new URL(a.getAttribute('href')||'','https://www.abjjad.com/');if(uu.protocol==='https:'&&uu.hostname==='www.abjjad.com')u=uu.href}catch(e){}
+    if(!u)return null;
+    return {src:'abj',title:t,author:tx(au&&au.textContent),pages:null,lang:scriptLang(t),cover:src,thumb:src,url:u}}).filter(Boolean)})}
 function pageDetails(url){return netDoc(url).then(function(doc){var o={};
   $$('script[type="application/ld+json"]',doc).forEach(function(s){try{(function visit(x){if(!x||typeof x!=='object')return;if(Array.isArray(x)){x.forEach(visit);return}if(x['@graph'])visit(x['@graph']);
     if(/Book/.test([].concat(x['@type']||[]).join(' '))){if(x.numberOfPages&&!o.pages)o.pages=parseInt(x.numberOfPages,10)||null;if(x.isbn&&!o.isbn)o.isbn=isbnOf(x.isbn);var im=[].concat(x.image||[])[0];if(im&&!o.cover)o.cover=typeof im==='string'?im:im.url}})(JSON.parse(s.textContent))}catch(e){}});

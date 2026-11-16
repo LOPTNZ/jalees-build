@@ -5,7 +5,9 @@ import AVFoundation
 /// phone), which reading to use, Gemini's voice with a sample to hear, and the audio kept on the phone.
 struct ReadAloudSettings: View {
     @Environment(\.look) private var L
-    @State private var key = GeminiVoice.key
+    @State private var entries = GeminiVoice.entries
+    @State private var key = ""
+    @State private var newLabel = ""
     @State private var engine = GeminiVoice.engine
     @State private var voice = GeminiVoice.voice
     @State private var showKey = false
@@ -15,30 +17,44 @@ struct ReadAloudSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             note("Gemini يقرأ الروايات بالفصحى وبإعراب صحيح وبأصوات طبيعية، أدق بكثير من أصوات الجوال. مجاني بحدّ يومي، ولما يخلص الحد يكمّل صوت الجوال بعد ما يشكّل Gemini النص.")
-            VStack(alignment: .leading, spacing: 6) {
-                JLabel(text: "مفتاح Gemini")
-                HStack(spacing: 8) {
-                    Group {
-                        if showKey { TextField("AIza…", text: $key) } else { SecureField("AIza…", text: $key) }
+            VStack(alignment: .leading, spacing: 8) {
+                JLabel(text: "مفاتيح Gemini")
+                ForEach(Array(entries.enumerated()), id: \.element.id) { i, e in keyRow(i, e) }
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Group {
+                            if showKey { TextField("AIza…", text: $key) } else { SecureField("AIza…", text: $key) }
+                        }
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.asciiCapable)
+                        .multilineTextAlignment(.leading)
+                        .font(JFont.body(16)).foregroundStyle(Color(L.ink))
+                        .accessibilityLabel(entries.isEmpty ? "مفتاح Gemini" : "مفتاح إضافي")
+                        Button { showKey.toggle() } label: { Image(systemName: showKey ? "eye.slash" : "eye") }
+                            .buttonStyle(.plain).foregroundStyle(Color(L.ink2))
+                            .accessibilityLabel(showKey ? "أخفِ المفتاح" : "أظهر المفتاح")
                     }
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.asciiCapable)
-                    .multilineTextAlignment(.leading)
-                    .font(JFont.body(16)).foregroundStyle(Color(L.ink))
-                    .accessibilityLabel("مفتاح Gemini")
-                    Button { showKey.toggle() } label: { Image(systemName: showKey ? "eye.slash" : "eye") }
-                        .buttonStyle(.plain).foregroundStyle(Color(L.ink2))
-                        .accessibilityLabel(showKey ? "أخفِ المفتاح" : "أظهر المفتاح")
-                }
-                .environment(\.layoutDirection, .leftToRight)
-                .padding(.horizontal, 14).frame(height: 48)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
-                .onChange(of: key) { v in
-                    GeminiVoice.key = v
-                    engine = GeminiVoice.engine
+                    .environment(\.layoutDirection, .leftToRight)
+                    .padding(.horizontal, 14).frame(height: 48)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
+                    HStack(spacing: 8) {
+                        TextField("اسم للمفتاح (اختياري)", text: $newLabel)
+                            .font(JFont.body(15)).foregroundStyle(Color(L.ink))
+                            .padding(.horizontal, 14).frame(height: 40)
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
+                        Button { addKey() } label: { Label("أضف المفتاح", systemImage: "plus") }
+                            .buttonStyle(JButtonStyle(look: L, small: true))
+                            .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
                 }
             }
-            if key.isEmpty {
+            if !entries.isEmpty {
+                note("يقرأ بالمفتاح الأول، ولما يخلص حده اليومي ينتقل للي بعده، وبعد ما يتجدد الحد (منتصف الليل بتوقيت كاليفورنيا) يرجع للأول. كل مفتاح يظهر هنا يشتغل أو خالص لليوم.")
+            }
+            note("الحد اليومي يحدده Google ويغيّره، وما ينشره بأرقام ثابتة. المبلّغ عنه للنماذج الصوتية المجانية بين 10 و100 طلب في اليوم لكل نموذج، والفصل الواحد يحتاج نحو 8 إلى 10 طلبات، يعني من فصل إلى عشرة فصول في اليوم لكل مفتاح تقريبًا. وإذا كانت المفاتيح من نفس مشروع Google تشترك في حدّ واحد.")
+            note("تنبيه: شروط Google تمنع التحايل على حدود الاستخدام، فاستخدم مفاتيح حساباتك ومشاريعك أنت.")
+            if entries.isEmpty {
                 note("تسويه مجانًا: افتح صفحة المفاتيح بحساب Google، اضغط Create API key، انسخه والصقه هنا. يبقى في جوالك بس، وما يدخل في النسخة الاحتياطية.")
                 Link(destination: URL(string: "https://aistudio.google.com/apikey")!) {
                     Label("افتح صفحة المفاتيح", systemImage: "key")
@@ -95,7 +111,57 @@ struct ReadAloudSettings: View {
                 }
             }
         }
-        .onAppear { cache = GeminiVoice.cacheSize(); key = GeminiVoice.key; engine = GeminiVoice.engine; voice = GeminiVoice.voice }
+        .onAppear { cache = GeminiVoice.cacheSize(); entries = GeminiVoice.entries; engine = GeminiVoice.engine; voice = GeminiVoice.voice }
+    }
+
+    private func reload() {
+        entries = GeminiVoice.entries
+        engine = GeminiVoice.engine
+    }
+
+    private func addKey() {
+        if GeminiVoice.addKey(key, label: newLabel) { key = ""; newLabel = "" }
+        else { ToastCenter.shared.show("هذا المفتاح مضاف من قبل") }
+        reload()
+    }
+
+    /// one key: its place, name (or number), the ends of it, whether it works, and the buttons to move or remove it
+    private func keyRow(_ i: Int, _ e: GeminiVoice.KeyEntry) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(e.label.isEmpty ? "مفتاح \(i + 1)" : e.label).font(JFont.body(15, .semibold)).foregroundStyle(Color(L.ink))
+                Text(GeminiKeyRotation.mask(e.key)).font(JFont.body(13)).foregroundStyle(Color(L.ink2))
+                    .environment(\.layoutDirection, .leftToRight)
+                Text(stateText(GeminiVoice.state(of: e.id))).font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
+            }
+            Spacer(minLength: 4)
+            Button { GeminiVoice.moveKey(e.id, by: -1); reload() } label: { Image(systemName: "chevron.up") }
+                .buttonStyle(.plain).foregroundStyle(Color(L.ink2)).disabled(i == 0).opacity(i == 0 ? 0.3 : 1)
+                .accessibilityLabel("قدّمه")
+            Button { GeminiVoice.moveKey(e.id, by: 1); reload() } label: { Image(systemName: "chevron.down") }
+                .buttonStyle(.plain).foregroundStyle(Color(L.ink2)).disabled(i == entries.count - 1).opacity(i == entries.count - 1 ? 0.3 : 1)
+                .accessibilityLabel("أخّره")
+            Button { GeminiVoice.removeKey(e.id); reload() } label: { Image(systemName: "trash") }
+                .buttonStyle(.plain).foregroundStyle(Color(L.ink2))
+                .accessibilityLabel("احذف المفتاح")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface2)))
+    }
+
+    private func stateText(_ s: GeminiVoice.KeyState) -> String {
+        switch s {
+        case .working: return "يشتغل"
+        case .rejected: return "Google رفضه، تأكد منه"
+        case .out(let since, let until): return "خالص لليوم من الساعة \(clock(since))، يرجع الساعة \(clock(until))"
+        }
+    }
+
+    private func clock(_ t: Double) -> String {
+        let f = DateFormatter()
+        f.locale = Lang.locale
+        f.dateFormat = "h:mm a"
+        return f.string(from: Date(timeIntervalSince1970: t))
     }
 
     private var resetTime: String {

@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import CryptoKit
 
 /// مستودع المواقع (v2, like Tachimanga's extension repositories): a link to an index of site definitions that Jalees
 /// downloads and keeps, so a site that changed its pages, or a new site, works without a new build of the app. A
@@ -58,7 +59,8 @@ enum SiteRepo {
     /// Reads the index and downloads every site that is new or has a higher version. Returns what changed.
     @discardableResult
     static func update() async throws -> (added: [String], updated: [String]) {
-        guard let base = URL(string: url), base.scheme?.hasPrefix("http") == true else { throw Failure.badLink }
+        // https only: a site file runs inside the engine page, so it must not travel over a line anyone can change
+        guard let base = URL(string: url), base.scheme?.lowercased() == "https", let host = base.host?.lowercased() else { throw Failure.badLink }
         let (d, r) = try await URLSession.shared.data(from: base)
         if let code = (r as? HTTPURLResponse)?.statusCode, code != 200 { throw Failure.http(code) }
         guard let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let list = o["sites"] as? [[String: Any]] else { throw Failure.badIndex }
@@ -69,8 +71,15 @@ enum SiteRepo {
                   let file = s["file"] as? String, let fileURL = URL(string: file, relativeTo: base)?.absoluteURL else { continue }
             let version = (s["version"] as? Int) ?? Int((s["version"] as? String) ?? "") ?? 1
             if let h = have[id], h.version >= version { continue }
+            // a file on another host than the index's is not taken
+            guard fileURL.scheme?.lowercased() == "https", fileURL.host?.lowercased() == host else { continue }
             guard let got = try? await URLSession.shared.data(from: fileURL), (got.1 as? HTTPURLResponse)?.statusCode == 200,
                   got.0.count < 600_000, let text = String(data: got.0, encoding: .utf8), text.contains("Sources") else { continue }
+            // an index that lists a sha256 for the file must be matched by it (old indexes without one still work)
+            if let want = (s["sha256"] as? String)?.lowercased(), !want.isEmpty {
+                let have = SHA256.hash(data: got.0).map { String(format: "%02x", $0) }.joined()
+                guard have == want else { continue }
+            }
             try? text.write(to: dir().appendingPathComponent(id + ".js"), atomically: true, encoding: .utf8)
             let site = Site(id: id, name: (s["name"] as? String) ?? id, version: version, file: fileURL.absoluteString, lang: s["lang"] as? String)
             if have[id] == nil { added.append(site.name) } else { updated.append(site.name) }

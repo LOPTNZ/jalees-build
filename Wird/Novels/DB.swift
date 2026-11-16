@@ -1,5 +1,6 @@
 import Foundation
 import SQLite3
+import Security
 
 /// Novels, chapters and their text live in one SQLite file (Application Support/Wird/novels.sqlite),
 /// next to the older state.json that still holds the paper books and the notebook.
@@ -123,7 +124,8 @@ final class DB {
         bind(st, args)
         var rc = sqlite3_step(st)
         while rc == SQLITE_ROW { rc = sqlite3_step(st) }
-        if rc != SQLITE_DONE { NSLog("jalees db: %@ — %@", String(cString: sqlite3_errmsg(db)), sql) }
+        // a failed statement (a duplicate address) gives 0, not the id of some earlier insert
+        if rc != SQLITE_DONE { NSLog("jalees db: %@ — %@", String(cString: sqlite3_errmsg(db)), sql); return 0 }
         return sqlite3_last_insert_rowid(db)
     }
 
@@ -131,6 +133,33 @@ final class DB {
     func query(_ sql: String, _ args: [Any?] = []) -> [[String: Any]] {
         lock.lock(); defer { lock.unlock() }
         guard let db = handle else { return [] }
+        return select(db, sql, args)
+    }
+
+    private var reader: OpaquePointer?
+    private let readLock = NSLock()
+
+    /// Like `query`, on a second connection of its own: a long search through every saved chapter does not hold the
+    /// main lock, so the screens keep reading and writing meanwhile (WAL lets a reader and the writer work together).
+    func queryAside(_ sql: String, _ args: [Any?] = []) -> [[String: Any]] {
+        readLock.lock(); defer { readLock.unlock() }
+        if reader == nil {
+            let path = (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Wird", isDirectory: true).appendingPathComponent("novels.sqlite")).path
+            var h: OpaquePointer?
+            // opened for reading and writing (not read-only) because a WAL file needs its shared-memory file; it only selects
+            if sqlite3_open_v2(path, &h, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK {
+                sqlite3_exec(h, "PRAGMA query_only=ON", nil, nil, nil)
+                reader = h
+            } else {
+                sqlite3_close(h)
+            }
+        }
+        guard let r = reader else { return query(sql, args) }
+        return select(r, sql, args)
+    }
+
+    private func select(_ db: OpaquePointer, _ sql: String, _ args: [Any?]) -> [[String: Any]] {
         var st: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &st, nil) == SQLITE_OK else {
             NSLog("jalees db: %@ — %@", String(cString: sqlite3_errmsg(db)), sql)
@@ -173,6 +202,53 @@ final class DB {
     func set(_ key: String, _ value: String?) {
         if let v = value { run("INSERT INTO kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", [key, v]) }
         else { run("DELETE FROM kv WHERE k=?", [key]) }
+    }
+}
+
+/// Secrets (the server's token, the Gemini keys) live in the Keychain, not in the database file: the file is copied
+/// into backups and device exports, the Keychain is not (and this one stays on this phone only).
+enum Secrets {
+    static let service = "com.abdullah.wird.reader"
+
+    private static func query(_ account: String) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+    }
+
+    static func get(_ account: String) -> String? {
+        var q = query(account)
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: AnyObject?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
+        return String(data: d, encoding: .utf8)
+    }
+
+    /// Saves the value (nil removes it). False when the Keychain refused.
+    @discardableResult
+    static func set(_ account: String, _ value: String?) -> Bool {
+        guard let value = value else {
+            let s = SecItemDelete(query(account) as CFDictionary)
+            return s == errSecSuccess || s == errSecItemNotFound
+        }
+        let data = Data(value.utf8)
+        let have = SecItemUpdate(query(account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if have == errSecSuccess { return true }
+        var add = query(account)
+        add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+    }
+
+    /// The secret; an older copy still in the database (`kv`) moves to the Keychain on its first read, and goes from the database.
+    static func read(_ account: String, kv key: String) -> String? {
+        if let v = get(account) {
+            if DB.shared.get(key) != nil { DB.shared.set(key, nil) }
+            return v
+        }
+        guard let old = DB.shared.get(key), !old.isEmpty else { return nil }
+        // only removed from the database when the Keychain really has it now
+        if set(account, old) { DB.shared.set(key, nil) }
+        return old
     }
 }
 

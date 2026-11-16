@@ -248,7 +248,7 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
             do {
                 let t = try await Novels.shared.text(ch, source: r.novel.source)
                 guard mine == self.token, self.active else { return }
-                self.pieces = Self.split(Replacer.apply(t.paras, novel: r.novel.id))
+                self.pieces = Self.split(Replacer.apply(t.readable, novel: r.novel.id))
                 self.chapterLine = ch.line
                 self.chunks = Self.chunks(self.pieces, lead: ch.line)
                 self.gen += 1
@@ -385,7 +385,7 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDeleg
         let source = r.novel.source, novel = r.novel.id
         Task { @MainActor in
             guard let t = try? await Novels.shared.text(next, source: source) else { return }
-            let ps = Self.split(Replacer.apply(t.paras, novel: novel))
+            let ps = Self.split(Replacer.apply(t.readable, novel: novel))
             guard let first = Self.chunks(ps, lead: next.line).first else { return }
             _ = await Self.render(first.text, texts: ps[first.lo..<first.hi].map(\.text)) { _ in }
         }

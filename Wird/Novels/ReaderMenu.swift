@@ -110,8 +110,21 @@ enum Toast {
     }
 }
 
+// MARK: - direction
+
+extension UISemanticContentAttribute {
+    /// The reader's own controls read in the app's language (Arabic right to left, English left to right), whatever
+    /// the phone's language is. (The book's own direction, `ReaderViewController.bookRTL`, is for what follows the text.)
+    static var app: UISemanticContentAttribute { Lang.english ? .forceLeftToRight : .forceRightToLeft }
+}
+
 // MARK: - the reader's menu (Apple Books' little menu above the button, with the chapter scrubber beside it)
 
+/// One designed layout (reader 2.3, docs/plan/reader-2.3.md). Five rows for what is used every day: the contents with
+/// the progress, the book's notebook (highlights, notes, quotes, thoughts, words, characters, bookmarks), search, reading
+/// aloud, themes and settings. Under them four round buttons: the bookmark here, the line guide, auto-scroll, and
+/// «المزيد» for what is rare (the chapter on its site, from a second source, loaded again, shared; the replacement
+/// rules; the reading settings).
 final class ReaderMenuView: UIView {
     private weak var reader: ReaderViewController?
     private let panel = UIStackView()
@@ -121,6 +134,8 @@ final class ReaderMenuView: UIView {
     private var scrubIndex = 0
     private static let width: CGFloat = 276
     private static let rowHeight: CGFloat = 50
+    /// a round button whose tool is on (the guide, auto-scroll, a bookmark here)
+    static let lit = UIColor(red: 1, green: 0.62, blue: 0.25, alpha: 1)
 
     init(reader: ReaderViewController) {
         self.reader = reader
@@ -133,14 +148,14 @@ final class ReaderMenuView: UIView {
 
     required init?(coder: NSCoder) { fatalError("no storyboard") }
 
-    /// One row: its words on the right, a small number beside them when there is one, its icon on the left.
+    /// One row: its words at the start, a small number beside them when there is one, its icon at the end.
     private func row(_ title: String, _ detail: String?, _ symbol: String, _ action: @escaping () -> Void) -> UIView {
         let v = UIVisualEffectView(effect: Glass.effect())
         v.clipsToBounds = true
         v.layer.cornerRadius = ReaderMenuView.rowHeight / 2
         let b = UIButton(type: .system)
         b.addAction(UIAction { [weak self] _ in action(); self?.reader?.closeOverlays() }, for: .touchUpInside)
-        b.accessibilityLabel = title.tr
+        b.accessibilityLabel = title.tr + (detail.map { "، " + $0 } ?? "")
         let name = UILabel()
         name.text = title.tr
         name.font = .systemFont(ofSize: 16, weight: .medium)
@@ -158,7 +173,7 @@ final class ReaderMenuView: UIView {
         line.axis = .horizontal
         line.spacing = 8
         line.alignment = .center
-        line.semanticContentAttribute = .forceRightToLeft
+        line.semanticContentAttribute = .app
         line.isUserInteractionEnabled = false
         line.translatesAutoresizingMaskIntoConstraints = false
         b.translatesAutoresizingMaskIntoConstraints = false
@@ -178,7 +193,10 @@ final class ReaderMenuView: UIView {
 
     private func round(_ symbol: String, _ label: String, on: Bool = false, _ action: @escaping () -> Void) -> UIView {
         let g = GlassButton(symbol: symbol, size: 15)
-        if on { g.button.tintColor = UIColor(red: 1, green: 0.62, blue: 0.25, alpha: 1) }
+        if on {
+            g.button.tintColor = ReaderMenuView.lit
+            g.button.accessibilityTraits.insert(.selected)
+        }
         g.button.accessibilityLabel = label.tr
         g.button.addAction(UIAction { [weak self] _ in action(); self?.reader?.closeOverlays() }, for: .touchUpInside)
         g.translatesAutoresizingMaskIntoConstraints = false
@@ -186,73 +204,16 @@ final class ReaderMenuView: UIView {
         return g
     }
 
-    /// «شكل القائمة» (v2, the note on 1.6.0): the same items in three arrangements, chosen in the reading settings.
-    static var layout: String {
-        get { DB.shared.get("reader.menuLayout") ?? "list" }
-        set { DB.shared.set("reader.menuLayout", newValue) }
-    }
-
-    private struct Item { let title: String; let detail: String?; let symbol: String; let on: Bool; let action: () -> Void }
-    private var horizontal = false
-
-    private func items(_ r: ReaderViewController) -> (main: [Item], small: [Item]) {
-        var main = [
-            Item(title: "المحتويات", detail: r.progressText, symbol: "list.bullet", on: false) { [weak r] in r?.openContents() },
-            Item(title: "الوقفات والتمييزات", detail: r.markCount > 0 ? "\(r.markCount)" : nil, symbol: "bookmark", on: false) { [weak r] in r?.openMarks() },
-            Item(title: "بحث في الرواية", detail: nil, symbol: "magnifyingglass", on: false) { [weak r] in r?.openSearch() },
-            Item(title: "القراءة الصوتية", detail: nil, symbol: "speaker.wave.2", on: false) { [weak r] in r?.startReadAloud() }
-        ]
-        if !Novels.shared.mirrors(r.novel.id).isEmpty {
-            main.append(Item(title: "الفصل من مصدر ثاني", detail: nil, symbol: "arrow.triangle.2.circlepath", on: false) { [weak r] in r?.chapterFromMirror() })
-        }
-        main.append(Item(title: "السمات والإعدادات", detail: nil, symbol: "textformat.size", on: false) { [weak r] in r?.openThemes() })
-        let small = [
-            Item(title: "مشاركة", detail: nil, symbol: "square.and.arrow.up", on: false) { [weak r] in r?.share() },
-            Item(title: "قفل الاتجاه", detail: nil, symbol: r.isLocked ? "lock.rotation" : "lock.open.rotation", on: r.isLocked) { [weak r] in r?.toggleLock() },
-            Item(title: "دليل السطر", detail: nil, symbol: "text.line.first.and.arrowtriangle.forward", on: r.guideOn) { [weak r] in r?.toggleGuide() },
-            Item(title: "وقفة", detail: nil, symbol: r.bookmarkedHere ? "bookmark.fill" : "bookmark", on: r.bookmarkedHere) { [weak r] in r?.toggleBookmark() },
-            Item(title: "تمرير تلقائي", detail: nil, symbol: "play.circle", on: false) { [weak r] in r?.toggleAutoScroll() },
-            Item(title: "افتح الفصل في الموقع", detail: nil, symbol: "safari", on: false) { [weak r] in r?.openSite() }
-        ]
-        return (main, small)
-    }
-
-    /// A tile: its icon over its name (the grid and the bar).
-    private func tile(_ it: Item, width: CGFloat, height: CGFloat, glass: Bool = true) -> UIView {
-        let v = UIVisualEffectView(effect: glass ? Glass.effect() : nil)
-        v.clipsToBounds = true
-        v.layer.cornerRadius = 16
-        let icon = UIImageView(image: UIImage(systemName: it.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .medium)))
-        icon.tintColor = it.on ? UIColor(red: 1, green: 0.62, blue: 0.25, alpha: 1) : .white
-        icon.contentMode = .center
-        let name = UILabel()
-        name.text = it.title.tr
-        name.font = .systemFont(ofSize: 11.5, weight: .medium)
-        name.textColor = UIColor.white.withAlphaComponent(0.9)
-        name.textAlignment = .center
-        name.numberOfLines = 2
-        name.adjustsFontSizeToFitWidth = true
-        name.minimumScaleFactor = 0.8
-        let col = UIStackView(arrangedSubviews: [icon, name])
-        col.axis = .vertical
-        col.spacing = 4
-        col.alignment = .center
-        col.isUserInteractionEnabled = false
-        col.translatesAutoresizingMaskIntoConstraints = false
-        let b = UIButton(type: .system)
-        b.addAction(UIAction { [weak self] _ in it.action(); self?.reader?.closeOverlays() }, for: .touchUpInside)
-        b.accessibilityLabel = it.title.tr + (it.detail.map { "، " + $0 } ?? "")
-        b.translatesAutoresizingMaskIntoConstraints = false
-        v.contentView.addSubview(col)
-        v.contentView.addSubview(b)
-        NSLayoutConstraint.activate([
-            col.centerXAnchor.constraint(equalTo: v.contentView.centerXAnchor), col.centerYAnchor.constraint(equalTo: v.contentView.centerYAnchor),
-            name.widthAnchor.constraint(lessThanOrEqualToConstant: max(20, width - 8)),
-            b.topAnchor.constraint(equalTo: v.contentView.topAnchor), b.bottomAnchor.constraint(equalTo: v.contentView.bottomAnchor),
-            b.leftAnchor.constraint(equalTo: v.contentView.leftAnchor), b.rightAnchor.constraint(equalTo: v.contentView.rightAnchor),
-            v.widthAnchor.constraint(equalToConstant: width), v.heightAnchor.constraint(equalToConstant: height)
-        ])
-        return v
+    /// «المزيد»: a menu straight from the button (each of its actions closes the reader's menu first).
+    private func more(_ menu: UIMenu) -> UIView {
+        let g = GlassButton(symbol: "ellipsis", size: 15)
+        g.button.accessibilityLabel = "المزيد".tr
+        g.button.menu = menu
+        g.button.showsMenuAsPrimaryAction = true
+        g.button.preferredMenuElementOrder = .fixed
+        g.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([g.widthAnchor.constraint(equalToConstant: 40), g.heightAnchor.constraint(equalToConstant: 40)])
+        return g
     }
 
     private func hstack(_ views: [UIView], spacing: CGFloat) -> UIStackView {
@@ -261,7 +222,7 @@ final class ReaderMenuView: UIView {
         h.spacing = spacing
         h.distribution = .equalSpacing
         h.alignment = .center
-        h.semanticContentAttribute = .forceRightToLeft
+        h.semanticContentAttribute = .app
         return h
     }
 
@@ -270,8 +231,6 @@ final class ReaderMenuView: UIView {
         frame = host.bounds
         autoresizingMask = [.flexibleWidth, .flexibleHeight]
         host.addSubview(self)
-        let (main, small) = items(r)
-        let layout = Self.layout
 
         panel.axis = .vertical
         panel.spacing = 8
@@ -279,88 +238,47 @@ final class ReaderMenuView: UIView {
         panel.translatesAutoresizingMaskIntoConstraints = false
         scrub.clipsToBounds = true
         scrub.translatesAutoresizingMaskIntoConstraints = false
-        horizontal = layout == "bar"
 
-        switch layout {
-        case "grid":
-            // every item a tile, three to a row
-            let all = main + small
-            for i in stride(from: 0, to: all.count, by: 3) {
-                let row = hstack(all[i..<min(i + 3, all.count)].map { tile($0, width: 86, height: 74) }, spacing: 8)
-                row.distribution = .fill
-                panel.addArrangedSubview(row)
-            }
-        case "bar":
-            // one wide bar at the bottom: where you are, the chapters slider, the main items, then the small ones
-            panel.alignment = .fill
-            let bar = UIVisualEffectView(effect: Glass.effect())
-            bar.clipsToBounds = true
-            bar.layer.cornerRadius = 26
-            bar.translatesAutoresizingMaskIntoConstraints = false
-            let inner = UIStackView()
-            inner.axis = .vertical
-            inner.spacing = 6
-            inner.alignment = .fill
-            inner.translatesAutoresizingMaskIntoConstraints = false
-            scrub.effect = nil
-            scrub.backgroundColor = UIColor.white.withAlphaComponent(0.08)
-            scrub.layer.cornerRadius = 20
-            scrub.heightAnchor.constraint(equalToConstant: 40).isActive = true
-            let place = UILabel()
-            place.text = r.progressText
-            place.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-            place.textColor = UIColor.white.withAlphaComponent(0.7)
-            place.textAlignment = .center
-            inner.addArrangedSubview(place)
-            inner.addArrangedSubview(scrub)
-            let w = min(host.bounds.width - 24, 420)
-            let mainW = (w - 24 - CGFloat(max(0, main.count - 1)) * 4) / CGFloat(max(1, main.count))
-            inner.addArrangedSubview(hstack(main.map { tile($0, width: mainW, height: 62, glass: false) }, spacing: 4))
-            let smallW = (w - 24 - CGFloat(max(0, small.count - 1)) * 4) / CGFloat(max(1, small.count))
-            inner.addArrangedSubview(hstack(small.map { tile($0, width: smallW, height: 56, glass: false) }, spacing: 4))
-            bar.contentView.addSubview(inner)
-            NSLayoutConstraint.activate([
-                inner.topAnchor.constraint(equalTo: bar.contentView.topAnchor, constant: 10),
-                inner.bottomAnchor.constraint(equalTo: bar.contentView.bottomAnchor, constant: -10),
-                inner.leftAnchor.constraint(equalTo: bar.contentView.leftAnchor, constant: 12),
-                inner.rightAnchor.constraint(equalTo: bar.contentView.rightAnchor, constant: -12),
-                bar.widthAnchor.constraint(equalToConstant: w)
-            ])
-            panel.addArrangedSubview(bar)
-        default:
-            for it in main { panel.addArrangedSubview(row(it.title, it.detail, it.symbol, it.action)) }
-            // the small actions in one row of round buttons, right to left
-            let buttons = hstack(small.map { round($0.symbol, $0.title, on: $0.on, $0.action) }, spacing: 7)
-            buttons.widthAnchor.constraint(equalToConstant: ReaderMenuView.width).isActive = true
-            panel.addArrangedSubview(buttons)
-        }
+        let n = r.notebookCount
+        let rows: [(String, String?, String, () -> Void)] = [
+            ("المحتويات", r.progressText, "list.bullet", { [weak r] in r?.openContents() }),
+            (r.notebookTitle, n > 0 ? "\(n)" : nil, "book.closed", { [weak r] in r?.openNotebookList() }),
+            (r.searchTitle, nil, "magnifyingglass", { [weak r] in r?.openSearch() }),
+            ("القراءة الصوتية", nil, "speaker.wave.2", { [weak r] in r?.startReadAloud() }),
+            ("السمات والإعدادات", nil, "textformat.size", { [weak r] in r?.openThemes() })
+        ]
+        for x in rows { panel.addArrangedSubview(row(x.0, x.1, x.2, x.3)) }
+
+        let here = r.bookmarkedHere
+        let tools: [UIView] = [
+            round(here ? "bookmark.fill" : "bookmark", "وقفة", on: here) { [weak r] in r?.toggleBookmark() },
+            round("text.line.first.and.arrowtriangle.forward", "دليل السطر", on: r.guideOn) { [weak r] in r?.toggleGuide() },
+            round(r.autoScrolling ? "pause.circle" : "play.circle", "تمرير تلقائي", on: r.autoScrolling) { [weak r] in r?.toggleAutoScroll() },
+            more(r.moreMenu())
+        ]
+        let buttons = hstack(tools, spacing: 7)
+        buttons.widthAnchor.constraint(equalToConstant: ReaderMenuView.width).isActive = true
+        panel.addArrangedSubview(buttons)
         addSubview(panel)
-        if horizontal {
-            NSLayoutConstraint.activate([
-                panel.centerXAnchor.constraint(equalTo: centerXAnchor),
-                panel.bottomAnchor.constraint(equalTo: anchor.topAnchor, constant: -10)
-            ])
-        } else {
-            NSLayoutConstraint.activate([
-                panel.rightAnchor.constraint(equalTo: anchor.rightAnchor),
-                panel.bottomAnchor.constraint(equalTo: anchor.topAnchor, constant: -10)
-            ])
-            // the scrubber: right beside the menu, as tall as it, wide enough for a thumb
-            scrub.layer.cornerRadius = 26
-            addSubview(scrub)
-            NSLayoutConstraint.activate([
-                scrub.rightAnchor.constraint(equalTo: panel.leftAnchor, constant: -10),
-                scrub.topAnchor.constraint(equalTo: panel.topAnchor),
-                scrub.bottomAnchor.constraint(equalTo: panel.bottomAnchor),
-                scrub.widthAnchor.constraint(equalToConstant: 52)
-            ])
-        }
+        NSLayoutConstraint.activate([
+            panel.rightAnchor.constraint(equalTo: anchor.rightAnchor),
+            panel.bottomAnchor.constraint(equalTo: anchor.topAnchor, constant: -10)
+        ])
+        // the scrubber: right beside the menu, as tall as it, wide enough for a thumb. Up and down (the first chapter at
+        // the top), so it reads the same in an Arabic book and an English one.
+        scrub.layer.cornerRadius = 26
+        addSubview(scrub)
+        NSLayoutConstraint.activate([
+            scrub.rightAnchor.constraint(equalTo: panel.leftAnchor, constant: -10),
+            scrub.topAnchor.constraint(equalTo: panel.topAnchor),
+            scrub.bottomAnchor.constraint(equalTo: panel.bottomAnchor),
+            scrub.widthAnchor.constraint(equalToConstant: 52)
+        ])
         knob.backgroundColor = UIColor.white.withAlphaComponent(0.92)
         knob.layer.cornerRadius = 3
         scrub.contentView.addSubview(knob)
         scrub.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(scrubbed(_:))))
-        let tapScrub = UITapGestureRecognizer(target: self, action: #selector(scrubTapped(_:)))
-        scrub.addGestureRecognizer(tapScrub)
+        scrub.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(scrubTapped(_:))))
         scrub.isAccessibilityElement = true
         scrub.accessibilityLabel = "التنقل بين الفصول".tr
         tip.alpha = 0
@@ -383,44 +301,28 @@ final class ReaderMenuView: UIView {
 
     @objc private func outside(_ g: UITapGestureRecognizer) {
         let p = g.location(in: self)
-        if !panel.frame.contains(p) && !scrub.convert(scrub.bounds, to: self).contains(p) { reader?.closeOverlays() }
+        if !panel.frame.contains(p) && !scrub.frame.contains(p) { reader?.closeOverlays() }
     }
 
     private func placeKnob() {
         guard let r = reader, r.chapters.count > 1 else { return }
         let f = CGFloat(scrubIndex) / CGFloat(r.chapters.count - 1)
-        if horizontal {
-            // right to left: the first chapter at the right end
-            let w = scrub.bounds.width - 32
-            let x = scrub.bounds.width - 16 - w * f
-            knob.frame = CGRect(x: x - 3, y: 8, width: 6, height: scrub.bounds.height - 16)
-            return
-        }
         let h = scrub.bounds.height - 32
-        let y = 16 + h * f
-        knob.frame = CGRect(x: 12, y: y - 3, width: 28, height: 6)
+        knob.frame = CGRect(x: 12, y: 16 + h * f - 3, width: 28, height: 6)
     }
 
     private func index(at p: CGPoint) -> Int {
         guard let r = reader, r.chapters.count > 1 else { return 0 }
-        let f = horizontal
-            ? max(0, min(1, (scrub.bounds.width - 16 - p.x) / max(1, scrub.bounds.width - 32)))
-            : max(0, min(1, (p.y - 16) / max(1, scrub.bounds.height - 32)))
+        let f = max(0, min(1, (p.y - 16) / max(1, scrub.bounds.height - 32)))
         return Int((f * CGFloat(r.chapters.count - 1)).rounded())
     }
 
     private func showTip(_ i: Int) {
-        guard let r = reader else { return }
+        guard let r = reader, r.chapters.indices.contains(i) else { return }
         let ch = r.chapters[i]
         tip.text = ch.numbered && !ch.title.isEmpty ? "\(ch.label)\n\(ch.title)" : ch.label
         let s = tip.systemLayoutSizeFitting(CGSize(width: ReaderMenuView.width - 20, height: 90))
         let w = min(ReaderMenuView.width - 20, s.width)
-        if horizontal {
-            let k = scrub.convert(knob.frame, to: self)
-            tip.frame = CGRect(x: max(12, min(bounds.width - w - 12, k.midX - w / 2)), y: panel.frame.minY - s.height - 10, width: w, height: s.height)
-            UIView.animate(withDuration: 0.12) { self.tip.alpha = 1 }
-            return
-        }
         tip.frame = CGRect(x: panel.frame.midX - w / 2, y: scrub.frame.minY + knob.frame.midY - s.height / 2, width: w, height: s.height)
         UIView.animate(withDuration: 0.12) { self.tip.alpha = 1; self.panel.alpha = 0.12 }
     }
@@ -451,8 +353,11 @@ final class ReaderMenuView: UIView {
     }
 }
 
-// MARK: - the bar over a highlight: colours, underline, note, notebook, copy, delete
+// MARK: - the bar over a highlight: colours, underline, note or its entry, notebook, share, copy, remove
 
+/// A tapped highlight. Its colours carry the names the owner gave them (معلومة، مضحك، تلميح…: the notebook's
+/// categories). A highlight that is a quote's, thought's or word's place says so, and opens that entry instead of a
+/// note; removing it asks whether the entry goes too.
 final class MarkBar: UIVisualEffectView {
     struct Colour { let id: String; let ui: UIColor; let plain: String }
     static let colors: [Colour] = [
@@ -465,13 +370,17 @@ final class MarkBar: UIVisualEffectView {
     private weak var reader: ReaderViewController?
     private var mark: [String: Any]
     private let labels: [String: String]
+    /// the notebook entry this highlight is the place of, if any
+    private let entry: NoteKind?
     private let dots = UIStackView()
+    private var dotButtons: [UIButton] = []
     private let caption = UILabel()
 
-    init(reader: ReaderViewController, mark: [String: Any], labels: [String: String]) {
+    init(reader: ReaderViewController, mark: [String: Any], labels: [String: String], entry: NoteKind? = nil) {
         self.reader = reader
         self.mark = mark
         self.labels = labels
+        self.entry = entry
         super.init(effect: Glass.effect(interactive: false))
         clipsToBounds = true
         layer.cornerRadius = 22
@@ -483,22 +392,47 @@ final class MarkBar: UIVisualEffectView {
     private var current: String { (mark["color"] as? String) ?? "yellow" }
     private var underline: Bool { (mark["style"] as? String) == "ul" }
 
+    private func name(_ c: Colour) -> String {
+        let n = (labels[c.id] ?? "").trimmingCharacters(in: .whitespaces)
+        return n.isEmpty ? c.plain.tr : n
+    }
+
     private func build() {
         dots.axis = .horizontal
-        dots.spacing = 8
         dots.distribution = .equalSpacing
-        dots.semanticContentAttribute = .forceRightToLeft
+        dots.alignment = .top
+        dots.semanticContentAttribute = .app
+        // the colours he named are his categories: each name shows under its dot
+        let named = MarkBar.colors.contains { !(labels[$0.id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
         for c in MarkBar.colors {
             let b = UIButton(type: .custom)
             b.backgroundColor = c.ui
             b.layer.cornerRadius = 15
             b.layer.borderColor = UIColor.white.cgColor
             b.layer.borderWidth = c.id == current ? 3 : 0
-            b.accessibilityLabel = (labels[c.id]?.isEmpty == false ? labels[c.id]! : c.plain)
+            b.accessibilityLabel = name(c)
             b.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([b.widthAnchor.constraint(equalToConstant: 30), b.heightAnchor.constraint(equalToConstant: 30)])
             b.addAction(UIAction { [weak self] _ in self?.pick(c.id) }, for: .touchUpInside)
-            dots.addArrangedSubview(b)
+            dotButtons.append(b)
+            if named {
+                let l = UILabel()
+                l.text = (labels[c.id] ?? "").trimmingCharacters(in: .whitespaces)
+                l.font = .systemFont(ofSize: 9.5, weight: .medium)
+                l.textColor = UIColor.white.withAlphaComponent(0.75)
+                l.textAlignment = .center
+                l.adjustsFontSizeToFitWidth = true
+                l.minimumScaleFactor = 0.7
+                l.isAccessibilityElement = false
+                l.widthAnchor.constraint(equalToConstant: 38).isActive = true
+                let col = UIStackView(arrangedSubviews: [b, l])
+                col.axis = .vertical
+                col.alignment = .center
+                col.spacing = 3
+                dots.addArrangedSubview(col)
+            } else {
+                dots.addArrangedSubview(b)
+            }
         }
         caption.font = .systemFont(ofSize: 12, weight: .medium)
         caption.textColor = UIColor.white.withAlphaComponent(0.75)
@@ -508,7 +442,7 @@ final class MarkBar: UIVisualEffectView {
         func tool(_ symbol: String, _ title: String, tint: UIColor = .white, _ action: @escaping () -> Void) -> UIButton {
             var cfg = UIButton.Configuration.plain()
             cfg.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium))
-            cfg.title = title
+            cfg.title = title.tr
             cfg.imagePlacement = .top
             cfg.imagePadding = 3
             cfg.baseForegroundColor = tint
@@ -520,43 +454,46 @@ final class MarkBar: UIVisualEffectView {
             }
             return UIButton(configuration: cfg, primaryAction: UIAction { _ in action() })
         }
-        let ul = tool(underline ? "underline" : "underline", underline ? "تظليل" : "خط تحت") { [weak self] in self?.toggleStyle() }
-        let note = tool("note.text", (mark["note"] as? String)?.isEmpty == false ? "الملاحظة" : "ملاحظة") { [weak self] in
-            guard let self = self else { return }
-            self.reader?.editNote(self.mark)
-        }
-        let book = tool("book.closed", "للدفتر") {}
-        book.showsMenuAsPrimaryAction = true
-        let kinds: [(String, String, String)] = [("quote", "اقتباس", "text.quote"), ("thought", "خاطرة", "lightbulb"), ("word", "كلمة", "character.book.closed"), ("char", "شخصية", "person")]
-        // «معلومة»: the highlight takes the colour named «معلومة», so it shows in the notebook's «معلومات» list
-        let info = UIAction(title: "معلومة".tr, image: UIImage(systemName: "info.circle")) { [weak self] _ in
-            guard let self = self, let c = self.reader?.infoColor else { return }
-            self.pick(c)
-            self.reader?.toast("انحفظت في «معلومات» بالدفتر")
-        }
-        book.menu = UIMenu(children: kinds.map { item in
-            UIAction(title: item.1, image: UIImage(systemName: item.2)) { [weak self] _ in
+        var list: [UIView] = [tool("underline", underline ? "تظليل" : "خط تحت") { [weak self] in self?.toggleStyle() }]
+        if let k = entry {
+            // the quote (thought, word) this highlight is: its form, over the page
+            list.append(tool(k.symbol, k.name) { [weak self] in
                 guard let self = self else { return }
-                self.reader?.openNotebook(kind: item.0, text: (self.mark["text"] as? String) ?? "", sentence: "", at: self.mark)
-            }
-        } + [info])
-        let copy = tool("doc.on.doc", "نسخ") { [weak self] in
+                self.reader?.editEntry(of: self.mark)
+            })
+        } else {
+            list.append(tool("note.text", (mark["note"] as? String)?.isEmpty == false ? "الملاحظة" : "ملاحظة") { [weak self] in
+                guard let self = self else { return }
+                self.reader?.editNote(self.mark)
+            })
+            let book = tool("book.closed", "للدفتر") {}
+            book.showsMenuAsPrimaryAction = true
+            // the highlight becomes the entry's place (a character is named in the text anyway)
+            book.menu = UIMenu(children: NoteKind.allCases.map { k in
+                UIAction(title: k.name.tr, image: UIImage(systemName: k.symbol)) { [weak self] _ in
+                    guard let self = self else { return }
+                    self.reader?.markToNotebook(self.mark, kind: k.rawValue)
+                }
+            })
+            list.append(book)
+        }
+        list.append(tool("square.and.arrow.up", "مشاركة") { [weak self] in
+            guard let self = self, let r = self.reader else { return }
+            r.shareQuote((self.mark["text"] as? String) ?? "", chapter: (self.mark["chLabel"] as? String) ?? "")
+        })
+        list.append(tool("doc.on.doc", "نسخ") { [weak self] in
             UIPasteboard.general.string = (self?.mark["text"] as? String) ?? ""
             self?.reader?.closeOverlays()
             self?.reader?.toast("انتسخ النص")
-        }
-        let share = tool("square.and.arrow.up", "مشاركة") { [weak self] in
-            guard let self = self, let r = self.reader else { return }
-            r.shareQuote((self.mark["text"] as? String) ?? "", chapter: (self.mark["chLabel"] as? String) ?? "")
-        }
-        let del = tool("trash", "إزالة", tint: UIColor(red: 1, green: 0.42, blue: 0.4, alpha: 1)) { [weak self] in
+        })
+        list.append(tool("trash", "إزالة", tint: UIColor(red: 1, green: 0.42, blue: 0.4, alpha: 1)) { [weak self] in
             guard let self = self else { return }
-            self.reader?.deleteMark(self.mark)
-        }
-        let tools = UIStackView(arrangedSubviews: [ul, note, book, share, copy, del])
+            self.reader?.removeMark(self.mark)
+        })
+        let tools = UIStackView(arrangedSubviews: list)
         tools.axis = .horizontal
         tools.distribution = .fillEqually
-        tools.semanticContentAttribute = .forceRightToLeft
+        tools.semanticContentAttribute = .app
 
         let col = UIStackView(arrangedSubviews: [dots, caption, tools])
         col.axis = .vertical
@@ -572,9 +509,11 @@ final class MarkBar: UIVisualEffectView {
     }
 
     private func updateCaption() {
-        let name = labels[current] ?? ""
-        caption.text = name.isEmpty ? (MarkBar.colors.first { $0.id == current }?.plain ?? "") : name
-        for (i, v) in dots.arrangedSubviews.enumerated() { v.layer.borderWidth = MarkBar.colors[i].id == current ? 3 : 0 }
+        let c = MarkBar.colors.first { $0.id == current }
+        let colour = c.map { name($0) } ?? ""
+        // «اقتباس في الدفتر · معلومة»: what this highlight is, and its colour's name
+        caption.text = entry.map { ($0.name + " في الدفتر").tr + " · " + colour } ?? colour
+        for (i, b) in dotButtons.enumerated() { b.layer.borderWidth = MarkBar.colors[i].id == current ? 3 : 0 }
     }
 
     private func pick(_ c: String) {
@@ -639,7 +578,7 @@ final class AutoScrollPill: UIVisualEffectView {
         let st = UIStackView(arrangedSubviews: [b("minus") { [weak self] in self?.step(-8) }, playButton, label, b("plus") { [weak self] in self?.step(8) }, b("xmark") { [weak self] in self?.close() }])
         st.spacing = 4
         st.alignment = .center
-        st.semanticContentAttribute = .forceRightToLeft
+        st.semanticContentAttribute = .app
         st.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(st)
         NSLayoutConstraint.activate([

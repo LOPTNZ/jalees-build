@@ -53,6 +53,8 @@ button.go.prev .v{font-size:14.5px;font-weight:500;margin:0;color:var(--soft)}
 /* ---------- reader v2 ---------- */
 :root{--latin:"Thmanyah Serif Text";--cols:1}
 #page .body p.lt{font-family:var(--latin),var(--font),serif;direction:ltr;unicode-bidi:isolate}
+/* an English book reads left to right; its Arabic paragraphs (a quotation) still run right to left */
+html.ltr #page .body p.ar{direction:rtl;unicode-bidi:isolate}
 html.kashida #page .body p.ar{letter-spacing:0}
 section.chap+section.chap{margin-top:.6em}
 .ch-gap{height:calc(var(--top) * .4)}
@@ -96,6 +98,14 @@ html.paged .body p{break-inside:auto;orphans:2;widows:2}
 /* the grip on the band's left end moves it; the rest of the band lets the text be scrolled and selected */
 #guide .g-grip{position:absolute;left:calc(env(safe-area-inset-left) + 2px);top:calc(var(--y) + var(--h) / 2 - 22px);width:30px;height:44px;
   pointer-events:auto;touch-action:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+/* several columns: only the guide's own column is left clear, the rest (the other columns too) stays dimmed */
+#guide.mc{--x0:0px;--x1:100vw;--gx:2px;--d:rgba(0,0,0,var(--dim));background:
+  linear-gradient(var(--d),var(--d)) 0 0/var(--x0) 100% no-repeat,
+  linear-gradient(var(--d),var(--d)) 100% 0/calc(100% - var(--x1)) 100% no-repeat,
+  linear-gradient(to bottom,var(--d) 0,var(--d) calc(var(--y) - var(--soft)),rgba(0,0,0,0) var(--y)) var(--x0) 0/calc(var(--x1) - var(--x0)) 100% no-repeat,
+  linear-gradient(to bottom,rgba(0,0,0,0) calc(var(--y) + var(--h)),var(--d) calc(var(--y) + var(--h) + var(--soft))) var(--x0) 0/calc(var(--x1) - var(--x0)) 100% no-repeat}
+#guide.mc .g-band{inset-inline:auto;left:var(--x0);width:calc(var(--x1) - var(--x0))}
+#guide.mc .g-grip{left:min(max(var(--gx),calc(env(safe-area-inset-left) + 2px)),calc(100% - 32px - env(safe-area-inset-right)))}
 #guide .g-grip i{display:block;width:14px;height:2px;border-radius:1px;background:rgba(255,255,255,.55)}
 #guide.moving .g-grip i{background:#fff}
 
@@ -113,3 +123,14 @@ button.go.cm.site{background:transparent;border-color:transparent}
 ::highlight(tts){background-color:rgba(255,204,0,.34);color:inherit}
 .body p.tts-rp{background-color:rgba(0,0,0,.002)}
 .body p.tts-p{background:rgba(255,204,0,.16);border-radius:6px;box-shadow:0 0 0 4px rgba(255,204,0,.16)}
+
+/* EPUB footnotes: the reference is a small raised number (its one character in the text is hidden), the note a small card */
+a.fn,span.fn0{font-size:0;line-height:0;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+a.fn{color:inherit;text-decoration:none;cursor:pointer}
+span.fn0{display:none}
+a.fn::after{content:attr(data-n);font-size:calc(var(--size,20px) * .62);line-height:0;vertical-align:super;padding:0 .35em;margin:0 -.05em;
+  color:color-mix(in srgb,var(--fg) 55%,#e0a84a);font-weight:600;-webkit-tap-highlight-color:transparent}
+#fnpop{position:fixed;z-index:30;box-sizing:border-box;max-height:40vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+  padding:14px 16px;border-radius:16px;border:1px solid var(--line);background:color-mix(in srgb,var(--fg) 9%,var(--bg));color:var(--fg);
+  box-shadow:0 10px 32px rgba(0,0,0,.38);font-family:var(--font,inherit);font-size:calc(var(--size,20px) * .78);line-height:1.6;text-align:start}
+#fnpop .fb{white-space:pre-wrap;overflow-wrap:anywhere}

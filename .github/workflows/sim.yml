@@ -12,7 +12,7 @@ concurrency:
 jobs:
   sim:
     runs-on: macos-26
-    timeout-minutes: 95
+    timeout-minutes: 130
     steps:
       - uses: actions/checkout@v4
       - name: Runner
@@ -35,13 +35,6 @@ jobs:
           test -f build/Build/Products/Debug-iphonesimulator/Wird.app/Wird
       - name: Open the screens and take pictures
         run: bash tools/sim/shots.sh
-      - name: Pictures on an iPad
-        if: always()
-        timeout-minutes: 15
-        run: |
-          TYPE=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys;t=[x for x in json.load(sys.stdin)['devicetypes'] if x['name'].startswith('iPad Pro 11') or x['name'].startswith('iPad Air 11')];print(t[-1]['identifier'])")
-          SHOTS_DEVICE="$TYPE" SHOTS_NAME=JaleesPadShots SHOTS_OUT=out-sim/pad bash tools/sim/shots.sh || true
-          xcrun simctl shutdown JaleesPadShots || true
       - name: A test server on a Tailscale-style address
         if: always()
         run: |
@@ -53,7 +46,7 @@ jobs:
       - name: Walk through the app (UI tests)
         # a commit named "… quick" (QUICK=1 bash tools/push_build.sh) stops after the pictures
         if: always() && !contains(github.event.head_commit.message, 'quick')
-        timeout-minutes: 40
+        timeout-minutes: 55
         run: |
           mkdir -p out-sim/ui
           # a fresh install: the demo library, not what the pictures above changed
@@ -75,7 +68,7 @@ jobs:
           xcrun simctl spawn Jalees13 log show --last 60m --predicate 'process == "Wird"' --style compact 2>/dev/null | grep -i "jalees browse" | tail -300 > out-sim/ui/browse.log || true
       - name: Walk through on an iPad
         if: always() && !contains(github.event.head_commit.message, 'quick')
-        timeout-minutes: 22
+        timeout-minutes: 32
         run: |
           mkdir -p out-sim/ipad
           RT=$(xcrun simctl list runtimes -j | python3 -c "import json,sys;r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('isAvailable') and x['platform']=='iOS'];r.sort(key=lambda x:[int(p) for p in x['version'].split('.')]);print(r[-1]['identifier'])")
@@ -85,7 +78,7 @@ jobs:
           mkdir -p out-sim/ipad/samples
           ( while true; do sleep 30; for pid in $(pgrep -f "Wird.app/Wird"); do sample "$pid" 1 -file "out-sim/ipad/samples/$(date +%H%M%S)-$pid.txt" > /dev/null 2>&1; done; done ) &
           SAMPLER=$!
-          TEST_RUNNER_SHOTS="$PWD/out-sim/ipad" xcodebuild test -project Wird.xcodeproj -scheme Wird             -destination 'platform=iOS Simulator,name=JaleesPad' -derivedDataPath build             -only-testing:WirdUITests/FlowTests/test01Tabs -only-testing:WirdUITests/FlowTests/test03BookPage             -only-testing:WirdUITests/FlowTests/test05NotebookQuote -only-testing:WirdUITests/FlowTests/test10ReaderChapters             -only-testing:WirdUITests/FlowTests/test14BrowseSites             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=""             2>&1 | tee test-ipad.log | grep -E "error:|Test Case .*(passed|failed)|: error|XCTAssert|not found|TEST (SUCCEEDED|FAILED)" || true
+          TEST_RUNNER_SHOTS="$PWD/out-sim/ipad" xcodebuild test -project Wird.xcodeproj -scheme Wird             -destination 'platform=iOS Simulator,name=JaleesPad' -derivedDataPath build             -only-testing:WirdUITests/FlowTests/test01Tabs -only-testing:WirdUITests/FlowTests/test03BookPage             -only-testing:WirdUITests/FlowTests/test05NotebookQuote -only-testing:WirdUITests/FlowTests/test10ReaderChapters             -only-testing:WirdUITests/FlowTests/test14BrowseSites -only-testing:WirdUITests/FlowTests/test20EnglishDevice -only-testing:WirdUITests/FlowTests/test19ReaderNotebook             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=""             2>&1 | tee test-ipad.log | grep -E "error:|Test Case .*(passed|failed)|: error|XCTAssert|not found|TEST (SUCCEEDED|FAILED)" || true
           kill $SAMPLER 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()

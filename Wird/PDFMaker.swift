@@ -22,7 +22,16 @@ final class PDFMaker: NSObject, WKNavigationDelegate {
         host.insertSubview(w, at: 0)
         web = w
         w.loadHTMLString(html, baseURL: URL(string: AppSchemeHandler.scheme + "://app/"))
+        // a page that never finishes must not leave the button busy for ever: after 20 s it ends with nothing
+        // (finish answers once only, so a late watchdog after a good answer does nothing)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self, weak w] in
+            guard let self = self, let w = w, self.web === w else { return }
+            self.finish(nil)
+        }
     }
+
+    /// the web view's process was killed (memory): no page is coming
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { finish(nil) }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // wait for the web fonts and images, then a moment for layout to settle

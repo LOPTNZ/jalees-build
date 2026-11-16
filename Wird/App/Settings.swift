@@ -151,7 +151,7 @@ struct RestoreSheet: View {
         JSheet(title: "استعادة نسخة") {
             Text("النسخة فيها \(Words.cnt(Double(n), Words.books)) من \(Words.date(file.data.num("exported"), year: true)).")
                 .font(JFont.body(15)).foregroundStyle(Color(L.ink))
-            Text("بتحل محل كل بياناتك الحالية في التطبيق. إذا تبي تحتفظ فيها، صدّر نسخة أول.")
+            Text("بتحل محل كل بياناتك الحالية في التطبيق. قبل الاستعادة نحفظ نسخة من بياناتك الحالية داخل التطبيق، وإذا تبي نسخة معك صدّرها أول.")
                 .font(JFont.body(15 * 0.93)).foregroundStyle(Color(L.ink))
                 .padding(.horizontal, 14).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(L.accentSoft)))
@@ -167,7 +167,7 @@ struct ResetSheet: View {
     @Environment(\.look) private var L
     var body: some View {
         JSheet(title: "ابدأ من الصفر") {
-            Text("تنحذف كل الكتب والجلسات والملاحظات والصور. الإعدادات والإنجازات تبقى.").font(JFont.body(15)).foregroundStyle(Color(L.ink))
+            Text("تنحذف كل الكتب والجلسات والملاحظات والصور والروايات المحمّلة. الإعدادات والإنجازات تبقى.").font(JFont.body(15)).foregroundStyle(Color(L.ink))
             Text("إذا تبي تحتفظ فيها، صدّر نسخة احتياطية أول.").font(JFont.body(15 * 0.86)).foregroundStyle(Color(L.ink2))
             Button { dismiss(); Backup.reset() } label: {
                 Text("احذف كل شيء").font(JFont.body(16, .semibold)).foregroundStyle(.white)
@@ -222,6 +222,10 @@ enum Backup {
 
     /// Replaces everything with the backup (pictures not in it stay on disk, as before).
     static func restore(_ data: JSONObject) {
+        // what is there now is kept as a copy first (state.before-restore-<time>.json next to the library file)
+        if let d = JSONValue.object(Library.shared.state.json).data(), let j = String(data: d, encoding: .utf8) {
+            Store.shared.keepSnapshot(j, as: "state.before-restore-\(Int(Date().timeIntervalSince1970)).json")
+        }
         if let nv = data["novels"]?.array, !nv.isEmpty {
             Novels.shared.importAll(nv.compactMap { $0.any as? [String: Any] })
         }
@@ -242,11 +246,14 @@ enum Backup {
 
     static func reset() {
         let lib = Library.shared
+        // the pictures are only collected here: they are deleted once the empty library is saved, so a stop in between
+        // can't leave a library whose covers are gone
+        var pictures: [String?] = []
         for b in lib.state.books {
-            lib.deleteImage(b.cover)
-            lib.deleteImage(b.raw.optStr("spine"))
-            for c in b.chars { lib.deleteImage(c.raw.optStr("photo")) }
-            for q in b.items(.quote) { lib.deleteImage(q.raw.optStr("img")) }
+            pictures.append(b.cover)
+            pictures.append(b.raw.optStr("spine"))
+            for c in b.chars { pictures.append(c.raw.optStr("photo")) }
+            for q in b.items(.quote) { pictures.append(q.raw.optStr("img")) }
         }
         let old = lib.state
         SessionModel.shared.clear()
@@ -258,6 +265,8 @@ enum Backup {
             o["ach"] = .object(old.ach)
             st = AppState(Library.upgrade(o))
         }
+        lib.saveNow { for p in pictures { lib.deleteImage(p) } }
+        Novels.shared.deleteAll()
         home()
         ToastCenter.shared.show("بدأت من الصفر")
         Reminder.sync()
@@ -293,7 +302,8 @@ enum Reminder {
     static func sync(ask: Bool = false) {
         let st = Library.shared.state
         let r = st.settings.raw.obj("remind")
-        let b = st.lastBookId().flatMap { st.book($0) }
+        // the notification shows on the lock screen, so with the app lock on it names no book
+        let b = AppLock.shared.enabled ? nil : st.lastBookId().flatMap { st.book($0) }
         let body = (b.map { $0.status == .reading ? "«\($0.title)» بانتظارك · " : "" } ?? "") + "هدفك \(st.goals.daily) دقيقة"
         Notify.remind(["on": r.bool("on"), "time": r.str("time", "21:00"), "skipToday": st.todayMin >= Double(st.goals.daily),
                        "title": "حان وقت القراءة", "body": body]) { granted in

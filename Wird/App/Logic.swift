@@ -1,5 +1,12 @@
 import Foundation
 
+/// A Double as an Int that can't trap: rounded, not-a-number as 0, and kept within ±1e9 (an absurd typed or saved number
+/// shows as 1,000,000,000 instead of crashing the app).
+func safeInt(_ x: Double) -> Int {
+    guard x.isFinite else { return x.isNaN ? 0 : (x > 0 ? 1_000_000_000 : -1_000_000_000) }
+    return Int(min(1e9, max(-1e9, x)).rounded())
+}
+
 // The web app's derived values and words (01-core.js, 02-library.js), the same rules in Swift.
 
 enum Unit: String {
@@ -61,7 +68,7 @@ enum Words {
 
     /// Arabic counting: 0 → "0 كتاب", 1 → "كتاب واحد", 2 → "كتابان", 3–10 → "3 كتب", 11+ → "11 كتابًا".
     static func cnt(_ n: Double, _ f: [String]) -> String {
-        let n = Int(n.rounded())
+        let n = safeInt(n)
         if Lang.english {
             let w = f.count > 3 ? nounsEn[f[3]] : nil
             let one = w?.0 ?? f[0].tr, many = w?.1 ?? (f.count > 2 ? f[2] : f[0]).tr
@@ -76,7 +83,7 @@ enum Words {
 
     static func fmtMin(_ m: Double) -> String {
         if m > 0 && m < 1 { return Lang.english ? "under a minute" : "أقل من دقيقة" }
-        let m = Int(m.rounded())
+        let m = safeInt(m)
         let en = Lang.english
         if m < 60 { return en ? "\(m) min" : "\(m) د" }
         let h = m / 60, r = m % 60
@@ -85,7 +92,7 @@ enum Words {
     }
 
     static func hm(_ m: Double) -> String {
-        let m = max(0, Int(m.rounded()))
+        let m = max(0, safeInt(m))
         return "\(m / 60):" + String(format: "%02d", m % 60)
     }
 
@@ -227,8 +234,20 @@ extension AppState {
     }
 
     func minutesByDay() -> [String: Double] {
+        // Built once per set of sessions: streak, goals and today's minutes ask for it on every redraw. The key is the
+        // count with the sums of the sessions' minutes and start times, so adding, deleting or editing one rebuilds it.
+        var sumMin = 0.0, sumStart = 0.0
+        for s in sessions { sumMin += s.minutes; sumStart += s.start }
+        let key = MinutesCache.Key(count: sessions.count, minutes: sumMin, start: sumStart)
+        MinutesCache.lock.lock()
+        if MinutesCache.key == key { let v = MinutesCache.value; MinutesCache.lock.unlock(); return v }
+        MinutesCache.lock.unlock()
         var m: [String: Double] = [:]
         for s in sessions { m[Words.dkey(s.start), default: 0] += s.minutes }
+        MinutesCache.lock.lock()
+        MinutesCache.key = key
+        MinutesCache.value = m
+        MinutesCache.lock.unlock()
         return m
     }
 
@@ -334,4 +353,12 @@ extension AppState {
         if b.status == .reading || b.pos > 0 { return v.cont }
         return v.start
     }
+}
+
+/// The last result of AppState.minutesByDay and what it was made from.
+enum MinutesCache {
+    struct Key: Equatable { var count: Int; var minutes: Double; var start: Double }
+    static let lock = NSLock()
+    static var key: Key?
+    static var value: [String: Double] = [:]
 }

@@ -17,7 +17,7 @@ enum EpubExport {
 
     /// Builds the file; `progress` gets a short line now and then. Returns its address in the temporary folder.
     @MainActor
-    static func build(_ novel: Novel, options o: Options, progress: @escaping (String) -> Void) async throws -> URL {
+    static func build(_ novel: Novel, options o: Options, progress: @escaping (String) -> Void, skipped: @escaping (Int) -> Void = { _ in }) async throws -> URL {
         let all = Novels.shared.chapters(novel.id)
         var list = all
         switch o.scope {
@@ -30,6 +30,7 @@ enum EpubExport {
         // the text of each chapter: saved ones at once, the rest from the site, four at a time
         var texts: [Int: ChapterText] = [:]
         var done = 0
+        var failed = 0     // chapters that would not download: counted, and told to the user at the end
         try await withThrowingTaskGroup(of: (Int, ChapterText?).self) { group in
             var it = list.makeIterator()
             func next() {
@@ -40,11 +41,14 @@ enum EpubExport {
             for try await (id, t) in group {
                 if Task.isCancelled { throw CancellationError() }
                 texts[id] = t
+                if t == nil { failed += 1 }
                 done += 1
                 if done % 10 == 0 || done == list.count { progress("أجهّز الفصول: \(done) من \(list.count)") }
                 next()
             }
         }
+        if failed >= list.count { throw NovelError.message("ما نزل أي فصل، تأكد من الاتصال وحاول مرة ثانية") }
+        skipped(failed)
         progress("أكتب الملف")
 
         let name = safeName(novel.title) + ".epub"
@@ -82,7 +86,7 @@ enum EpubExport {
         for (n, ch) in list.enumerated() {
             guard let t = texts[ch.id] else { continue }
             let file = "chap_\(n + 1).xhtml"
-            let paras = Replacer.apply(t.paras, novel: novel.id)
+            let paras = Replacer.apply(t.readable, novel: novel.id)
             let title = ch.title.isEmpty ? t.title : ch.title
             try z.add("OEBPS/" + file, Data(chapterPage(number: ch.numbered ? ch.label : nil, title: title.isEmpty ? ch.label : title, paras: paras).utf8))
             items.append(("chap_\(n + 1)", file, ch.numbered ? (title.isEmpty ? ch.label : "\(ch.label) - \(title)") : (title.isEmpty ? ch.label : title), ch.volume))
@@ -112,8 +116,14 @@ enum EpubExport {
 
     // MARK: pieces of the book (as the tool writes them)
 
-    private static func esc(_ s: String) -> String {
-        s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+    private static func esc(_ raw: String) -> String {
+        // characters XML 1.0 does not allow (control codes, lone surrogates never reach a String) would make the
+        // reader refuse the whole page: they are dropped
+        let s = String(String.UnicodeScalarView(raw.unicodeScalars.filter {
+            $0.value == 0x9 || $0.value == 0xA || $0.value == 0xD || ($0.value >= 0x20 && $0.value <= 0xD7FF)
+                || ($0.value >= 0xE000 && $0.value <= 0xFFFD) || $0.value >= 0x10000
+        }))
+        return s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
     }
 
@@ -289,8 +299,9 @@ final class ZipWriter {
         local.le32(0x04034b50); local.le16(20); local.le16(0x0800); local.le16(method); local.le16(0); local.le16(0x21)
         local.le32(crc); local.le32(UInt32(body.count)); local.le32(UInt32(data.count)); local.le16(UInt16(name.count)); local.le16(0)
         local.append(name)
-        h.write(local)
-        h.write(body)
+        // write(contentsOf:) throws on a full disk; the old write(_:) raised an exception nothing can catch
+        try h.write(contentsOf: local)
+        try h.write(contentsOf: body)
         var c = Data()
         c.le32(0x02014b50); c.le16(20); c.le16(20); c.le16(0x0800); c.le16(method); c.le16(0); c.le16(0x21)
         c.le32(crc); c.le32(UInt32(body.count)); c.le32(UInt32(data.count)); c.le16(UInt16(name.count)); c.le16(0); c.le16(0)
@@ -302,11 +313,11 @@ final class ZipWriter {
     }
 
     func finish() throws {
-        h.write(central)
+        try h.write(contentsOf: central)
         var end = Data()
         end.le32(0x06054b50); end.le16(0); end.le16(0); end.le16(UInt16(count)); end.le16(UInt16(count))
         end.le32(UInt32(central.count)); end.le32(offset); end.le16(0)
-        h.write(end)
+        try h.write(contentsOf: end)
         try h.close()
     }
 
@@ -351,6 +362,7 @@ struct EpubExportSheet: View {
     @State private var o = EpubExport.Options()
     @State private var busy = false
     @State private var status = ""
+    @State private var missing = ""     // «N فصول ما نزلت»: shown under the button once the file is made
     @State private var job: Task<Void, Never>?
 
     var body: some View {
@@ -376,6 +388,7 @@ struct EpubExportSheet: View {
                 HStack(spacing: 8) { ProgressView(); Text(status).font(JFont.body(14)).foregroundStyle(Color(L.ink2)) }
                 Button("إيقاف") { job?.cancel(); busy = false }.buttonStyle(JButtonStyle(look: L, small: true))
             } else {
+                if !missing.isEmpty { Text(missing).font(JFont.body(13.5)).foregroundStyle(Color(L.ink2)) }
                 Button { start() } label: { Label("إنشاء الملف", systemImage: "book.closed").frame(maxWidth: .infinity) }
                     .buttonStyle(JButtonStyle(look: L, primary: true))
             }
@@ -386,10 +399,16 @@ struct EpubExportSheet: View {
     private func start() {
         busy = true
         status = "أبدأ"
+        missing = ""
         job = Task { @MainActor in
             do {
-                let url = try await EpubExport.build(novel, options: o) { s in status = s }
+                var failed = 0
+                let url = try await EpubExport.build(novel, options: o, progress: { s in status = s }, skipped: { failed = $0 })
                 busy = false
+                if failed > 0 {
+                    missing = "\(failed) فصول ما نزلت وما دخلت الملف"
+                    ToastCenter.shared.show(missing)
+                }
                 Share.files([url])
             } catch is CancellationError {
                 busy = false

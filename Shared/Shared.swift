@@ -81,6 +81,8 @@ struct WSnap: Codable {
     var accent: String?
     var quotes: [WQuote]?
     var novels: [WNovel]?
+    /// the app lock is on: the widgets show «جليس مقفل» and nothing else
+    var locked: Bool?
 }
 
 /// The running reading/listening session shown on the lock screen.

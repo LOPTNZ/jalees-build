@@ -737,6 +737,117 @@ final class FlowTests: XCTestCase {
         tap(button("إغلاق"), "close the reader")
     }
 
+    /// Reader 2.3: the one menu, the book's notebook in the reader, and a highlight with a note made from a selection
+    /// that shows in the reader's list and in دفتري ← تظليلات ← ملاحظات (one thing in both places).
+    func test19ReaderNotebook() {
+        let web = openReader()
+        func showButtons() {
+            for _ in 0..<4 where !button("القائمة").exists {
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.74)).tap()
+                sleep(2)
+            }
+        }
+        showButtons()
+        guard tap(button("القائمة"), "reader menu") else { return }
+        sleep(1)
+        shot("ui83-reader-menu")
+        XCTAssertTrue(buttonStarting("المحتويات").exists, "the contents row")
+        XCTAssertTrue(button("المزيد").exists, "the «more» button")
+        XCTAssertFalse(buttonStarting("الوقفات والتمييزات").exists, "the old list's row is gone")
+        guard tap(buttonStarting("دفتر الرواية"), "the book's notebook") else { return }
+        sleep(1)
+        shot("ui84-reader-notebook")
+        tap(button("تم"), "close the list")
+        sleep(1)
+
+        // a highlight with a note, from a selection
+        let note = "ملاحظة من الاختبار"
+        let at = web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42))
+        at.press(forDuration: 1.3)
+        sleep(2)
+        let noteItem = app.menuItems["ملاحظة"].firstMatch
+        if !noteItem.waitForExistence(timeout: 4) {
+            web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).tap()
+            sleep(2)
+            at.press(forDuration: 1.5)
+            sleep(2)
+        }
+        guard noteItem.waitForExistence(timeout: 5) else {
+            XCTExpectFailure("the selection menu's items were not found", strict: false) { XCTFail("no «ملاحظة» in the selection menu") }
+            return
+        }
+        noteItem.tap()
+        sleep(2)
+        app.typeText(note)
+        shot("ui85-note-typed")
+        tap(button("حفظ"), "save the note")
+        sleep(2)
+
+        // in the reader's list, under «ملاحظات»
+        showButtons()
+        guard tap(button("القائمة"), "reader menu again") else { return }
+        sleep(1)
+        guard tap(buttonStarting("دفتر الرواية"), "the book's notebook again") else { return }
+        sleep(1)
+        tap(button("ملاحظات"), "the notes filter")
+        sleep(1)
+        shot("ui86-reader-notebook-notes")
+        let inList = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", note)).firstMatch
+        XCTAssertTrue(inList.waitForExistence(timeout: 4), "the note is not in the reader's list")
+        tap(button("تم"), "close the list")
+        sleep(1)
+        showButtons()
+        tap(button("إغلاق"), "close the reader")
+        sleep(2)
+
+        // and in the notebook, the same highlight with its note
+        tab("دفتري")
+        tap(buttonStarting("تظليلات"), "highlights")
+        sleep(1)
+        tap(buttonStarting("ملاحظات"), "notes")
+        sleep(1)
+        shot("ui87-notebook-notes")
+        let inNotebook = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", note)).firstMatch
+        XCTAssertTrue(inNotebook.waitForExistence(timeout: 4), "the note is not in دفتري")
+    }
+
+    /// A phone or iPad in English with Jalees in Arabic (the owner's iPad showed some sheets and menus mirrored):
+    /// the reader's sheets, the line guide's menu, and the two pages sideways, kept as pictures to look at.
+    func test20EnglishDevice() {
+        app.terminate()
+        func open(_ route: String) -> XCUIApplication {
+            let a = XCUIApplication()
+            a.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-JaleesRoute", route]
+            a.launch()
+            sleep(9)
+            return a
+        }
+        var a = open("reader-reading")
+        shot("ui90-enphone-reading")
+        a.terminate()
+        a = open("reader-themes")
+        shot("ui91-enphone-themes")
+        // the page-turn style menu in the sheet (a system menu)
+        let style = a.buttons.matching(NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@", "تمرير", "قلب")).firstMatch
+        if style.waitForExistence(timeout: 3) { style.tap(); sleep(1); shot("ui92-enphone-style-menu") }
+        a.terminate()
+        a = open("reader-guide")
+        let guide = a.buttons["دليل السطر"].firstMatch
+        if guide.waitForExistence(timeout: 4) { guide.tap(); sleep(1); shot("ui93-enphone-guide-menu") }
+        a.terminate()
+        // two pages: sideways, an English book and an Arabic one with the guide on
+        XCUIDevice.shared.orientation = .landscapeLeft
+        a = open("readeren-guide")
+        shot("ui94-land-readeren-guide")
+        a.terminate()
+        a = open("reader-guide")
+        shot("ui95-land-reader-guide")
+        a.terminate()
+        XCUIDevice.shared.orientation = .portrait
+        sleep(1)
+        app.launch()
+    }
+
     /// Last (it leaves the app in English): the English interface reads left to right and its tabs say so.
     func test99English() {
         app.terminate()

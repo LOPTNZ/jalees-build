@@ -19,6 +19,16 @@ enum WidgetFeed {
 
     static func update() {
         let st = Library.shared.state
+        // With the lock on the widgets sit on the home and lock screens for anyone to read, so they get no titles, covers
+        // or quotes, only a flag that makes them show «جليس مقفل» (the lock's switch rewrites this at once).
+        if AppLock.shared.enabled {
+            let snap: [String: Any] = ["day": Words.dkey(Millis.now), "today": 0, "goal": 30, "streak": 0, "todayHas": false, "year": 0, "yearGoal": 0,
+                                       "accent": (Theme.accents[st.settings.accent] ?? Theme.accents["teal"]!).dark[0], "locked": true]
+            guard let d = try? JSONSerialization.data(withJSONObject: snap, options: [.sortedKeys]), let j = String(data: d, encoding: .utf8), j != last else { return }
+            last = j
+            WidgetSync.write(snap)
+            return
+        }
         let streak = st.streak
         var snap: [String: Any] = [
             "day": Words.dkey(Millis.now), "today": Int(st.todayMin.rounded()), "goal": st.goals.daily,

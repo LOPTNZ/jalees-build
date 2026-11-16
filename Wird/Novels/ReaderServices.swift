@@ -281,13 +281,19 @@ enum FontStore {
         let name = UUID().uuidString.prefix(8) + "." + ext
         try data.write(to: dir.appendingPathComponent(String(name)), options: .atomic)
         let fmt = ext == "otf" ? "opentype" : (ext == "woff2" ? "woff2" : "truetype")
-        let css = "@font-face{font-family:\"\(family)\";src:url(\"/userfonts/\(name)\") format(\"\(fmt)\");font-display:block}"
+        // a quote, backslash or line break in the family name would end the CSS string early
+        let cssFamily = family.filter { $0 != "\"" && $0 != "\\" && !$0.isNewline }
+        let css = "@font-face{font-family:\"\(cssFamily)\";src:url(\"/userfonts/\(name)\") format(\"\(fmt)\");font-display:block}"
         return UserFont(family: family, css: css)
     }
 
     static func addGoogle(_ family: String) async throws -> UserFont {
-        let q = family.replacingOccurrences(of: " ", with: "+")
-        guard let u = URL(string: "https://fonts.googleapis.com/css2?family=\(q):wght@400;700&display=swap") else { throw Failure(errorDescription: "اسم غير صالح") }
+        // spaces become "+", and everything else that means something in a query (& + # %, accents, Arabic) is escaped
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&+#=%")
+        let q = (family.trimmingCharacters(in: .whitespaces).addingPercentEncoding(withAllowedCharacters: allowed) ?? "")
+            .replacingOccurrences(of: "%20", with: "+")
+        guard !q.isEmpty, let u = URL(string: "https://fonts.googleapis.com/css2?family=\(q):wght@400;700&display=swap") else { throw Failure(errorDescription: "اسم غير صالح") }
         let (d, code) = try await getData(u)
         guard code == 200, var css = String(data: d, encoding: .utf8), css.contains("@font-face") else {
             throw Failure(errorDescription: "ما لقيت خط اسمه «\(family)» في Google Fonts")
@@ -328,6 +334,7 @@ enum TextSearch {
         for r in rows {
             let ch = r.int("ch")
             guard let d = r.str("paras").data(using: .utf8), let paras = try? JSONSerialization.jsonObject(with: d) as? [String] else { continue }
+            let paras = ChapterText.readable(paras)
             var nth = 0
             for p in paras {
                 let s = p.replacingOccurrences(of: "\u{0640}", with: "")

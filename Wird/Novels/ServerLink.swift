@@ -25,8 +25,13 @@ enum ServerLink {
         return c.string ?? t
     }
     static var token: String {
-        get { DB.shared.get("server.token") ?? "" }
-        set { DB.shared.set("server.token", newValue.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        // in the Keychain (Secrets); an older copy in the database moves there on the first read
+        get { Secrets.read("server.token", kv: "server.token") ?? "" }
+        set {
+            let v = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            Secrets.set("server.token", v.isEmpty ? nil : v)
+            DB.shared.set("server.token", nil)
+        }
     }
     static var isOn: Bool { !url.isEmpty && !token.isEmpty }
     static var lastBackup: Double {
@@ -91,12 +96,28 @@ enum ServerLink {
         guard !token.isEmpty else { return "وصلت للسيرفر. باقي تحط الرمز." }
         do {
             let n = try await test()
-            return "السيرفر شغّال ويتابع \(n) رواية"
+            return "السيرفر شغّال ويتابع \(n) رواية" + plainWarning(host)
         } catch Failure.token {
             return "وصلت للسيرفر، بس الرمز ما طابق (اللي حطيته \(token.count) حرف). انسخ JALEES_TOKEN كامل والصقه بزر «الصق»."
         } catch {
             return error.localizedDescription
         }
+    }
+
+    /// One more line when the address is plain http and outside Tailscale and the home network: the token then travels
+    /// unencrypted over whatever network is between the phone and the server.
+    private static func plainWarning(_ host: String) -> String {
+        guard url.lowercased().hasPrefix("http://"), !isTailscale(host), !isLocalNetwork(host) else { return "" }
+        return "\nتنبيه: العنوان مو Tailscale ولا شبكة بيتك، والاتصال بدون تشفير (http)، فالرمز يمشي مكشوف في الطريق. استخدم Tailscale أو https."
+    }
+
+    /// Private home-network addresses (10.x, 172.16–31.x, 192.168.x, 169.254.x), localhost and «.local» names.
+    static func isLocalNetwork(_ host: String) -> Bool {
+        let h = host.lowercased()
+        if h == "localhost" || h.hasSuffix(".local") { return true }
+        let p = h.split(separator: ".").compactMap { Int($0) }
+        guard p.count == 4 else { return false }
+        return p[0] == 10 || p[0] == 127 || (p[0] == 172 && (16...31).contains(p[1])) || (p[0] == 192 && p[1] == 168) || (p[0] == 169 && p[1] == 254)
     }
 
     /// 100.64.0.0/10: the addresses Tailscale gives.

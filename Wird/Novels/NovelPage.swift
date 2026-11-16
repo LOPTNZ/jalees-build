@@ -521,6 +521,7 @@ struct NovelPageView: View {
                 Button { linkText = ""; askMove = true } label: { Label("انقلها لموقع ثاني", systemImage: "arrow.right.arrow.left") }.buttonStyle(JButtonStyle(look: L, small: true))
             }
             Text("الاحتياطي يجيب الفصل لو ما انفتح من الأساسي، أو لما تختار «الفصل من مصدر ثاني» في القارئ.").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
+            if SiteTranslation.has(model.novel.source) { translationRow.padding(.top, 6) }
         }
         .onAppear { model.loadMirrors() }
         .alert("مصدر احتياطي", isPresented: $askMirror) {
@@ -533,6 +534,32 @@ struct NovelPageView: View {
             Button("انقلها") { model.move(linkText) }
             Button("إلغاء", role: .cancel) {}
         } message: { Text("تقدّمك وتحميلك وتظليلك يبقون، والفصول تتطابق بأرقامها.") }
+    }
+
+    /// «ترجمة الموقع»: a site that translates each chapter twice (WTR-LAB: its AI translation and Google's), the one
+    /// this novel comes in.
+    @State private var trPick: String?
+    @State private var askRefetch = false
+
+    private var translationRow: some View {
+        let src = model.novel.source, id = model.novel.id
+        let list = SiteTranslation.choices[src] ?? []
+        let cur = trPick ?? SiteTranslation.get(id, source: src)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("ترجمة الموقع").font(JFont.body(14.5, .semibold)).foregroundStyle(Color(L.ink))
+            Picker("ترجمة الموقع", selection: Binding(get: { cur }, set: { v in
+                guard v != cur else { return }
+                SiteTranslation.set(id, v); trPick = v; Haptics.play("sel"); askRefetch = true
+            })) {
+                ForEach(list.map { $0.id }, id: \.self) { k in Text(list.first { $0.id == k }?.label ?? k).tag(k) }
+            }
+            .pickerStyle(.segmented)
+            Text("الموقع نفسه يترجم كل فصل ترجمتين آليتين، اختر اللي ترتاح لها. الفصول تجي بها من الحين.").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
+        }
+        .confirmationDialog("الفصول المحفوظة بالترجمة الثانية", isPresented: $askRefetch, titleVisibility: .visible) {
+            Button("نزّلها من جديد بالترجمة الجديدة") { Novels.shared.undownloadAll(id) }
+            Button("خلّها مثل ما هي", role: .cancel) {}
+        } message: { Text("المحفوظ يبقى مثل ما هو، أو تحذفه ويجي من الموقع بالترجمة الجديدة لما تفتح الفصل.") }
     }
 
     private var downloadsCard: some View {
@@ -549,7 +576,9 @@ struct NovelPageView: View {
     // MARK: highlights
 
     private var highlights: some View {
-        let all = model.marks
+        // a quote's (thought's, word's) highlight is counted in the notebook below, not twice
+        let linked = Set((model.book["linked"] as? [String]) ?? [])
+        let all = model.marks.filter { !linked.contains(($0["id"] as? String) ?? "") }
         let counts = Dictionary(grouping: all, by: { ($0["color"] as? String) ?? "yellow" }).mapValues(\.count)
         let list = model.markColor.isEmpty ? all : all.filter { ($0["color"] as? String) == model.markColor }
         return VStack(alignment: .leading, spacing: 10) {

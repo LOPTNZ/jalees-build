@@ -13,6 +13,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         AppDirection.apply(to: window)
         window.makeKeyAndVisible()
         self.window = window
+        // simulator pictures: an iPad turned sideways (the reader's two pages)
         if ProcessInfo.processInfo.arguments.contains("-JaleesLandscape"), #available(iOS 16.0, *) {
             windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight)) { e in NSLog("jalees landscape: %@", e.localizedDescription) }
         }
@@ -32,11 +33,19 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     @MainActor private func open(_ url: URL) {
-        if url.isFileURL { NovelBridge.importEpub(url) } else { DeepLink.open(url) }
+        DeepLink.handle(url)
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
         if let s = scene as? UIWindowScene { AppLock.shared.cameBack(s) }
+    }
+
+    func sceneWillResignActive(_ scene: UIScene) {
+        if let s = scene as? UIWindowScene { AppLock.shared.resigning(s) }
+    }
+
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        if let s = scene as? UIWindowScene { AppLock.shared.becameActive(s) }
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
@@ -50,6 +59,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 /// in the notebook), wird://open?tab=<tab>.
 @MainActor
 enum DeepLink {
+    /// Any link or file handed to the app. While the app is locked it waits for the unlock (AppLock opens it then).
+    static func handle(_ url: URL) {
+        if AppLock.shared.hold(url) { return }
+        if url.isFileURL { NovelBridge.importEpub(url) } else { open(url) }
+    }
+
     static func open(_ url: URL) {
         var q: [String: String] = [:]
         URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.forEach { q[$0.name] = $0.value ?? "" }

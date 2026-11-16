@@ -1,8 +1,10 @@
 # name  seconds  launch arguments
 reader-tts 14 -JaleesRoute reader-tts -JaleesSilent
 reader-menu 10 -JaleesRoute reader-menu
-reader-menugrid 10 -JaleesRoute reader-menugrid
-reader-menubar 10 -JaleesRoute reader-menubar
+# the book's notebook in the reader (a highlight with a note made first), the regrouped reading settings, a word's rule
+reader-notes 12 -JaleesRoute reader-notes
+reader-reading 10 -JaleesRoute reader-reading
+reader-rules 10 -JaleesRoute reader-rules
 settings 8 -JaleesRoute settings
 en-library 8 -JaleesLang en -JaleesRoute tab-library
 en-notebook 8 -JaleesLang en -JaleesRoute tab-notebook
@@ -37,11 +39,3 @@ readeren-guide 10 -JaleesRoute readeren-guide
 readeren-paged 10 -JaleesRoute readeren-paged
 readeren-curl 10 -JaleesRoute readeren-curl
 en-readeren-guide 10 -JaleesLang en -JaleesRoute readeren-guide
-# the iPad pass (pad-*): an English iPad with an Arabic Jalees, and the reader's two pages sideways
-pad-en-reader-reading 12 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute reader-reading
-pad-en-reader-themes 12 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute reader-themes
-pad-en-settings 10 -AppleLanguages (en) -AppleLocale en_US -JaleesRoute settings
-pad-ar-reader-reading 12 -JaleesRoute reader-reading
-pad-land-reader-guide 14 -JaleesLandscape -JaleesRoute reader-guide
-pad-land-readeren-guide 14 -JaleesLandscape -JaleesRoute readeren-guide
-pad-land-readeren-paged 14 -JaleesLandscape -JaleesRoute readeren-paged

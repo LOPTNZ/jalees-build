@@ -196,11 +196,21 @@ enum Reads {
         return (b, st.sessions.filter { $0.bookId == id })
     }
 
+    /// Undo: puts back what the removal changed, on the book as it is now (notes, progress and sessions added since stay).
     static func restore(_ s: Snap) {
         Library.shared.change { st in
             guard let i = st.index(of: s.book.id) else { return }
-            st.books[i] = s.book
-            st.sessions = (st.sessions.filter { $0.bookId != s.book.id } + s.sessions).sorted { $0.start < $1.start }
+            var x = st.books[i]
+            for k in ["status", "start", "finish", "rating", "review", "moods", "pace", "volReviews", "pos", "vi", "history", "readNo"] { x.raw[k] = s.book.raw[k] }
+            // the removal renumbered which read each quote, thought and word belongs to; only that number goes back
+            for k in ["quotes", "thoughts", "words"] {
+                var was: [String: Int] = [:]
+                for o in s.book.raw.objs(k) where !o.str("id").isEmpty { was[o.str("id")] = o.int("read", 1) }
+                x.raw.set(k, objects: x.raw.objs(k).map { o in var o = o; if let r = was[o.str("id")] { o.set("read", r) }; return o })
+            }
+            st.books[i] = x
+            let back = Set(s.sessions.map(\.id))
+            st.sessions = (st.sessions.filter { !back.contains($0.id) } + s.sessions).sorted { $0.start < $1.start }
         }
     }
 

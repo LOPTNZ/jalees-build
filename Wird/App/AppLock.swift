@@ -13,11 +13,27 @@ final class AppLock: ObservableObject {
     @Published var failed = false
     private var window: UIWindow?
     private var leftAt: Date?
+    private var scene: UIWindowScene?
+    private var coverToken = 0
+    /// a link that came in while locked
+    private var pending: URL?
     private var asking = false
 
     var enabled: Bool {
         get { UserDefaults.standard.bool("lock.on") }
-        set { UserDefaults.standard.set(newValue, forKey: "lock.on"); objectWillChange.send() }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "lock.on")
+            objectWillChange.send()
+            if !newValue {
+                locked = false
+                leftAt = nil
+                pending = nil
+                if window?.isHidden == false { uncover() }
+            }
+            // the widgets show a locked card (and the reminder names no book) while the lock is on
+            WidgetFeed.update()
+            Reminder.sync()
+        }
     }
     /// seconds away before it locks again: 0, 60, 300
     var grace: Double {
@@ -57,46 +73,87 @@ final class AppLock: ObservableObject {
     // MARK: the scene's comings and goings
 
     func launched(_ scene: UIWindowScene) {
+        self.scene = scene
+        // built now (and left hidden) so the first time it is needed it is already drawn, before the app switcher's snapshot
+        prepareWindow(scene)
         guard enabled else { return }
-        cover(scene)
+        cover()
+        locked = true
         unlock()
     }
 
-    func wentAway(_ scene: UIWindowScene) {
+    /// The scene is about to stop being the active one (Control Center, a notification pulled down, the app switcher):
+    /// the cover goes up at once, because the system takes its snapshot about now. It makes nobody authenticate again.
+    func resigning(_ scene: UIWindowScene) {
+        self.scene = scene
         guard enabled, !asking else { return }
-        leftAt = Date()
-        cover(scene)
+        if !locked, leftAt == nil { leftAt = Date() }
+        cover()
     }
 
-    func cameBack(_ scene: UIWindowScene) {
+    /// The app is really in the background. `leftAt` was set a moment earlier, when the scene resigned.
+    func wentAway(_ scene: UIWindowScene) {
+        self.scene = scene
         guard enabled, !asking else { return }
-        if let t = leftAt, Date().timeIntervalSince(t) < grace, !locked {
-            uncover()
+        if !locked, leftAt == nil { leftAt = Date() }
+        cover()
+    }
+
+    /// Coming back from the background: inside the grace period the unlocked state is kept, otherwise it locks again.
+    func cameBack(_ scene: UIWindowScene) {
+        self.scene = scene
+        guard enabled, !asking else { return }
+        if !locked, let t = leftAt, Date().timeIntervalSince(t) < grace { return }  // becameActive takes the cover off
+        locked = true
+        cover()
+        unlock()
+    }
+
+    /// The scene is active again: when nobody needs to authenticate (the lock is off, or a short trip out inside the
+    /// grace period, or only Control Center was pulled down) the cover comes off. A locked app stays covered.
+    func becameActive(_ scene: UIWindowScene) {
+        guard enabled else {
+            locked = false
+            leftAt = nil
+            if window?.isHidden == false { uncover() }
             return
         }
-        cover(scene)
-        unlock()
+        guard !asking, !locked else { return }
+        leftAt = nil
+        uncover()
     }
 
-    private func cover(_ scene: UIWindowScene) {
-        if window == nil {
-            let w = UIWindow(windowScene: scene)
-            w.windowLevel = .alert + 1
-            let host = UIHostingController(rootView: LockView().environment(\.look, Appearance.shared.look).environment(\.layoutDirection, Lang.direction))
-            host.view.backgroundColor = .clear
-            w.rootViewController = host
-            window = w
-        }
+    private func prepareWindow(_ scene: UIWindowScene) {
+        guard window == nil else { return }
+        let w = UIWindow(windowScene: scene)
+        w.windowLevel = .alert + 1
+        let host = UIHostingController(rootView: LockView().environment(\.look, Appearance.shared.look).environment(\.layoutDirection, Lang.direction))
+        host.view.backgroundColor = .clear
+        w.rootViewController = host
+        w.isHidden = true
+        window = w
+    }
+
+    /// The cover goes up. It doesn't change `locked`: that says whether authentication is needed, the cover also
+    /// hides the app from the app switcher while it is not.
+    private func cover() {
+        if window == nil, let s = scene { prepareWindow(s) }
+        coverToken += 1
+        window?.layer.removeAllAnimations()
+        window?.alpha = 1
         window?.isHidden = false
-        locked = true
     }
 
     private func uncover() {
+        coverToken += 1
+        let token = coverToken
+        locked = false
         UIView.animate(withDuration: 0.25, animations: { self.window?.alpha = 0 }, completion: { _ in
+            // a cover put up again meanwhile stays
+            guard token == self.coverToken else { return }
             self.window?.isHidden = true
             self.window?.alpha = 1
         })
-        locked = false
     }
 
     func unlock() {
@@ -108,9 +165,23 @@ final class AppLock: ObservableObject {
         c.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "افتح جليس") { ok, _ in
             Task { @MainActor in
                 self.asking = false
-                if ok { self.leftAt = nil; self.uncover() } else { self.failed = true }
+                if ok {
+                    self.leftAt = nil
+                    self.uncover()
+                    // a link that arrived while it was locked (a widget's tap, a shared page) opens now
+                    if let u = self.pending { self.pending = nil; DeepLink.handle(u) }
+                } else {
+                    self.failed = true
+                }
             }
         }
+    }
+
+    /// A link to open while the app is locked is kept until it is unlocked; true when it was kept.
+    func hold(_ url: URL) -> Bool {
+        guard enabled, locked else { return false }
+        pending = url
+        return true
     }
 }
 

@@ -47,7 +47,7 @@
 
   /* ---------- ملوك الروايات (kolnovel.com) ---------- */
   S.kolnovel = {
-    id: 'kolnovel', name: 'ملوك الروايات', home: 'https://kolnovel.com/', lang: 'ar',
+    id: 'kolnovel', name: 'ملوك الروايات', home: 'https://kolnovel.com/', lang: 'ar', icon: 'og',
     hosts: ['kolnovel.com', 'www.kolnovel.com'],
     isSeries: function (url) { return /\/series\/[^/]+\/?/.test(url); },
     /* a chapter page links back to its novel */
@@ -138,29 +138,90 @@
   /* ---------- a section of an EPUB book (local file, read through the app) ---------- */
   S.epub = {
     id: 'epub', name: 'كتاب EPUB', home: '', lang: 'ar', hosts: [],
+    /* Footnotes: a reference stays in the text as one private-use character (U+E000); the k-th one of the section
+       belongs to notes[k] (plain text) or, when its note is in another file, to refs[] = [{k, href}] that the app
+       resolves by asking this file's notes() for the target file. */
     chapter: function (doc, url) {
-      var body = doc.body || doc.documentElement, out = [];
+      var body = doc.body || doc.documentElement, out = [], MARK = '', NOTEBOX = '[epub\\:type~="footnote"],[epub\\:type~="endnote"],[epub\\:type~="rearnote"],[epub\\:type~="footnotes"],[epub\\:type~="endnotes"],[epub\\:type~="rearnotes"]', refs = [], notes = {}, here = String(url).split('#')[0];
+      var et = function (n) { return ((n.getAttribute && (n.getAttribute('epub:type') || n.getAttribute('role'))) || '').toLowerCase(); };
+      var isRef = function (a) {
+        var h = a.getAttribute('href') || ''; if (!h || h.indexOf('#') < 0) return false;
+        var t = et(a);
+        if (/backlink/.test(t)) return false;
+        if (/noteref/.test(t)) return true;
+        var p = a.parentNode;
+        return !!(p && p.tagName && p.tagName.toLowerCase() === 'sup' && txt(p).length <= 6 && txt(p) === txt(a));
+      };
+      var local = function (href) { var base = abs(href, url).split('#')[0]; return base === here || href.charAt(0) === '#'; };
+      var idOf = function (href) { var i = href.indexOf('#'); var s = i < 0 ? '' : href.slice(i + 1); try { return decodeURIComponent(s); } catch (e) { return s; } };
+      /* a note's words, without the link back to where it came from */
+      var noteText = function (el) {
+        var c = el.cloneNode(true), as = c.querySelectorAll('a'), i;
+        for (i = 0; i < as.length; i++) if (/backlink/.test(et(as[i])) || /^[\s↩↑⏎^]*$/.test(txt(as[i])) || /footnote-back|backlink/.test(as[i].className || '')) as[i].parentNode.removeChild(as[i]);
+        return txt(c);
+      };
+      /* the section's references, in reading order; those whose note is in this file give it away now */
+      var skip = {};
+      var all = body.querySelectorAll('a[href]'), ai;
+      for (ai = 0; ai < all.length; ai++) if (isRef(all[ai]) && local(all[ai].getAttribute('href'))) skip[idOf(all[ai].getAttribute('href'))] = 1;
+      var withMarks = function (n) {
+        /* inside a notes section nothing is a reference (the links there point back) */
+        try { if (n.closest && n.closest(NOTEBOX)) return txt(n); } catch (e) { /* a selector the engine does not know */ }
+        var c = n.cloneNode(true), as = c.querySelectorAll('a[href]'), i;
+        for (i = 0; i < as.length; i++) {
+          var a = as[i]; if (!isRef(a)) continue;
+          var href = a.getAttribute('href'), k = refs.length + 1, host = a.parentNode && a.parentNode.tagName.toLowerCase() === 'sup' && txt(a.parentNode) === txt(a) ? a.parentNode : a;
+          refs.push({ k: k, href: href });
+          if (local(href)) {
+            var target = doc.getElementById(idOf(href)), nt = target ? noteText(target) : '';
+            if (nt) notes[k] = nt;
+          }
+          host.parentNode.replaceChild(doc.createTextNode(MARK), host);
+        }
+        return txt(c);
+      };
       var walk = function (el) {
         for (var n = el.firstElementChild; n; n = n.nextElementSibling) {
           var tag = n.tagName.toLowerCase();
-          if (/^(script|style|head|nav|aside)$/.test(tag)) continue;
+          if (n.id && skip[n.id]) continue;
+          if (tag === 'aside') {
+            /* a note nobody points to from here stays readable (a notes-only section); other asides are left out as before */
+            if (/(footnote|endnote|rearnote)/.test(et(n))) { if (n.querySelector('p, li, div')) walk(n); else { var an = withMarks(n); if (an) out.push(an); } }
+            continue;
+          }
+          if (/^(script|style|head|nav)$/.test(tag)) continue;
           if (tag === 'img' || tag === 'image') {
             var src = n.getAttribute('src') || n.getAttribute('xlink:href') || n.getAttribute('href');
             if (src) out.push('￼img:' + abs(src, url));
             continue;
           }
           if (/^(p|h1|h2|h3|h4|h5|h6|li|blockquote|pre|dt|dd|figcaption)$/.test(tag) && !n.querySelector('p, div, img, image')) {
-            var t = txt(n); if (t) out.push(t); continue;
+            var t = withMarks(n); if (t) out.push(t); continue;
           }
           if (n.querySelector('img, image')) { walk(n); continue; }
-          if (tag === 'div' && !n.querySelector('p, div, li, h1, h2, h3, h4, h5, h6, blockquote')) { var d = txt(n); if (d) out.push(d); continue; }
+          if (tag === 'div' && !n.querySelector('p, div, li, h1, h2, h3, h4, h5, h6, blockquote')) { var d = withMarks(n); if (d) out.push(d); continue; }
           walk(n);
         }
       };
       walk(body);
       var h = doc.querySelector('h1, h2, h3'), title = h ? txt(h) : (doc.title || '');
       if (out.length && title && out[0] === title) out.shift();
-      return { title: title, paras: out, removed: 0, next: '', prev: '' };
+      /* only the notes still to be found in other files go back to the app */
+      var open = [];
+      for (var ri = 0; ri < refs.length; ri++) if (!notes[refs[ri].k] && !local(refs[ri].href)) open.push(refs[ri]);
+      return { title: title, paras: out, removed: 0, next: '', prev: '', notes: notes, refs: open };
+    },
+    /* the notes of a file the app opened for the references of a section: the url's #fragment lists the ids, comma
+       separated; the answer is {id: text} */
+    notes: function (doc, url) {
+      var ids = decodeURIComponent(String(url).split('#')[1] || '').split(','), out = {}, et = function (n) { return ((n.getAttribute('epub:type') || '') + '').toLowerCase(); };
+      for (var i = 0; i < ids.length; i++) {
+        var el = ids[i] ? doc.getElementById(ids[i]) : null; if (!el) continue;
+        var c = el.cloneNode(true), as = c.querySelectorAll('a'), j;
+        for (j = 0; j < as.length; j++) if (/backlink/.test(et(as[j])) || /^[\s↩↑⏎^]*$/.test(txt(as[j])) || /footnote-back|backlink/.test(as[j].className || '')) as[j].parentNode.removeChild(as[j]);
+        var t = txt(c); if (t) out[ids[i]] = t;
+      }
+      return { notes: out };
     }
   };
 
@@ -175,7 +236,7 @@
   };
   window.SourceBrowseURL = function (site, kind, page, q) { var s = S[site]; return s && s.browseURL ? s.browseURL(kind, page, q) : ''; };
   window.SourceIsSeries = function (site, url) { var s = S[site]; return !!(s && (!s.isSeries || s.isSeries(url))); };
-  window.SourceList = function () { return Object.keys(S).filter(function (k) { return S[k].browse; }).map(function (k) { return { id: k, name: S[k].name, home: S[k].home, lang: S[k].lang }; }); };
+  window.SourceList = function () { return Object.keys(S).filter(function (k) { return S[k].browse; }).map(function (k) { return { id: k, name: S[k].name, home: S[k].home, lang: S[k].lang, icon: S[k].icon || '' }; }); };
   window.SourceRun = function (site, fn, html, url) {
     var s = S[site]; if (!s || typeof s[fn] !== 'function') return { error: 'unknown-source' };
     var doc = new DOMParser().parseFromString(html, 'text/html');

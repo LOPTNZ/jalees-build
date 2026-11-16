@@ -434,7 +434,12 @@ struct BookPage: View {
         guard let idx = st.index(of: bookID) else { return }
         let snap = st.books[idx]
         let ss = st.sessions.filter { $0.bookId == bookID }
-        let shelf = st.shelf
+        // where the book stood on the shelf (row, place and its entry): only that goes back on undo, not the whole shelf
+        var place: (row: Int, at: Int, item: JSONValue)?
+        for (r, row) in (st.shelf?["rows"]?.array ?? []).enumerated() {
+            if let a = row.array?.firstIndex(where: { $0.object?.str("id") == snap.id }), let item = row.array?[a] { place = (r, a, item) }
+        }
+        let shelfPlace = place
         let hadTimer = st.timer?.str("bookId") == bookID
         lib.change { s in
             s.books.remove(at: idx)
@@ -446,7 +451,17 @@ struct BookPage: View {
             Library.shared.change { s in
                 s.books.insert(Book(Library.fixBook(snap.raw)), at: min(idx, s.books.count))
                 s.sessions.append(contentsOf: ss)
-                s.shelf = shelf
+                guard let p = shelfPlace else { return }
+                var sh = s.shelf ?? [:]
+                var rows = sh["rows"]?.array ?? []
+                guard !rows.contains(where: { ($0.array ?? []).contains { $0.object?.str("id") == snap.id } }) else { return }
+                if rows.isEmpty { rows = [.array([])] }
+                let r = min(p.row, rows.count - 1)
+                var row = rows[r].array ?? []
+                row.insert(p.item, at: min(p.at, row.count))
+                rows[r] = .array(row)
+                sh["rows"] = .array(rows)
+                s.shelf = sh
             }
         }
     }

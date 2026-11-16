@@ -56,7 +56,8 @@ final class Library: ObservableObject {
     private let encodeQueue = DispatchQueue(label: "wird.encode", qos: .utility)
 
     /// The library is copied, then turned into JSON and written off the main thread (one queue, so saves keep their order).
-    func saveNow() {
+    /// `then` runs on the main thread once the file is written.
+    func saveNow(then: (() -> Void)? = nil) {
         saveWork?.cancel()
         saveWork = nil
         let snap = state
@@ -65,7 +66,7 @@ final class Library: ObservableObject {
         encodeQueue.async {
             if let d = JSONValue.object(snap.json).data(), let s = String(data: d, encoding: .utf8) {
                 Store.shared.saveState(s) {
-                    DispatchQueue.main.async { if bg != .invalid { UIApplication.shared.endBackgroundTask(bg) } }
+                    DispatchQueue.main.async { if bg != .invalid { UIApplication.shared.endBackgroundTask(bg) }; then?() }
                 }
             } else {
                 DispatchQueue.main.async { if bg != .invalid { UIApplication.shared.endBackgroundTask(bg) } }

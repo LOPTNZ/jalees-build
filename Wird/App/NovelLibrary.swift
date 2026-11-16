@@ -175,6 +175,8 @@ enum NovelLibrary {
             "counts": ["quote": b.quotes.count, "thought": b.thoughts.count, "word": b.words.count, "char": b.chars.count],
             "quotes": items(.quote, 3), "thoughts": items(.thought, 3), "words": items(.word, 4), "charsTop": items(.char, 6),
             "marks": sortedByAt(b.marks).map { JSONValue.object($0).any }, "bmarks": sortedByAt(b.bmarks).map { JSONValue.object($0).any },
+            // highlights that are a quote's, thought's or word's place: listed as that entry, not as highlights
+            "linked": b.linkedMarkIDs,
             "sessions": ["count": ss.count, "minutes": Int(mins.rounded()),
                          "last": ss.suffix(5).reversed().map { ["start": $0.start, "minutes": $0.minutes, "units": $0.units] }] as [String: Any]
         ]
@@ -207,8 +209,30 @@ enum NovelLibrary {
         }
     }
 
+    /// A highlight taken away. When it was a quote's (thought's, word's) place, the entry stays in the notebook, unmarked.
     static func markDel(_ id: String, _ mid: String) {
-        lib.changeBook(id) { b in b.marks = b.marks.filter { $0.str("id") != mid } }
+        lib.changeBook(id) { b in
+            let gone = b.marks.first { $0.str("id") == mid }
+            b.marks = b.marks.filter { $0.str("id") != mid }
+            if let m = gone, let k = NoteKind(rawValue: m.str("kind")), k != .char, !m.str("item").isEmpty {
+                let itemID = m.str("item")
+                b.raw.set(k.listKey, objects: b.raw.objs(k.listKey).map { x in
+                    var x = x
+                    if x.str("id") == itemID { x["mark"] = nil }
+                    return x
+                })
+            }
+        }
+    }
+
+    /// A highlight's note, from wherever it is edited (the reader, the notebook).
+    static func setMarkNote(_ id: String, _ mid: String, _ note: String) {
+        lib.changeBook(id) { b in
+            var l = b.marks
+            guard let i = l.firstIndex(where: { $0.str("id") == mid }) else { return }
+            l[i].set("note", note)
+            b.marks = l
+        }
     }
 
     static func bmark(_ id: String, _ bm: [String: Any], on: Bool) {
@@ -303,6 +327,35 @@ enum NovelLibrary {
 }
 
 extension Book {
+    /// The notebook entry a highlight was made for (a quote, thought or word taken from the text), while it exists.
+    /// The two are one thing: `mark.kind` + `mark.item` on the highlight, `item.mark` on the entry.
+    func entry(of m: JSONObject) -> (kind: NoteKind, item: NoteItem)? {
+        let id = m.str("item")
+        guard !id.isEmpty, let k = NoteKind(rawValue: m.str("kind")), k != .char,
+              let x = raw.objs(k.listKey).first(where: { $0.str("id") == id }) else { return nil }
+        return (kind: k, item: NoteItem(x))
+    }
+
+    /// the ids of the quotes, thoughts and words (a highlight can belong to one of them)
+    private var entryIDs: Set<String> {
+        Set([NoteKind.quote, .thought, .word].flatMap { k in raw.objs(k.listKey).map { $0.str("id") } })
+    }
+
+    /// The highlights that are only highlights. The others are listed as their quote, thought or word.
+    var plainMarks: [JSONObject] {
+        let ids = entryIDs
+        return marks.filter { m in
+            let i = m.str("item")
+            return i.isEmpty || !ids.contains(i)
+        }
+    }
+
+    /// the ids of the highlights that belong to an entry
+    var linkedMarkIDs: [String] {
+        let plain = Set(plainMarks.map { $0.str("id") })
+        return marks.map { $0.str("id") }.filter { !plain.contains($0) }
+    }
+
     /// "h s% l%" for the book's colour (from its cover, else its hue), like the web's bookColor.
     var hslString: String {
         if let c = color { return "\(Int(c[0])) \(Int(c[1]))% \(Int(c[2]))%" }

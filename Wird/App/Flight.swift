@@ -92,6 +92,7 @@ final class BookLayer: ObservableObject {
     @discardableResult
     func begin(_ it: Item) -> Bool {
         if let cur = item, cur != it { dismissNow() }
+        stopFollow()
         let id = it.bookID
         source = id.isEmpty ? nil : CoverFrames.shared.visible(id)
         if item == nil {
@@ -183,7 +184,9 @@ final class BookLayer: ObservableObject {
         item = it
     }
 
-    /// A finger moves it (0…1).
+    /// A finger moves it (0…1). The page follows the finger on the display's own clock, a hair behind it (as the
+    /// carousel's covers do): set straight from the finger, a quick swipe took the cover all the way in two or three
+    /// frames, and the opening was never seen.
     func drag(_ value: CGFloat) {
         guard item != nil else { return }
         if covering { covering = false }
@@ -191,12 +194,41 @@ final class BookLayer: ObservableObject {
         stop()
         whenReady = nil
         travelling = source != nil
-        setP(min(1, max(0, value)))
+        finger = min(1, max(0, value))
+        if UIAccessibility.isReduceMotionEnabled { setP(finger); return }
+        if follow == nil {
+            followLast = 0
+            let l = CADisplayLink(target: Ticker(self), selector: #selector(Ticker.follow(_:)))
+            l.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+            l.add(to: .main, forMode: .common)
+            follow = l
+        }
     }
 
-    /// The finger lets go: to the page or back to where you were, easing out from where it is.
+    /// where the finger has the page, and the clock that brings the page to it
+    private var finger: CGFloat = 0
+    private var follow: CADisplayLink?
+    private var followLast: CFTimeInterval = 0
+
+    fileprivate func followTick(_ l: CADisplayLink) {
+        let dt = followLast == 0 ? 1.0 / 60 : min(1.0 / 30, max(0, l.timestamp - followLast))
+        followLast = l.timestamp
+        let p = progress.p, gap = finger - p
+        // close enough: it waits there (the finger may move again)
+        if abs(gap) < 0.001 { if p != finger { setP(finger) }; return }
+        setP(p + gap * CGFloat(1 - exp(-dt / 0.06)))
+    }
+
+    private func stopFollow() {
+        follow?.invalidate()
+        follow = nil
+    }
+
+    /// The finger lets go: to the page or back to where you were, easing out from where it is (where the page has
+    /// got to, which may be a little behind the finger: the rest of the way is the animation).
     func release(open: Bool) {
         guard item != nil else { return }
+        stopFollow()
         if open { Haptics.play("soft") }
         wait {
             let left = abs((open ? 1 : 0) - self.progress.p)
@@ -207,6 +239,7 @@ final class BookLayer: ObservableObject {
     /// The back button: home with the animation.
     func close() {
         guard item != nil else { return }
+        stopFollow()
         whenReady = nil
         covering = false
         // the cover goes home only if its place is still on screen
@@ -218,6 +251,7 @@ final class BookLayer: ObservableObject {
     /// Straight away, no animation (the book was deleted, or something else took the screen).
     func dismissNow() {
         stop()
+        stopFollow()
         whenReady = nil
         travelling = false
         covering = false
@@ -293,6 +327,7 @@ private final class Ticker: NSObject {
     weak var layer: BookLayer?
     init(_ l: BookLayer) { layer = l }
     @MainActor @objc func tick(_ l: CADisplayLink) { layer?.tick(l) }
+    @MainActor @objc func follow(_ l: CADisplayLink) { layer?.followTick(l) }
 }
 
 /// A CSS-style timing curve (cubic Bézier from 0,0 to 1,1): the progress at a moment of the animation.

@@ -177,7 +177,9 @@ struct CarouselView: View {
                 CarouselStage(books: books, W: W, coverH: coverH, flow: flow, ns: ns)
                     .frame(width: W, height: coverH)
                     .padding(.top, max(10, min(26, (g.size.height - coverH - infoH) * 0.3)))
-                    .gesture(drag(W: W, coverH: coverH, H: g.size.height))
+                    // first in line: each cover's tap had to fail before the drag could start, and a tap only fails
+                    // once the finger has gone far (or after a second or more), so a short slow drag waited
+                    .highPriorityGesture(drag(W: W, coverH: coverH, H: g.size.height))
                 // only the words fade between books: an animation on the whole column would also slow the covers
                 // every time the middle book changes
                 VStack(spacing: 0) {
@@ -188,7 +190,7 @@ struct CarouselView: View {
                 .animation(.easeOut(duration: 0.2), value: center.id)
                 // the words under the cover take the same swipes (Bookly: up anywhere opens the book)
                 .contentShape(Rectangle())
-                .gesture(drag(W: W, coverH: coverH, H: g.size.height))
+                .highPriorityGesture(drag(W: W, coverH: coverH, H: g.size.height))
                 Spacer(minLength: 0)
             }
         }
@@ -308,6 +310,15 @@ struct CarouselView: View {
     }
 }
 
+/// A card fading as one picture (its cover, marks and shadow together): faded piece by piece, its own shadow and
+/// marks showed through its picture. Grouped only while it fades, so the covers at rest cost nothing more to draw.
+private struct Fade: ViewModifier {
+    let op: Double
+    func body(content: Content) -> some View {
+        if op < 0.999 { content.compositingGroup().opacity(op) } else { content }
+    }
+}
+
 /// Where a card sits: across, its size, its turn, its depth, its shade, its fade.
 struct Place { var x: CGFloat; var scale: CGFloat; var rot: Double; var z: Double; var dim: Double; var op: Double }
 
@@ -339,7 +350,7 @@ private struct CarouselStage: View {
             ForEach(cards, id: \.b.id) { c in
                 // a live shadow only under the covers in front (the ones behind are mostly hidden by them)
                 CarouselCard(book: c.b, height: coverH, place: c.p, ns: ns, shadowed: abs(car.offset(c.i)) < 1.5)
-                    .opacity(c.show ? c.p.op : 0)
+                    .modifier(Fade(op: c.show ? c.p.op : 0))
                     .allowsHitTesting(c.show)
                     .onTapGesture {
                         if abs(car.offset(c.i)) < 0.5 { OpenBook.open(c.b) } else { car.go(index: c.i) }

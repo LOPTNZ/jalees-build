@@ -12,13 +12,100 @@ import CryptoKit
 enum GeminiVoice {
     // MARK: settings
 
-    static var key: String {
-        get { (DB.shared.get("gemini.key") ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
-        set { DB.shared.set("gemini.key", newValue.trimmingCharacters(in: .whitespacesAndNewlines)); badKey = false }
+    /// One of the user's keys. The list lives in the Keychain (Secrets), never in the database, the backups or logs.
+    struct KeyEntry: Codable, Identifiable, Equatable {
+        var id: String
+        var label: String
+        var key: String
     }
-    static var hasKey: Bool { !key.isEmpty }
-    /// set when Google said no to the key; cleared when a new one is typed in
+
+    /// The keys in the order they are used: the first until its allowance is out, then the next, and so on.
+    /// The single key of the older versions (`gemini.key`) becomes the first one.
+    static var entries: [KeyEntry] {
+        get {
+            // in the Keychain (Secrets); an older copy in the database moves there on the first read
+            if let s = Secrets.read("gemini.keys", kv: "gemini.keys"), let d = s.data(using: .utf8),
+               let a = try? JSONDecoder().decode([KeyEntry].self, from: d) { return a }
+            let old = (DB.shared.get("gemini.key") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !old.isEmpty else { return [] }
+            let a = [KeyEntry(id: UUID().uuidString, label: "", key: old)]
+            save(a)
+            DB.shared.set("gemini.key", nil)
+            return a
+        }
+        set { save(newValue) }
+    }
+
+    private static func save(_ a: [KeyEntry]) {
+        if let d = try? JSONEncoder().encode(a), let s = String(data: d, encoding: .utf8) {
+            Secrets.set("gemini.keys", s)
+            DB.shared.set("gemini.keys", nil)
+        }
+        badKeys = []
+        badKey = false
+    }
+
+    /// The first key (kept for the code that only needs to know there is one).
+    static var key: String {
+        get { entries.first?.key ?? "" }
+        set {
+            let v = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            var a = entries
+            if v.isEmpty { if !a.isEmpty { a.removeFirst() } }
+            else if a.isEmpty { a = [KeyEntry(id: UUID().uuidString, label: "", key: v)] }
+            else { a[0].key = v }
+            entries = a
+        }
+    }
+    static var hasKey: Bool { !entries.isEmpty }
+    /// set when Google said no to every key; cleared when the keys change
     static var badKey = false
+    /// keys Google said no to (until the keys change or the app starts again)
+    private(set) static var badKeys: Set<String> = []
+
+    /// Adds a key at the end of the list; false when it is empty or already there.
+    @discardableResult
+    static func addKey(_ raw: String, label: String = "") -> Bool {
+        let k = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        var a = entries
+        guard !k.isEmpty, !a.contains(where: { $0.key == k }) else { return false }
+        a.append(KeyEntry(id: UUID().uuidString, label: label.trimmingCharacters(in: .whitespacesAndNewlines), key: k))
+        entries = a
+        return true
+    }
+
+    static func removeKey(_ id: String) {
+        entries = entries.filter { $0.id != id }
+        for m in models + textModels {
+            DB.shared.set("tts.out.\(id).\(m)", nil)
+            DB.shared.set("tts.outat.\(id).\(m)", nil)
+        }
+    }
+
+    /// moves a key one place up (-1) or down (+1) in the order
+    static func moveKey(_ id: String, by d: Int) {
+        var a = entries
+        guard let i = a.firstIndex(where: { $0.id == id }), a.indices.contains(i + d) else { return }
+        a.swapAt(i, i + d)
+        entries = a
+    }
+
+    enum KeyState: Equatable {
+        case working
+        case rejected
+        /// every speech model is out for today: since when (seconds since 1970), and until when
+        case out(since: Double, until: Double)
+    }
+
+    /// For the settings: is this key working, refused by Google, or out of speech allowance for today?
+    static func state(of id: String) -> KeyState {
+        if badKeys.contains(id) { return .rejected }
+        let now = Date().timeIntervalSince1970
+        let outs = models.map { outUntil(id, $0) }
+        guard outs.allSatisfy({ GeminiKeyRotation.isOut(until: $0, now: now) }) else { return .working }
+        let since = models.compactMap { Double(DB.shared.get("tts.outat.\(id).\($0)") ?? "") }.max() ?? now
+        return .out(since: since, until: outs.min() ?? nextReset())
+    }
 
     enum Engine: String, CaseIterable {
         case gemini, tashkeel, phone
@@ -86,24 +173,28 @@ enum GeminiVoice {
 
     // MARK: allowances
 
-    /// a model is out until this time (seconds since 1970): its daily allowance ran out, or it isn't offered
-    static func outUntil(_ m: String) -> Double { Double(DB.shared.get("tts.out." + m) ?? "") ?? 0 }
-    private static func markOut(_ m: String, until t: Double) { DB.shared.set("tts.out." + m, String(Int(t))) }
-    /// per-minute limits: the model rests for a bit
+    /// a model is out for a key until this time (seconds since 1970): its daily allowance ran out, or it isn't offered
+    static func outUntil(_ id: String, _ m: String) -> Double { Double(DB.shared.get("tts.out.\(id).\(m)") ?? "") ?? 0 }
+    private static func markOut(_ id: String, _ m: String, until t: Double) {
+        let now = Date().timeIntervalSince1970
+        if !GeminiKeyRotation.isOut(until: outUntil(id, m), now: now) { DB.shared.set("tts.outat.\(id).\(m)", String(Int(now))) }
+        DB.shared.set("tts.out.\(id).\(m)", String(Int(t)))
+    }
+    /// per-minute limits: the model rests for a bit (per key and model)
     private static var resting: [String: Date] = [:]
 
-    private static func usable(_ m: String) -> Bool { Date().timeIntervalSince1970 >= outUntil(m) }
-
-    /// Daily allowances start again at midnight in California.
-    static func nextReset() -> Double {
-        var c = Calendar(identifier: .gregorian)
-        c.timeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
-        let start = c.startOfDay(for: Date())
-        return (c.date(byAdding: .day, value: 1, to: start) ?? Date().addingTimeInterval(86_400)).timeIntervalSince1970 + 60
+    private static func usable(_ id: String, _ m: String) -> Bool {
+        !badKeys.contains(id) && !GeminiKeyRotation.isOut(until: outUntil(id, m), now: Date().timeIntervalSince1970)
     }
 
-    /// Is any speech model left today?
-    static var speechLeft: Bool { models.contains(where: usable) }
+    /// Daily allowances start again at midnight in California.
+    static func nextReset() -> Double { GeminiKeyRotation.nextReset(after: Date().timeIntervalSince1970) }
+
+    /// Is any speech model left today, with any key?
+    static var speechLeft: Bool {
+        let a = entries
+        return models.contains { m in a.contains { usable($0.id, m) } }
+    }
 
     // MARK: the audio of a passage
 
@@ -131,40 +222,47 @@ enum GeminiVoice {
             }
         }
         if let t = inflight[id] { return try await t.value }
-        let v = voice, k = key
-        let t = Task<URL, Error> { try await make(text, id: id, voice: v, key: k) }
+        let v = voice
+        let t = Task<URL, Error> { try await make(text, id: id, voice: v) }
         inflight[id] = t
         defer { inflight[id] = nil }
         return try await t.value
     }
 
-    private static func make(_ text: String, id: String, voice: String, key: String) async throws -> URL {
+    /// Models in order; for each, the keys in order (a key that ran out for it is skipped until the reset).
+    private static func make(_ text: String, id: String, voice: String) async throws -> URL {
         var waited = 0.0
         while true {
             var restUntil: Date?
-            for m in models where usable(m) {
-                if let r = resting[m], r > Date() { restUntil = min(restUntil ?? r, r); continue }
-                switch await Speech.request(model: m, text: text, voice: voice, key: key) {
-                case .audio(let pcm, let rate):
-                    let dest = cacheDir().appendingPathComponent(id + ".m4a")
-                    let url = try await Task.detached(priority: .userInitiated) { try Speech.save(pcm: pcm, rate: rate, to: dest) }.value
-                    trimCache()
-                    return url
-                case .daily:
-                    markOut(m, until: nextReset())
-                case .minute(let secs):
-                    let r = Date().addingTimeInterval(min(90, max(5, secs)))
-                    resting[m] = r
-                    restUntil = min(restUntil ?? r, r)
-                case .unsupported:
-                    markOut(m, until: nextReset())
-                case .badKey:
-                    badKey = true
-                    throw Failure.badKey
-                case .offline:
-                    throw Failure.offline
-                case .failed:
-                    continue
+            let list = entries
+            if list.isEmpty { throw Failure.noKey }
+            for m in models {
+                for e in list where usable(e.id, m) {
+                    let rk = e.id + "|" + m
+                    if let r = resting[rk], r > Date() { restUntil = min(restUntil ?? r, r); continue }
+                    switch await Speech.request(model: m, text: text, voice: voice, key: e.key) {
+                    case .audio(let pcm, let rate):
+                        let dest = cacheDir().appendingPathComponent(id + ".m4a")
+                        let url = try await Task.detached(priority: .userInitiated) { try Speech.save(pcm: pcm, rate: rate, to: dest) }.value
+                        trimCache()
+                        return url
+                    case .daily:
+                        markOut(e.id, m, until: nextReset())
+                    case .minute(let secs):
+                        let r = Date().addingTimeInterval(min(90, max(5, secs)))
+                        resting[rk] = r
+                        restUntil = min(restUntil ?? r, r)
+                    case .unsupported:
+                        // the model isn't offered: no key will do
+                        for x in list { markOut(x.id, m, until: nextReset()) }
+                    case .badKey:
+                        badKeys.insert(e.id)
+                        if list.allSatisfy({ badKeys.contains($0.id) }) { badKey = true; throw Failure.badKey }
+                    case .offline:
+                        throw Failure.offline
+                    case .failed:
+                        continue
+                    }
                 }
             }
             // every model left is only resting for a minute: wait for the first one (the audio is asked for ahead of
@@ -219,19 +317,25 @@ enum GeminiVoice {
         let id = hash("tashkeel\n" + lines.joined(separator: "\n"))
         let f = cacheDir().appendingPathComponent(id + ".json")
         if let d = try? Data(contentsOf: f), let a = try? JSONDecoder().decode([String].self, from: d), a.count == lines.count { return a }
-        let k = key
-        for m in textModels where usable(m) {
-            if let r = resting[m], r > Date() { continue }
-            switch await Speech.diacritize(model: m, lines: lines, key: k) {
-            case .lines(let out):
-                let fixed = zip(lines, out).map { o, n in Speech.bare(o) == Speech.bare(n) ? n : o }
-                if let d = try? JSONEncoder().encode(fixed) { try? d.write(to: f) }
-                return fixed
-            case .daily, .unsupported: markOut(m, until: nextReset())
-            case .minute(let s): resting[m] = Date().addingTimeInterval(min(90, max(5, s)))
-            case .badKey: badKey = true; throw Failure.badKey
-            case .offline: throw Failure.offline
-            case .failed: continue
+        let list = entries
+        for m in textModels {
+            for e in list where usable(e.id, m) {
+                let rk = e.id + "|" + m
+                if let r = resting[rk], r > Date() { continue }
+                switch await Speech.diacritize(model: m, lines: lines, key: e.key) {
+                case .lines(let out):
+                    let fixed = zip(lines, out).map { o, n in Speech.bare(o) == Speech.bare(n) ? n : o }
+                    if let d = try? JSONEncoder().encode(fixed) { try? d.write(to: f) }
+                    return fixed
+                case .daily: markOut(e.id, m, until: nextReset())
+                case .unsupported: for x in list { markOut(x.id, m, until: nextReset()) }
+                case .minute(let s): resting[rk] = Date().addingTimeInterval(min(90, max(5, s)))
+                case .badKey:
+                    badKeys.insert(e.id)
+                    if list.allSatisfy({ badKeys.contains($0.id) }) { badKey = true; throw Failure.badKey }
+                case .offline: throw Failure.offline
+                case .failed: continue
+                }
             }
         }
         throw Failure.exhausted
@@ -240,6 +344,37 @@ enum GeminiVoice {
     /// For the settings: a short line read aloud with the chosen voice, to try the key and the voice.
     static func sample() async throws -> URL {
         try await audio("أهلًا بك في جليس. هذا صوتي وأنا أقرأ لك الرواية.")
+    }
+}
+
+/// Which key to use and when allowances start again: pure, so it needs no network and no database.
+enum GeminiKeyRotation {
+    /// a key (or model) is out while its out-until time is still ahead
+    static func isOut(until: Double, now: Double) -> Bool { now < until }
+
+    /// The ids still usable, in the user's order. `outUntil` is keyed by id (missing means not out).
+    static func usable(ids: [String], outUntil: [String: Double], now: Double) -> [String] {
+        ids.filter { !isOut(until: outUntil[$0] ?? 0, now: now) }
+    }
+
+    /// The key to use now: the first one in the order that isn't out, so key 1 is back as soon as its allowance is.
+    static func pick(ids: [String], outUntil: [String: Double], now: Double) -> String? {
+        usable(ids: ids, outUntil: outUntil, now: now).first
+    }
+
+    /// Daily allowances start again at midnight in California (Pacific time); a minute is added to be safe.
+    static func nextReset(after now: Double) -> Double {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
+        let date = Date(timeIntervalSince1970: now)
+        let start = c.startOfDay(for: date)
+        return (c.date(byAdding: .day, value: 1, to: start) ?? date.addingTimeInterval(86_400)).timeIntervalSince1970 + 60
+    }
+
+    /// A key shown with only its ends ("AIza…x1y2"), never whole.
+    static func mask(_ k: String) -> String {
+        guard k.count >= 12 else { return "••••••" }
+        return String(k.prefix(4)) + "…" + String(k.suffix(4))
     }
 }
 
@@ -409,7 +544,9 @@ enum Speech {
     }
 
     /// Saves the samples as AAC (about a tenth of the size), or as WAV if that fails.
-    static func save(pcm: Data, rate: Double, to dest: URL) throws -> URL {
+    static func save(pcm: Data, rate rawRate: Double, to dest: URL) throws -> URL {
+        // a rate from a damaged header (0, or billions) would trap in the arithmetic below: kept to a sane range
+        let rate = min(max(rawRate.isFinite ? rawRate : 24_000, 8_000), 192_000)
         let frames = AVAudioFrameCount(pcm.count / 2)
         if let fmt = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: rate, channels: 1, interleaved: true),
            let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: frames), let ch = buf.int16ChannelData {

@@ -1,5 +1,29 @@
 import Foundation
 
+/// A site that gives each chapter in more than one machine translation (WTR-LAB: its own AI translation, and the
+/// web one made with Google). The owner picks one per novel on the novel's page; chapters fetched after that come in
+/// it. Kept in the app's settings table, so it stays with the phone like the other novel choices.
+enum SiteTranslation {
+    /// the sites that have a choice, and the choices (the first is the site's own default)
+    static let choices: [String: [(id: String, label: String)]] = ["wtrlab": [("ai", "ذكاء اصطناعي"), ("web", "قوقل")]]
+
+    static func has(_ source: String) -> Bool { choices[source] != nil }
+
+    static func get(_ novel: Int, source: String) -> String {
+        DB.shared.get("translate.\(novel)") ?? choices[source]?.first?.id ?? ""
+    }
+
+    static func set(_ novel: Int, _ v: String) { DB.shared.set("translate.\(novel)", v) }
+
+    /// The chapter's address as the site's definition reads it: with the chosen translation after a # when it is not
+    /// the site's default.
+    static func address(_ url: String, source: String, novel: Int) -> String {
+        guard let first = choices[source]?.first?.id else { return url }
+        let v = get(novel, source: source)
+        return v == first || v.isEmpty ? url : url + (url.contains("#") ? "&" : "#") + "jt=" + v
+    }
+}
+
 /// The same novel on other sites (answers-round2 س29، س29.1، س56، س63): backup sources you add, used for one chapter
 /// when you ask («بدّل المصدر لهالفصل») and on their own when a chapter is missing or broken on the main site; and
 /// moving a novel to another site for good, keeping what you read, saved and highlighted (chapters matched by number).
@@ -23,7 +47,7 @@ extension Novels {
         progress("أقرأ صفحة الرواية")
         let page = try await Fetcher.html(u)
         guard let info = try await SourceEngine.shared.run(site, "series", html: page, url: u) as? [String: Any] else { throw NovelError.parse("series") }
-        let rows = try await allRows(site: site, first: (info["rows"] as? [[String: Any]]) ?? [], pages: (info["listPages"] as? [String]) ?? [], progress: progress)
+        let rows = try await allRows(site: site, first: (info["rows"] as? [[String: Any]]) ?? [], pages: (info["listPages"] as? [String]) ?? [], near: u, progress: progress)
         guard !rows.isEmpty else { throw NovelError.empty }
         var i = info
         i["url"] = u

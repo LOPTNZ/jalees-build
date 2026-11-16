@@ -90,7 +90,11 @@ enum SearchEngine {
                     r.chars.append(GlobalHit(kind: .char, bookID: b.id, itemID: c.id, title: c.name, detail: c.alias.isEmpty ? c.desc : c.alias + " · " + c.desc, meta: b.title))
                 }
             }
+            // a highlight that is a quote's (thought's, word's) place is found as that entry; it shows here only when
+            // it holds words of its own
+            let linked = Set(b.linkedMarkIDs)
             for (i, m) in b.marks.enumerated() where r.marks.count < cap {
+                if linked.contains(m.str("id")) && m.str("note").isEmpty { continue }
                 if match([m.str("text"), m.str("note")], toks) {
                     let ch = m.str("chLabel")
                     r.marks.append(GlobalHit(kind: .mark, bookID: b.id, title: m.str("text"), detail: m.str("note"),
@@ -198,7 +202,7 @@ struct GlobalSearchSheet: View {
                         group("الأفكار", results.thoughts)
                         group("الكلمات", results.words)
                         group("الشخصيات", results.chars)
-                        group("المعلومات", results.marks)
+                        group("التظليلات", results.marks)
                         group("روايات خارج مكتبتك", results.novels)
                     }
                 }

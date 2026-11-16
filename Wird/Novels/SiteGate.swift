@@ -7,23 +7,43 @@ import WebKit
 @MainActor
 enum SiteGate {
     private static var open: GateController?
+    /// A check that was cancelled, per site: for a few minutes the site is not asked again, so a long download
+    /// does not throw the sheet up again for every chapter.
+    private static var cancelled: [String: Date] = [:]
+
+    /// True while a cancelled check on this site is still remembered (downloads stop on it).
+    static func isBlocked(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased(), let t = cancelled[host] else { return false }
+        if t > Date() { return true }
+        cancelled[host] = nil
+        return false
+    }
 
     /// A refused page while the app is on screen: the check, then true when it passed.
     static func pass(_ url: URL) async -> Bool {
-        guard UIApplication.shared.applicationState == .active, open == nil, let h = NovelBridge.host else { return false }
+        guard UIApplication.shared.applicationState == .active, open == nil, !isBlocked(url), let h = NovelBridge.host else { return false }
         return await withCheckedContinuation { cont in
-            let g = GateController(url: url, mode: .check) { ok in cont.resume(returning: ok) }
+            let g = GateController(url: url, mode: .check) { ok in
+                if !ok, let host = url.host?.lowercased() { cancelled[host] = Date().addingTimeInterval(300) }
+                cont.resume(returning: ok)
+            }
             open = g
-            NovelBridge.top(h).present(UINavigationController(rootViewController: g), animated: true)
+            let nav = UINavigationController(rootViewController: g)
+            nav.presentationController?.delegate = g
+            NovelBridge.top(h).present(nav, animated: true)
         }
     }
 
     /// «دخول للموقع» from the browse list: the site's page; «تم» keeps whatever you signed in with.
     static func signIn(_ home: String) {
         guard let u = URL(string: home), let h = NovelBridge.host, open == nil else { return }
+        // signing in on purpose: the site is asked again from now on
+        if let host = u.host?.lowercased() { cancelled[host] = nil }
         let g = GateController(url: u, mode: .signIn) { _ in }
         open = g
-        NovelBridge.top(h).present(UINavigationController(rootViewController: g), animated: true)
+        let nav = UINavigationController(rootViewController: g)
+        nav.presentationController?.delegate = g
+        NovelBridge.top(h).present(nav, animated: true)
     }
 
     fileprivate static func closed() { open = nil }
@@ -35,7 +55,7 @@ enum SiteGate {
     }
 }
 
-private final class GateController: UIViewController, WKNavigationDelegate {
+private final class GateController: UIViewController, WKNavigationDelegate, UIAdaptivePresentationControllerDelegate {
     enum Mode { case check, signIn }
     let url: URL
     let mode: Mode
@@ -98,13 +118,23 @@ private final class GateController: UIViewController, WKNavigationDelegate {
 
     @objc private func close() { finish(mode == .signIn) }
 
-    private func finish(_ ok: Bool) {
+    /// Swiping the sheet down closes it too: it counts as the same as the cancel button, so the waiting download
+    /// is answered and the next check can open.
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        finish(mode == .signIn, dismissed: true)
+    }
+
+    deinit { poll?.invalidate() }
+
+    // runs once: the button, the swipe and the poll can all arrive
+    private func finish(_ ok: Bool, dismissed: Bool = false) {
         guard !finished else { return }
         finished = true
         poll?.invalidate()
+        poll = nil
         Task { @MainActor in
             await SiteGate.syncCookies()
-            self.dismiss(animated: true)
+            if !dismissed { self.dismiss(animated: true) }
             SiteGate.closed()
             self.done(ok)
         }

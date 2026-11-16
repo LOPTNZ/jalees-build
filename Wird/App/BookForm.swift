@@ -41,6 +41,8 @@ final class BookFormModel: ObservableObject {
     /// the cover came from your own photo (the edition picker asks before replacing it)
     var ownCover = false
     private let original: Data?
+    /// the book as the form opened with it: what the form changed is found by comparing with this
+    private let base: JSONObject
     private let originalDates: (Double?, Double?)
     private let old: (cover: String?, spine: String?)
     var saved = false
@@ -63,6 +65,7 @@ final class BookFormModel: ObservableObject {
         old = (book.cover, book.spine)
         originalDates = (book.start, book.finish)
         original = JSONValue.object(book.raw).data()
+        base = book.raw
     }
 
     var dirty: Bool {
@@ -220,7 +223,14 @@ final class BookFormModel: ObservableObject {
         for id in newImgs where id != x.cover && id != x.spine { Library.shared.deleteImage(id) }
         let book = Book(Library.fixBook(x.raw))
         if editing {
-            Library.shared.change { st in if let i = st.index(of: book.id) { st.books[i] = book } }
+            // only what the form changed goes onto the book as it is now: notes, marks, novel progress and sessions that
+            // changed while the form was open stay (the form's own copy is from when it opened)
+            Library.shared.change { st in
+                guard let i = st.index(of: book.id) else { return }
+                var raw = st.books[i].raw
+                for k in Set(x.raw.keys).union(base.keys) where x.raw[k] != base[k] { raw[k] = x.raw[k] }
+                st.books[i] = Book(Library.fixBook(raw))
+            }
         } else {
             Library.shared.change { $0.books.append(book) }
             CarouselCenter.shared.id = book.id
@@ -384,6 +394,7 @@ struct BookFormView: View {
         group("البحث بالإنترنت") {
             HStack(spacing: 8) {
                 TextField("اسم الكتاب أو المؤلف أو ISBN", text: $m.q).font(JFont.body(16)).submitLabel(.search).onSubmit { search() }
+                    .clearButton($m.q, Color(L.ink2)) { m.results = nil }
                     .padding(.horizontal, 12).frame(height: 48)
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.bg)))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
@@ -671,8 +682,8 @@ struct DurationField: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            box(Binding(get: { Double(Int(minutes) / 60) }, set: { minutes = max(0, $0) * 60 + Double(Int(minutes) % 60) }), "س")
-            box(Binding(get: { Double(Int(minutes) % 60) }, set: { minutes = Double(Int(minutes) / 60) * 60 + min(59, max(0, $0)) }), "د")
+            box(Binding(get: { Double(safeInt(minutes) / 60) }, set: { minutes = min(max(0, $0), 1e7) * 60 + Double(safeInt(minutes) % 60) }), "س")
+            box(Binding(get: { Double(safeInt(minutes) % 60) }, set: { minutes = Double(safeInt(minutes) / 60) * 60 + min(59, max(0, $0)) }), "د")
         }
         .environment(\.layoutDirection, .leftToRight)
     }

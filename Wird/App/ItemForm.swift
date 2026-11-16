@@ -114,6 +114,9 @@ final class ItemFormModel: ObservableObject {
         }
         let newPic = kind == .char ? x.optStr("photo") : x.optStr("img")
         if let o = oldImg, o != newPic { Library.shared.deleteImage(o) }
+        // pictures added in this form and then cleared or replaced before saving (only the saved one stays)
+        for id in newImgs where id != newPic { Library.shared.deleteImage(id) }
+        newImgs = newImgs.filter { $0 == newPic }
         let item = x, k = kind
         let firstWas = x.optNum("first")
         defer {
@@ -198,7 +201,7 @@ struct ItemForm: View {
                     if !m.err.isEmpty { Text(m.err).font(JFont.body(14)).foregroundStyle(Color(L.danger)) }
                     Button { afterEditing { if m.save() { dismiss() } } } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
                     if m.editing {
-                        if let nv = m.x["nv"]?.object, let b = m.book, let n = b.novel {
+                        if !ref.inReader, let nv = m.x["nv"]?.object, let b = m.book, let n = b.novel {
                             Button { dismiss(); NovelBridge.openReader(novel: n.novelID, book: b.id, index: nil, chapter: nv.int("ch"), paragraph: nv.int("p")) } label: {
                                 Label("افتح مكانه في القارئ", systemImage: "book").frame(maxWidth: .infinity)
                             }
@@ -318,6 +321,9 @@ struct ItemForm: View {
                 .buttonStyle(JButtonStyle(look: L, small: true)).disabled(m.ocrBusy)
             Text("صوّر الصفحة وحدد الجزء اللي يعجبك، وبعدها اختر: تحفظه صورة أو أستخرج نصه.").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
         }
+        // your words on it: the same note a highlight has in the reader (one taken from a highlight brings its note)
+        JLabel(text: "ملاحظتك (اختياري)")
+        editor(m.str("note"), quoteFont: false, placeholder: "", height: 60)
         location(m.book?.unit.name ?? "الصفحة")
         if let b = m.book {
             Picker("القائل", selection: m.str("speakerId")) {
@@ -498,12 +504,12 @@ struct NumberBox: View {
                     return ch
                 }.filter { $0.isASCII && ($0.isNumber || $0 == ".") })
                 if clean != t { text = clean; return }
-                value = clean.isEmpty ? nil : Double(clean)
+                value = clean.isEmpty ? nil : Double(clean).map { min($0, 1e9) } // saved numbers stay within what the app can show
             }
     }
 
     private static func show(_ v: Double?) -> String {
         guard let v = v else { return "" }
-        return v == v.rounded() ? String(Int(v)) : String(v)
+        return v == v.rounded() ? String(safeInt(v)) : String(v)
     }
 }

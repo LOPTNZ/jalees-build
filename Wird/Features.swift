@@ -20,7 +20,7 @@ enum Net {
         let ua = (o["ua"] as? String) == "app" ? "Wird/1.0 (iPhone; reading tracker)" : BookBrowser.safariUA
         req.setValue(ua, forHTTPHeaderField: "User-Agent")
         req.setValue("ar,en;q=0.8", forHTTPHeaderField: "Accept-Language")
-        URLSession.shared.dataTask(with: req) { data, resp, err in
+        let finish: (Data?, URLResponse?, Error?) -> Void = { data, resp, err in
             let http = resp as? HTTPURLResponse
             let code = http?.statusCode ?? 0
             var r: [String: Any] = ["ok": err == nil && (200..<300).contains(code), "status": code]
@@ -33,7 +33,52 @@ enum Net {
                 }
             }
             DispatchQueue.main.async { done(r) }
-        }.resume()
+        }
+        if (o["as"] as? String) == "dataurl" {
+            // a picture comes as a data link in memory: bigger than 8 MB is cut off, not downloaded
+            CappedDownload.start(req, cap: 8 * 1024 * 1024, finish)
+        } else {
+            URLSession.shared.dataTask(with: req, completionHandler: finish).resume()
+        }
+    }
+}
+
+/// Downloads into memory and stops as soon as the body passes `cap` bytes (the answer then has no data).
+private final class CappedDownload: NSObject, URLSessionDataDelegate {
+    private let cap: Int
+    private let finish: (Data?, URLResponse?, Error?) -> Void
+    private var body = Data()
+    private var response: URLResponse?
+    private var tooBig = false
+    private var session: URLSession?
+
+    private init(cap: Int, finish: @escaping (Data?, URLResponse?, Error?) -> Void) {
+        self.cap = cap
+        self.finish = finish
+    }
+
+    static func start(_ req: URLRequest, cap: Int, _ finish: @escaping (Data?, URLResponse?, Error?) -> Void) {
+        let d = CappedDownload(cap: cap, finish: finish)
+        let s = URLSession(configuration: .ephemeral, delegate: d, delegateQueue: nil)
+        d.session = s
+        s.dataTask(with: req).resume()
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        self.response = response
+        if response.expectedContentLength > Int64(cap) { tooBig = true; completionHandler(.cancel) } else { completionHandler(.allow) }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        body.append(data)
+        if body.count > cap { tooBig = true; dataTask.cancel() }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        session.finishTasksAndInvalidate()
+        self.session = nil
+        if tooBig { finish(nil, response, URLError(.dataLengthExceedsMaximum)) } else { finish(body, response, error) }
     }
 }
 

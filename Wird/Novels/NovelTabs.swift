@@ -18,6 +18,9 @@ struct BrowseTab: View {
     @State private var busy: String?
     @State private var note: String?
     @State private var repo = false
+    /// «رتّب المواقع»: the owner's own order of the sites (and the ones he hid)
+    @State private var ordering = false
+    @State private var orderVersion = 0
     /// an Arabic search on its way to English for the English sites (EnglishQuery), and what it became
     @State private var toEnglish: String?
     @State private var asked = ""
@@ -56,7 +59,17 @@ struct BrowseTab: View {
 
                 let groups = siteGroups
                 ForEach(groups.indices, id: \.self) { gi in
-                    JHeading(look: look, title: groups[gi].title)
+                    HStack(alignment: .firstTextBaseline) {
+                        JHeading(look: look, title: groups[gi].title)
+                        Spacer(minLength: 0)
+                        if gi == 0 {
+                            Button { ordering = true } label: {
+                                Label("رتّب", systemImage: "arrow.up.arrow.down").font(JFont.body(14, .medium))
+                            }
+                            .foregroundStyle(Color(look.primary))
+                            .accessibilityLabel("رتّب المواقع")
+                        }
+                    }
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                         ForEach(groups[gi].sites.indices, id: \.self) { i in siteCard(groups[gi].sites[i]) }
                     }
@@ -84,6 +97,9 @@ struct BrowseTab: View {
         .overlay { if let b = busy { BusyCard(look: look, text: b) } }
         .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) { Button("تمام", role: .cancel) {} }
         .task { await loadSources(); await SiteRepo.updateIfDue() }
+        .sheet(isPresented: $ordering, onDismiss: { orderVersion += 1 }) {
+            SiteOrderSheet(look: look, sources: sources, name: shortName)
+        }
         .sheet(isPresented: $repo, onDismiss: { Task { try? await Task.sleep(nanoseconds: 800_000_000); await loadSources() } }) { SiteRepoSheet(look: look) }
         .modifier(EnglishQuery(request: $toEnglish) { en in run(asked, english: en) })
         .onReceive(NotificationCenter.default.publisher(for: .browseSite)) { n in debugSite = n.object as? String }
@@ -100,8 +116,13 @@ struct BrowseTab: View {
 
     private struct SiteGroup { let title: String; let sites: [[String: Any]] }
 
-    /// Sites you read from first (most novels first), then Arabic sites, then English ones.
+    /// The owner's own order when he set one (one list, as he arranged it, without the ones he hid); until then the
+    /// sites you read from first (most novels first), then Arabic sites, then English ones.
     private var siteGroups: [SiteGroup] {
+        _ = orderVersion
+        let shown = SiteOrder.visible(sources)
+        if SiteOrder.isSet { return shown.isEmpty ? [] : [SiteGroup(title: "المواقع", sites: shown)] }
+        let sources = shown
         let counts = Dictionary(grouping: novels.list.filter { !$0.book.isEmpty }, by: \.source).mapValues(\.count)
         let id = { (s: [String: Any]) in s["id"] as? String ?? "" }
         let mine = sources.filter { (counts[id($0)] ?? 0) > 0 }.sorted { (counts[id($0)] ?? 0) > (counts[id($1)] ?? 0) }
@@ -120,7 +141,7 @@ struct BrowseTab: View {
         } label: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top) {
-                    SiteIcon(home: home, name: shortName(s), look: look)
+                    SiteIcon(home: home, name: shortName(s), look: look, logo: (s["icon"] as? String) == "og")
                     Spacer(minLength: 0)
                     Text((s["lang"] as? String) == "en" ? "English" : "عربي").font(JFont.body(11, .medium))
                         .foregroundStyle(Color(look.ink2))
@@ -205,7 +226,7 @@ struct BrowseTab: View {
     }
 
     private func run(_ q: String, english en: String?) {
-        let sites = sources.compactMap { $0["id"] as? String }.filter { !$0.isEmpty }
+        let sites = SiteOrder.visible(sources).compactMap { $0["id"] as? String }.filter { !$0.isEmpty }
         let langs = Dictionary(uniqueKeysWithValues: sources.compactMap { s -> (String, String)? in
             guard let id = s["id"] as? String else { return nil }
             return (id, s["lang"] as? String ?? "ar")
@@ -262,6 +283,115 @@ struct BrowseTab: View {
     }
 }
 
+/// The owner's own order of the sites on «تصفّح», and the sites he hid (kept on the phone; a site added later goes
+/// at the end of his list).
+enum SiteOrder {
+    static var order: [String] {
+        get { (DB.shared.get("browse.order")?.data(using: .utf8)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String] } ?? [] }
+        set { DB.shared.set("browse.order", (try? JSONSerialization.data(withJSONObject: newValue)).flatMap { String(data: $0, encoding: .utf8) }) }
+    }
+    static var hidden: Set<String> {
+        get { Set((DB.shared.get("browse.hidden")?.data(using: .utf8)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String] } ?? []) }
+        set { DB.shared.set("browse.hidden", (try? JSONSerialization.data(withJSONObject: Array(newValue).sorted())).flatMap { String(data: $0, encoding: .utf8) }) }
+    }
+    static var isSet: Bool { !order.isEmpty }
+
+    /// All the sites in his order (the ones he never placed after, as they came).
+    static func arranged(_ sources: [[String: Any]]) -> [[String: Any]] {
+        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        return sources.enumerated().sorted { a, b in
+            let ra = rank[(a.element["id"] as? String) ?? ""] ?? Int.max, rb = rank[(b.element["id"] as? String) ?? ""] ?? Int.max
+            return ra != rb ? ra < rb : a.offset < b.offset
+        }.map(\.element)
+    }
+
+    /// The sites shown on «تصفّح» and searched together: his order, without the hidden ones.
+    static func visible(_ sources: [[String: Any]]) -> [[String: Any]] {
+        let h = hidden
+        return arranged(sources).filter { !h.contains(($0["id"] as? String) ?? "") }
+    }
+}
+
+/// «رتّب المواقع»: drag the sites into the order you want; the eye hides one from «تصفّح» and from searching every
+/// site. «رجّع الترتيب» goes back to the automatic order.
+struct SiteOrderSheet: View {
+    let look: JLook
+    let sources: [[String: Any]]
+    let name: ([String: Any]) -> String
+    @State private var ids: [String] = []
+    @State private var hidden: Set<String> = []
+    @Environment(\.dismiss) private var dismiss
+
+    private func site(_ id: String) -> [String: Any]? { sources.first { ($0["id"] as? String) == id } }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(ids, id: \.self) { id in
+                        if let s = site(id) {
+                            HStack(spacing: 12) {
+                                SiteIcon(home: s["home"] as? String ?? "", name: name(s), look: look, size: 34, logo: (s["icon"] as? String) == "og")
+                                    .opacity(hidden.contains(id) ? 0.4 : 1)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(name(s)).font(JFont.body(15.5, .medium)).foregroundStyle(Color(look.ink).opacity(hidden.contains(id) ? 0.5 : 1))
+                                    Text((s["lang"] as? String) == "en" ? "English" : "عربي").font(JFont.body(12)).foregroundStyle(Color(look.ink2))
+                                }
+                                Spacer(minLength: 0)
+                                Button {
+                                    if hidden.contains(id) { hidden.remove(id) } else { hidden.insert(id) }
+                                } label: {
+                                    Image(systemName: hidden.contains(id) ? "eye.slash" : "eye").font(.system(size: 17))
+                                        .foregroundStyle(Color(hidden.contains(id) ? look.ink2 : look.primary)).frame(width: 36, height: 36)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(hidden.contains(id) ? "أظهر الموقع" : "أخفِ الموقع")
+                            }
+                            .listRowBackground(Color(look.surface))
+                        }
+                    }
+                    .onMove { from, to in ids.move(fromOffsets: from, toOffset: to) }
+                } footer: {
+                    Text("اسحب المواقع بالترتيب اللي تبيه. المخفي ما يطلع في «تصفّح» ولا في البحث في كل المواقع.").font(JFont.body(12.5))
+                }
+                if SiteOrder.isSet {
+                    Section {
+                        Button("رجّع الترتيب التلقائي") {
+                            SiteOrder.order = []
+                            SiteOrder.hidden = []
+                            dismiss()
+                        }
+                        .foregroundStyle(Color(look.primary))
+                        .listRowBackground(Color(look.surface))
+                    }
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .scrollContentBackground(.hidden)
+            .background(Color(look.bg).ignoresSafeArea())
+            .navigationTitle("رتّب المواقع")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("تم") {
+                        SiteOrder.order = ids
+                        SiteOrder.hidden = hidden
+                        dismiss()
+                    }
+                    .font(JFont.body(16, .semibold))
+                }
+                ToolbarItem(placement: .cancellationAction) { Button("إلغاء") { dismiss() } }
+            }
+        }
+        .tint(Color(look.primary))
+        .preferredColorScheme(look.dark ? .dark : .light)
+        .onAppear {
+            ids = SiteOrder.arranged(sources).compactMap { $0["id"] as? String }
+            hidden = SiteOrder.hidden
+        }
+    }
+}
+
 struct SourceBrowse: View {
     let look: JLook
     let site: String
@@ -313,6 +443,7 @@ struct SourceBrowse: View {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Color(look.ink2))
                     TextField("ابحث في \(name)", text: $query).font(JFont.body(15)).submitLabel(.search).onSubmit { search() }
+                        .clearButton($query, Color(look.ink2)) { if kind == "search" { search() } }
                     Button { filtering = true } label: {
                         Image(systemName: filter.isOn ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                             .font(.system(size: 20)).foregroundStyle(Color(filter.isOn ? look.primary : look.ink2))

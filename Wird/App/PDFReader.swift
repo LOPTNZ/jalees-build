@@ -33,6 +33,8 @@ enum PDFBooks {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let doc = PDFDocument(url: url), let mark = try? url.bookmarkData() else { Toaster.show("ما قدرت أفتح الملف"); return }
+        // a PDF with a password shows no pages: it would become an empty book
+        if doc.isLocked { Toaster.show("هذا الملف محمي بكلمة سر، فك حمايته وأضفه مرة ثانية"); return }
         let attrs = doc.documentAttributes ?? [:]
         var title = (attrs[PDFDocumentAttribute.titleAttribute] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if title.isEmpty { title = url.deletingPathExtension().lastPathComponent }

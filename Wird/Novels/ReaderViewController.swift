@@ -150,6 +150,14 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         nc.addObserver(self, selector: #selector(cameBack), name: UIApplication.didBecomeActiveNotification, object: nil)
         nc.addObserver(self, selector: #selector(rulesChanged), name: .replaceRulesChanged, object: nil)
         nc.addObserver(self, selector: #selector(noteSaved(_:)), name: .noteSaved, object: nil)
+        nc.addObserver(self, selector: #selector(lockChanged), name: .readerLockChanged, object: nil)
+        // the page follows the library: a highlight changed or deleted anywhere (the notebook, a form over the page, the
+        // book's list) is drawn again in the chapters on the page
+        marksSeen = marksSignature()
+        Library.shared.$state
+            .debounce(for: .milliseconds(200), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.libraryChanged() }
+            .store(in: &bag)
         clock = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.tick() }
     }
 
@@ -377,10 +385,16 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
             }
             let x = (o["x"] as? Double) ?? 0.5
             if paged && (x < 0.28 || x > 0.72) {
-                turnPage(x < 0.28 ? 1 : -1)
+                // the side where the next page is: the left of an Arabic book, the right of an English one
+                turnPage((x < 0.28) == bookRTL ? 1 : -1)
             } else {
                 setChrome(!chromeShown)
             }
+        case "dir":
+            // the book's direction, from the page (reader.js bookDir): Arabic books read right to left, English left to right
+            bookRTL = (o["rtl"] as? Bool) ?? true
+            // the back and forward pills read the way the book does
+            jumpRow.semanticContentAttribute = bookRTL ? .forceRightToLeft : .forceLeftToRight
         case "sel":
             selecting = (o["on"] as? Bool) == true
             if selecting { setChrome(false); closeOverlays() }
@@ -462,6 +476,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     }
 
     private var turning = false
+    /// the open book reads right to left (Arabic) or left to right (English), whatever the app's language is; the
+    /// page tells it when a chapter loads. Page turns, curl, tap zones and swipes go with it.
+    var bookRTL = true
     /// a swipe to another chapter just happened: the page moving into it is not reading through the one before
     private var jumping: Date?
 
@@ -495,7 +512,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
                     self.web.takeSnapshot(with: nil) { after, _ in
                         guard let after = after else { cover.removeFromSuperview(); self.curling = false; return }
                         let pvc = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal, options: nil)
-                        pvc.view.semanticContentAttribute = .forceRightToLeft
+                        pvc.view.semanticContentAttribute = self.bookRTL ? .forceRightToLeft : .forceLeftToRight
                         pvc.isDoubleSided = false
                         pvc.view.backgroundColor = .clear
                         pvc.setViewControllers([SnapPage(before)], direction: .forward, animated: false)
@@ -555,7 +572,8 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
         guard paged, settings.prefs.anim == "slide" else { return }
         let x = scrollView.contentOffset.x, maxX = max(0, scrollView.contentSize.width - scrollView.bounds.width)
-        if x < -60 { turn(1) } else if x > maxX + 60 { turn(-1) }
+        // pulled past the left edge: after the last page of an Arabic book, before the first of an English one
+        if x < -60 { turn(bookRTL ? 1 : -1) } else if x > maxX + 60 { turn(bookRTL ? -1 : 1) }
     }
 
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
@@ -622,7 +640,8 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
 
     @objc private func swiped(_ g: UISwipeGestureRecognizer) {
         guard markBar == nil, !selecting else { return }
-        let dir = g.direction == .right ? 1 : -1
+        // a swipe to the right goes forward in an Arabic book, back in an English one
+        let dir = (g.direction == .right) == bookRTL ? 1 : -1
         if paged {
             // fade and curl pages turn by swiping (slide pages scroll by themselves)
             if settings.prefs.anim != "slide" { turnPage(dir) }
@@ -718,13 +737,19 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         let color = MarkBar.colors.first { $0.id == lastColor } ?? MarkBar.colors[0]
         let hl = UIAction(title: "تظليل".tr, image: UIImage(systemName: "highlighter")?.withTintColor(color.ui, renderingMode: .alwaysOriginal)) { [weak self] _ in self?.fromSelection("highlight") }
         let note = UIAction(title: "ملاحظة".tr, image: UIImage(systemName: "note.text")) { [weak self] _ in self?.fromSelection("note") }
-        let nb = UIMenu(title: "للدفتر".tr, image: UIImage(systemName: "book.closed"), children: [
-            UIAction(title: "اقتباس".tr, image: UIImage(systemName: "text.quote")) { [weak self] _ in self?.fromSelection("quote") },
-            UIAction(title: "خاطرة".tr, image: UIImage(systemName: "lightbulb")) { [weak self] _ in self?.fromSelection("thought") },
-            UIAction(title: "كلمة".tr, image: UIImage(systemName: "character.book.closed")) { [weak self] _ in self?.fromSelection("word") },
-            UIAction(title: "شخصية".tr, image: UIImage(systemName: "person")) { [weak self] _ in self?.fromSelection("char") },
-            UIAction(title: "معلومة".tr, image: UIImage(systemName: "info.circle")) { [weak self] _ in self?.fromSelection("info") }
-        ])
+        // the notebook's kinds; then his named colours (معلومة، مضحك، تلميح…), the categories of the notebook's «تظليلات»
+        var kept: [UIMenuElement] = NoteKind.allCases.map { k -> UIMenuElement in
+            UIAction(title: k.name.tr, image: UIImage(systemName: k.symbol)) { [weak self] _ in self?.fromSelection(k.rawValue) }
+        }
+        let named = MarkBar.colors.compactMap { c -> UIAction? in
+            let n = (labelNames[c.id] ?? "").trimmingCharacters(in: .whitespaces)
+            guard !n.isEmpty else { return nil }
+            return UIAction(title: n, image: UIImage(systemName: "circle.fill")?.withTintColor(c.ui, renderingMode: .alwaysOriginal)) { [weak self] _ in
+                self?.fromSelection("color:" + c.id)
+            }
+        }
+        if !named.isEmpty { kept.append(UIMenu(title: "تظليل باسم".tr, options: .displayInline, children: named)) }
+        let nb = UIMenu(title: "للدفتر".tr, image: UIImage(systemName: "book.closed"), children: kept)
         let aloud = UIAction(title: "اقرأ من هنا".tr, image: UIImage(systemName: "speaker.wave.2")) { [weak self] _ in
             self?.ask("JR.selection()") { v in
                 guard let self = self, let s = v as? [String: Any], let i = self.chapters.firstIndex(where: { $0.id == NovelBridge.num(s["ch"]) }) else { return }
@@ -732,7 +757,15 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
                 self.startReadAloud(chapter: i, para: NovelBridge.num(s["p"]))
             }
         }
-        return UIMenu(title: "", options: .displayInline, children: [hl, note, nb, aloud])
+        // a name the translation spells its own way: this novel's rules, with the word's rule started
+        let replace = UIAction(title: "استبدال الكلمة".tr, image: UIImage(systemName: "character.cursor.ibeam")) { [weak self] _ in
+            self?.ask("JR.selection()") { v in
+                guard let self = self, let s = v as? [String: Any], let text = s["text"] as? String else { return }
+                self.call("JR.clearSelection()")
+                self.openRules(seed: String(text.prefix(60)))
+            }
+        }
+        return UIMenu(title: "", options: .displayInline, children: [hl, note, nb, aloud, replace])
     }
 
     /// «الفصل من مصدر ثاني»: this chapter again from a backup source, kept as its text (س56).
@@ -822,36 +855,58 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
             guard let self = self, var s = v as? [String: Any], let text = s["text"] as? String, !text.isEmpty else { return }
             let r = self.rect(s["rect"])
             s.removeValue(forKey: "rect")
-            switch what {
-            case "highlight", "note", "info":
-                let mergeID = s["merge"] as? String
-                let drop = (s["drop"] as? [String]) ?? []
-                s.removeValue(forKey: "merge")
-                s.removeValue(forKey: "drop")
-                var m = self.marksHere.first { ($0["id"] as? String) == mergeID } ?? ["id": UUID().uuidString, "color": self.lastColor, "style": "hl", "note": ""]
+            let mergeID = s["merge"] as? String
+            let drop = (s["drop"] as? [String]) ?? []
+            s.removeValue(forKey: "merge")
+            s.removeValue(forKey: "drop")
+            /// a highlight under the selection that is only a highlight (one that is an entry's place is left as it is)
+            func plain(_ id: String?) -> [String: Any]? {
+                self.marksHere.first { ($0["id"] as? String) == id && ReaderViewController.isPlain($0) }
+            }
+            let named = what.hasPrefix("color:") ? String(what.dropFirst(6)) : nil
+            if what == "highlight" || what == "note" || named != nil {
+                // a highlight under it grows to take the selection in; one that is a quote's (word's) place stays its own
+                var m = plain(mergeID) ?? ["id": UUID().uuidString, "color": self.lastColor, "style": "hl", "note": ""]
                 for k in ["ch", "chLabel", "p", "s", "pe", "e", "text"] { m[k] = s[k] }
-                if what == "info" { m["color"] = self.infoColor }
-                for d in drop { if let x = self.marksHere.first(where: { ($0["id"] as? String) == d }) { self.deleteMark(x) } }
+                if let c = named { m["color"] = c }
+                for d in drop { if let x = plain(d) { self.deleteMark(x) } }
                 self.call("JR.clearSelection()")
                 self.saveMark(m)
-                if what == "highlight" { self.openMarkBar(mark: m, rect: r) } else { self.editNote(m) }
-            default:
-                self.ask("JR.sentence()") { sent in
-                    self.call("JR.clearSelection()")
-                    self.openNotebook(kind: what, text: text, sentence: (sent as? String) ?? "", at: s)
+                if what == "note" {
+                    self.editNote(m)
+                } else if let c = named {
+                    self.toast("في الدفتر: «" + (self.labelNames[c] ?? "") + "»")
+                } else {
+                    self.openMarkBar(mark: m, rect: r)
                 }
+                return
+            }
+            // a quote, thought or word: the notebook's form over the page; once it is saved, the passage is highlighted
+            // as its place (the highlight under the selection, if there is one, becomes it). A character is not: its
+            // name is marked wherever it appears.
+            var link: [String: Any]?
+            if what != NoteKind.char.rawValue {
+                var m = plain(mergeID) ?? ["id": UUID().uuidString, "color": self.lastColor, "style": what == NoteKind.word.rawValue ? "ul" : "hl", "note": ""]
+                for k in ["ch", "chLabel", "p", "s", "pe", "e", "text"] { m[k] = s[k] }
+                link = m
+            }
+            self.ask("JR.sentence()") { sent in
+                self.call("JR.clearSelection()")
+                self.openNotebook(kind: what, text: text, sentence: (sent as? String) ?? "", at: s, link: link)
             }
         }
     }
 
-    /// The colour the owner named «معلومة» (purple until renamed).
-    var infoColor: String { labelNames.first { $0.value.trimmingCharacters(in: .whitespaces) == "معلومة" }?.key ?? "purple" }
+    /// A highlight that is only a highlight (not the place of a quote, thought or word).
+    static func isPlain(_ m: [String: Any]) -> Bool { ((m["item"] as? String) ?? "").isEmpty }
 
     func saveMark(_ m: [String: Any]) {
         call("JR.putMark(m)", ["m": m])
         if let b = bookID { library("wirdNovelMark(b, m)", ["b": b, "m": m]) }
         if let c = m["color"] as? String, c != lastColor { lastColor = c; DB.shared.set("reader.lastColor", c) }
         if let i = marksHere.firstIndex(where: { ($0["id"] as? String) == (m["id"] as? String) }) { marksHere[i] = m } else { marksHere.append(m) }
+        // the page has it already: the library's change need not draw it again
+        marksSeen = marksSignature()
     }
 
     func deleteMark(_ m: [String: Any]) {
@@ -859,7 +914,42 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         call("JR.dropMark(ch, id)", ["ch": NovelBridge.num(m["ch"]), "id": id])
         if let b = bookID { library("wirdNovelMarkDel(b, id)", ["b": b, "id": id]) }
         marksHere.removeAll { ($0["id"] as? String) == id }
+        marksSeen = marksSignature()
         closeOverlays()
+    }
+
+    /// «إزالة» on a highlight. One that is a quote's (thought's, word's) place asks: only the highlight, or the entry too.
+    func removeMark(_ m: [String: Any]) {
+        guard let b = bookID, let book = Library.shared.state.book(b), let jm = JSONValue(any: m).object, let e = book.entry(of: jm) else {
+            deleteMark(m)
+            return
+        }
+        closeOverlays()
+        let a = UIAlertController(title: (e.kind.name + " في الدفتر").tr, message: "هذا التظليل مكانه في النص.".tr, preferredStyle: .actionSheet)
+        a.addAction(UIAlertAction(title: "إزالة التظليل فقط".tr, style: .default) { [weak self] _ in
+            self?.deleteMark(m)
+            self?.toast("بقي في الدفتر بدون تظليل")
+        })
+        a.addAction(UIAlertAction(title: ("حذف " + e.kind.the + " أيضًا").tr, style: .destructive) { [weak self] _ in
+            // the entry and its highlight go together (the page follows the library)
+            NoteItems.delete(b, e.kind, e.item.id)
+            self?.toast("انحذف من الدفتر")
+        })
+        a.addAction(UIAlertAction(title: "إلغاء".tr, style: .cancel))
+        a.popoverPresentationController?.sourceView = view
+        a.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+        present(a, animated: true)
+    }
+
+    /// «للدفتر ← اقتباس» on a highlight: the entry's form, and the highlight becomes its place once it is saved.
+    func markToNotebook(_ m: [String: Any], kind: String) {
+        openNotebook(kind: kind, text: (m["text"] as? String) ?? "", sentence: "", at: m, link: kind == NoteKind.char.rawValue ? nil : m)
+    }
+
+    /// The entry a highlight is the place of: its form over the page.
+    func editEntry(of m: [String: Any]) {
+        guard let k = m["kind"] as? String, let id = m["item"] as? String else { return }
+        editItem(kind: k, id: id)
     }
 
     private func openMarkBar(id: String, chapter: Int, rect: CGRect) {
@@ -874,7 +964,10 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     private func openMarkBar(mark: [String: Any], rect: CGRect) {
         closeOverlays()
         setChrome(false)
-        let bar = MarkBar(reader: self, mark: mark, labels: labelNames)
+        // a highlight that is a quote's (thought's, word's) place says so, and opens that entry
+        var entry: NoteKind?
+        if let b = bookID, let book = Library.shared.state.book(b), let jm = JSONValue(any: mark).object { entry = book.entry(of: jm)?.kind }
+        let bar = MarkBar(reader: self, mark: mark, labels: labelNames, entry: entry)
         markBar = bar
         bar.show(in: view, near: rect)
         Haptics.play("sel")
@@ -904,7 +997,13 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     /// A character's name tapped in the text: its card over the page (everything about it, and editing), never a
     /// trip out of the reader; closing the card is being back in the chapter where you were.
     private func showCharacter(_ id: String, near r: CGRect) {
-        guard let b = bookID, characters.contains(where: { ($0["id"] as? String) == id }) else { return }
+        guard characters.contains(where: { ($0["id"] as? String) == id }) else { return }
+        openCharacterCard(id)
+    }
+
+    /// A character's card over the page (or over the book's list).
+    func openCharacterCard(_ id: String) {
+        guard let b = bookID else { return }
         closeOverlays()
         let look = Appearance.shared.look
         let card = CharacterCard(bookID: b, charID: id).environment(\.look, look)
@@ -912,7 +1011,15 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         host.overrideUserInterfaceStyle = look.dark ? .dark : .light
         // an edit in the card (a new name or alias) shows in the page once it closes
         host.presentationController?.delegate = self
-        present(host, animated: true)
+        presentOnTop(host)
+    }
+
+    /// Over whatever is showing: the page, or a sheet over it (the book's list: its forms open over it, and closing
+    /// them is being back in the list).
+    func presentOnTop(_ vc: UIViewController) {
+        var top: UIViewController = self
+        while let p = top.presentedViewController, !p.isBeingDismissed { top = p }
+        top.present(vc, animated: true)
     }
 
     func editNote(_ m: [String: Any]) {
@@ -922,12 +1029,14 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
             x["note"] = note
             self?.saveMark(x)
         }
-        present(sheetHost(sheet), animated: true)
+        presentOnTop(sheetHost(sheet))
     }
 
     /// One notes form everywhere: the notebook's own form, over the page, filled from the selection (the text, the
-    /// chapter, its place in the novel; a word's sentence and meaning). Its save is the notebook's save.
-    func openNotebook(kind: String, text: String, sentence: String, at s: [String: Any]) {
+    /// chapter, its place in the novel; a word's sentence and meaning). Its save is the notebook's save. With `link`
+    /// (the highlight that is to be its place, new or already there), the entry and its highlight become one thing
+    /// once the form is saved: `item.mark` and `mark.kind` + `mark.item`. A highlight's note goes into the entry.
+    func openNotebook(kind: String, text: String, sentence: String, at s: [String: Any], link: [String: Any]? = nil) {
         closeOverlays()
         guard let b = bookID, chapters.indices.contains(index) else { toast("افتح الرواية من مكتبتك عشان تنحفظ في دفترها"); return }
         let ch = chapters.first { $0.id == NovelBridge.num(s["ch"]) } ?? chapters[index]
@@ -947,17 +1056,50 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
             pre["name"] = clean
             pre["first"] = loc
         }
+        if var m = link, kind != NoteKind.char.rawValue, !clean.isEmpty, let markID = m["id"] as? String {
+            let itemID = uid()
+            pre["id"] = itemID
+            pre["mark"] = markID
+            m["kind"] = kind
+            m["item"] = itemID
+            let note = ((m["note"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !note.isEmpty && kind != NoteKind.word.rawValue {
+                // the highlight's words move into the entry: a thought's own words, a quote's note
+                if kind == NoteKind.thought.rawValue { pre["text"] = note } else { pre["note"] = note }
+                m["note"] = ""
+            }
+            pendingLinks[itemID] = m
+        }
         let look = Appearance.shared.look
-        let form = ItemForm(ref: ItemRef(book: b, kind: kind, item: nil, prefill: pre)).environment(\.look, look)
+        let form = ItemForm(ref: ItemRef(book: b, kind: kind, item: nil, prefill: pre, inReader: true)).environment(\.look, look)
         let host = sheetHost(form, large: true)
         host.overrideUserInterfaceStyle = look.dark ? .dark : .light
-        present(host, animated: true)
+        presentOnTop(host)
     }
 
-    /// An entry saved from a form over the page: a new character is named in the text at once, and its first
-    /// appearance looked for.
+    /// An entry of the book's notebook, edited in its form over the page (or over the book's list).
+    func editItem(kind: String, id: String) {
+        guard let b = bookID else { return }
+        closeOverlays()
+        let look = Appearance.shared.look
+        let form = ItemForm(ref: ItemRef(book: b, kind: kind, item: id, inReader: true)).environment(\.look, look)
+        let host = sheetHost(form, large: true)
+        host.overrideUserInterfaceStyle = look.dark ? .dark : .light
+        presentOnTop(host)
+    }
+
+    /// highlights waiting for their entry's form to be saved (the entry's id → the highlight, already linked to it)
+    private var pendingLinks: [String: [String: Any]] = [:]
+
+    /// An entry saved from a form over the page: a quote (thought, word) taken from the text is highlighted there now;
+    /// a new character is named in the text at once, and its first appearance looked for.
     @objc private func noteSaved(_ n: Notification) {
-        guard let u = n.userInfo, let b = bookID, (u["book"] as? String) == b, (u["kind"] as? String) == "char" else { return }
+        guard let u = n.userInfo, let b = bookID, (u["book"] as? String) == b else { return }
+        if let id = u["id"] as? String, let m = pendingLinks.removeValue(forKey: id) {
+            saveMark(m)
+            toast("في الدفتر، ومظلّل في النص")
+        }
+        guard (u["kind"] as? String) == "char" else { return }
         loadLabels()
         if (u["new"] as? Bool) == true, let cid = u["id"] as? String, let name = u["name"] as? String {
             let was = (u["first"] as? Double).map { Int($0) } ?? -1
@@ -1048,28 +1190,97 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         present(sheetHost(sheet, large: true), animated: true)
     }
 
-    func openMarks() {
+    // MARK: the book's notebook in the reader («دفتر الرواية», reader 2.3)
+
+    var notebookTitle: String { novel.source == "epub" ? "دفتر الكتاب" : "دفتر الرواية" }
+    var searchTitle: String { novel.source == "epub" ? "بحث في الكتاب" : "بحث في الرواية" }
+
+    /// Everything kept from this book: highlights (a quote's highlight counts as the quote), quotes, thoughts, words,
+    /// characters, bookmarks.
+    var notebookCount: Int {
+        guard let b = bookID, let book = Library.shared.state.book(b) else { return marksHere.count + bookmarks.count }
+        return book.plainMarks.count + book.quotes.count + book.thoughts.count + book.words.count + book.chars.count + book.bmarks.count
+    }
+
+    /// The book's list: one list of what is kept from it, filtered by kind, live from the library.
+    func openNotebookList(filter: String = "all") {
         closeOverlays()
         setChrome(false)
-        guard let b = bookID else { return }
-        library("wirdNovelAllMarks(b)", ["b": b]) { [weak self] v in
-            guard let self = self else { return }
-            let d = v as? [String: Any] ?? [:]
-            let sheet = MarksSheet(title: self.novel.title, marks: (d["marks"] as? [[String: Any]]) ?? [], bookmarks: (d["bmarks"] as? [[String: Any]]) ?? [],
-                                   labels: self.labelNames, open: { [weak self] ch, p in
+        guard let b = bookID else { toast("افتح الرواية من مكتبتك عشان تنحفظ في دفترها"); return }
+        let sheet = ReaderNotebookSheet(bookID: b, title: novel.title, chapters: chapters, labels: labelNames, bookmarkedHere: bookmarkedHere, filter: filter,
+            open: { [weak self] ch, p in
                 self?.dismiss(animated: true)
                 self?.jump(chapter: ch, paragraph: p)
-            }, deleteMark: { [weak self] id in
+            }, editNote: { [weak self] m in
+                self?.editNote(m)
+            }, editItem: { [weak self] k, id in
+                self?.editItem(kind: k, id: id)
+            }, openCharacter: { [weak self] id in
+                self?.openCharacterCard(id)
+            }, add: { [weak self] k in
+                self?.addFromList(k)
+            }, toNotebook: { [weak self] in
+                // out of the reader, to the notebook tab at this book
                 guard let self = self else { return }
-                if let b = self.bookID { self.library("wirdNovelMarkDel(b, id)", ["b": b, "id": id]) }
-                if self.chapters.indices.contains(self.index) { self.call("JR.dropMark(ch, id)", ["ch": self.chapters[self.index].id, "id": id]) }
-            }, deleteBookmark: { [weak self] id in
-                guard let self = self, let b = self.bookID else { return }
-                self.library("wirdNovelBmarkDel(b, id)", ["b": b, "id": id]) { _ in self.refreshBookmarks() }
+                self.dismiss(animated: true) {
+                    self.closeTapped()
+                    Router.shared.openNotebook(book: b, kind: nil)
+                }
             })
-            self.present(self.sheetHost(sheet, large: true), animated: true)
-        }
+        let host = sheetHost(sheet, large: true)
+        // a character's card edited from the list: its name shows in the page once it closes
+        host.presentationController?.delegate = self
+        present(host, animated: true)
     }
+
+    /// The list's +: a bookmark here, or an entry at this chapter without a selection (a thought about it, a character).
+    private func addFromList(_ kind: String) {
+        if kind == "bmark" {
+            if !bookmarkedHere { toggleBookmark() }
+            return
+        }
+        guard chapters.indices.contains(index) else { return }
+        let here: [String: Any] = ["ch": chapters[index].id, "p": NovelBridge.num(lastPos["p"]), "s": 0]
+        openNotebook(kind: kind, text: "", sentence: "", at: here)
+    }
+
+    /// «المزيد» in the menu: what is rare. The chapter (its site, a second source, loading it again, its link), then the
+    /// replacement rules and the reading settings.
+    func moreMenu() -> UIMenu {
+        func act(_ title: String, _ symbol: String, _ f: @escaping (ReaderViewController) -> Void) -> UIAction {
+            UIAction(title: title.tr, image: UIImage(systemName: symbol)) { [weak self] _ in
+                guard let self = self else { return }
+                self.closeOverlays()
+                f(self)
+            }
+        }
+        let web = novel.source != "epub"
+        var chapter: [UIMenuElement] = []
+        if web { chapter.append(act("افتح الفصل في الموقع", "safari") { $0.openSite() }) }
+        if !Novels.shared.mirrors(novel.id).isEmpty { chapter.append(act("الفصل من مصدر ثاني", "arrow.triangle.2.circlepath") { $0.chapterFromMirror() }) }
+        if web {
+            chapter.append(act("حمّل الفصل من جديد", "arrow.clockwise") { $0.refetch() })
+            chapter.append(act("مشاركة رابط الفصل", "square.and.arrow.up") { $0.share() })
+        }
+        let setup: [UIMenuElement] = [
+            act("قواعد الاستبدال", "character.cursor.ibeam") { $0.openRules(seed: "") },
+            act("إعدادات القراءة", "gearshape") { $0.openReading() }
+        ]
+        var groups: [UIMenuElement] = []
+        if !chapter.isEmpty { groups.append(UIMenu(title: "", options: .displayInline, children: chapter)) }
+        groups.append(UIMenu(title: "", options: .displayInline, children: setup))
+        return UIMenu(title: "", children: groups)
+    }
+
+    /// This novel's replacement rules over the page; with `seed` (a selected word), its rule already started.
+    func openRules(seed: String) {
+        closeOverlays()
+        setChrome(false)
+        let sheet = RulesSheet(novelID: novel.id, seed: seed, close: { [weak self] in self?.dismiss(animated: true) })
+        presentPanel(UIHostingController(rootView: sheet), height: 440, tall: true)
+    }
+
+    var autoScrolling: Bool { autoPill != nil }
 
     func jump(chapter: Int, paragraph: Int) {
         guard let i = chapters.firstIndex(where: { $0.id == chapter }) else { return }
@@ -1081,7 +1292,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     func openSearch() {
         closeOverlays()
         setChrome(false)
-        let sheet = SearchSheet(novel: novel, chapters: chapters) { [weak self] chapterID, term, nth in
+        let sheet = SearchSheet(novel: novel, chapters: chapters, title: searchTitle) { [weak self] chapterID, term, nth in
             guard let self = self else { return }
             self.dismiss(animated: true)
             guard let i = self.chapters.firstIndex(where: { $0.id == chapterID }) else { return }
@@ -1153,13 +1364,39 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         present(av, animated: true)
     }
 
-    var isLocked: Bool { orientationLocked }
-
-    func toggleLock() {
-        orientationLocked.toggle()
-        DB.shared.set("reader.lock", orientationLocked ? "1" : nil)
+    /// «قفل الاتجاه الرأسي» is a reading setting now (it was a button in the menu): the reader follows it at once.
+    @objc private func lockChanged() {
+        orientationLocked = DB.shared.get("reader.lock") == "1"
         setNeedsUpdateOfSupportedInterfaceOrientations()
-        toast(orientationLocked ? "قفل الاتجاه الرأسي: مشغّل" : "قفل الاتجاه الرأسي: متوقف")
+    }
+
+    // MARK: the page follows the library
+
+    /// what the page last drew of this book's highlights and bookmarks (a change elsewhere draws them again)
+    private var marksSeen = 0
+
+    private func marksSignature() -> Int {
+        guard let b = bookID, let book = Library.shared.state.book(b) else { return 0 }
+        var h = Hasher()
+        for m in book.marks {
+            for k in ["id", "color", "style", "note", "item"] { h.combine(m.str(k)) }
+            for k in ["ch", "p", "s", "pe", "e"] { h.combine(m.int(k)) }
+        }
+        for m in book.bmarks { h.combine(m.str("id")) }
+        return h.finalize()
+    }
+
+    /// A highlight changed, made or deleted outside the page (the notebook, the book's list, a form over the page):
+    /// the chapters on the page are drawn with the library's highlights.
+    private func libraryChanged() {
+        guard pageReady, let b = bookID else { return }
+        let sig = marksSignature()
+        guard sig != marksSeen else { return }
+        marksSeen = sig
+        for ch in loadedInPage {
+            call("JR.setMarks(ch, l)", ["ch": ch, "l": NovelLibrary.marks(b, chapter: ch).marks])
+        }
+        refreshBookmarks()
     }
 
     func toggleGuide() {
@@ -1255,7 +1492,8 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         let s = UIStackView(arrangedSubviews: [backPill, fwdPill])
         s.axis = .horizontal
         s.spacing = 6
-        s.semanticContentAttribute = .forceRightToLeft
+        // back first in the book's direction (right in an Arabic book, left in an English one; the "dir" message updates it)
+        s.semanticContentAttribute = self.bookRTL ? .forceRightToLeft : .forceLeftToRight
         s.alpha = 0
         return s
     }()
@@ -1402,9 +1640,22 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         NSLog("jalees debug: %@ (in window: %@)", what, view.window == nil ? "no" : "yes")
         switch what {
         case "chrome": setChrome(true)
-        case "menu": ReaderMenuView.layout = "list"; setChrome(true); menuTapped()
-        case "menugrid": ReaderMenuView.layout = "grid"; setChrome(true); menuTapped()
-        case "menubar": ReaderMenuView.layout = "bar"; setChrome(true); menuTapped()
+        case "menu": setChrome(true); menuTapped()
+        case "rules": openRules(seed: "سالم")
+        case "notes":
+            // a highlight with a note made from a selection, then the book's list showing it
+            call("(function(){var p=document.querySelector('.body p[data-i=\"2\"]');var r=document.createRange();r.setStart(p.firstChild,3);r.setEnd(p.firstChild,30);getSelection().removeAllRanges();getSelection().addRange(r)})()")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                self.ask("JR.selection()") { v in
+                    guard var s = v as? [String: Any] else { return }
+                    for k in ["rect", "merge", "drop"] { s.removeValue(forKey: k) }
+                    self.call("JR.clearSelection()")
+                    var m: [String: Any] = ["id": UUID().uuidString, "color": "purple", "style": "hl", "note": "ملاحظة تجربة على هذا السطر"]
+                    for k in ["ch", "chLabel", "p", "s", "pe", "e", "text"] { m[k] = s[k] }
+                    self.saveMark(m)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.openNotebookList() }
+                }
+            }
         case "themes": openThemes()
         case "custom": openCustomize()
         case "reading": openReading()
@@ -1415,7 +1666,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         case "curl":
             settings.prefs.mode = "paged"; settings.prefs.anim = "curl"
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.curl(1) }
-        case "marks": openMarks()
+        case "marks": openNotebookList()
         case "search": openSearch()
         case "guide": toggleGuide()
         case "jumps":

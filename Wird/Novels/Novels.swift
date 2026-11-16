@@ -67,7 +67,16 @@ struct ChapterText {
     var title: String
     var paras: [String]
     var removed: Int
-    var words: Int { paras.reduce(0) { $0 + $1.split(whereSeparator: { $0 == " " || $0 == "\n" }).count } }
+    var words: Int { readable.reduce(0) { $0 + $1.split(whereSeparator: { $0 == " " || $0 == "\n" }).count } }
+    /// The text to read, search or export: without an EPUB's notes paragraph and without footnote markers.
+    /// (`paras` stays as stored; the reader page gets it whole and takes the notes from it.)
+    var readable: [String] { ChapterText.readable(paras) }
+
+    static func readable(_ paras: [String]) -> [String] {
+        var ps = paras
+        if let last = ps.last, last.hasPrefix(EpubStore.notesPrefix) { ps.removeLast() }
+        return ps.map { $0.contains(EpubStore.noteMark) ? $0.replacingOccurrences(of: EpubStore.noteMark, with: "") : $0 }
+    }
 }
 
 enum NovelError: LocalizedError {
@@ -105,6 +114,20 @@ enum Fetcher {
         c.httpAdditionalHeaders = ["Accept-Language": "ar,en;q=0.8"]
         return URLSession(configuration: c)
     }()
+
+    /// Whether an address a site definition gave may be fetched: http or https, and on the same site as `near`
+    /// (its registrable domain or a subdomain of it; the last two name parts, three after co.uk and the like).
+    static func allowed(_ address: String, near: String) -> Bool {
+        guard let u = URL(string: address), let s = u.scheme?.lowercased(), s == "http" || s == "https",
+              let host = u.host?.lowercased(), !host.isEmpty else { return false }
+        guard !near.isEmpty else { return true }
+        guard let base = URL(string: near)?.host?.lowercased() else { return false }
+        let parts = base.split(separator: ".").map(String.init)
+        var n = 2
+        if parts.count >= 3, parts[parts.count - 1].count == 2, ["co", "com", "org", "net", "gov", "edu", "ac"].contains(parts[parts.count - 2]) { n = 3 }
+        let reg = parts.suffix(n).joined(separator: ".")
+        return host == reg || host.hasSuffix("." + reg)
+    }
 
     /// The page as text. One quiet second try on a connection failure; never on a refusal.
     static func html(_ address: String, method: String = "GET", json: Any? = nil, headers: [String: String] = [:]) async throws -> String {
@@ -158,7 +181,11 @@ final class SourceEngine: NSObject, WKNavigationDelegate {
 
     private var web: WKWebView?
     private var ready = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    /// each caller waiting for the engine, with its own timeout (see waitReady)
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    /// the engine page failed to load (tried once more, then the waiters are answered at once)
+    private var loadFailed = false
+    private var retried = false
 
     private func boot() {
         guard web == nil else { return }
@@ -197,15 +224,39 @@ final class SourceEngine: NSObject, WKNavigationDelegate {
 
     private func markReady() {
         ready = true
+        loadFailed = false
         let w = waiters
-        waiters = []
-        w.forEach { $0.resume() }
+        waiters = [:]
+        w.values.forEach { $0.resume() }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { loadDidFail(error) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { loadDidFail(error) }
+
+    /// The first failure loads the page once more; the second answers everyone waiting now, instead of the 8 seconds.
+    private func loadDidFail(_ error: Error) {
+        // a load cut short by a newer one (reload) is not a failure
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        ready = false
+        guard retried else {
+            retried = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self = self, let w = self.web, !self.ready else { return }
+                if w.url == nil, let u = URL(string: AppSchemeHandler.scheme + "://app/reader/engine.html") { w.load(URLRequest(url: u)) } else { w.reload() }
+            }
+            return
+        }
+        loadFailed = true
+        let w = waiters
+        waiters = [:]
+        w.values.forEach { $0.resume() }
     }
 
     /// After the repository changed: the page again, with the new definitions.
     func restart() {
         guard let w = web else { return }
         ready = false
+        retried = false
         w.reload()
     }
 
@@ -217,16 +268,21 @@ final class SourceEngine: NSObject, WKNavigationDelegate {
     private func waitReady() async {
         boot()
         if ready { return }
-        // never wait for good: after 8 seconds the caller hears that the engine is not ready
-        let timer = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
-            guard let self = self, !self.ready else { return }
-            let w = self.waiters
-            self.waiters = []
-            w.forEach { $0.resume() }
+        // a failed page: one new try for this call, which then waits like the others
+        if loadFailed, let w = web {
+            loadFailed = false
+            retried = false
+            w.reload()
         }
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in waiters.append(c) }
-        timer.cancel()
+        // never wait for good: after 8 seconds (each caller has its own) it hears that the engine is not ready
+        let id = UUID()
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            waiters[id] = c
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                self?.waiters.removeValue(forKey: id)?.resume()
+            }
+        }
     }
 
     private func call(_ body: String, _ args: [String: Any]) async throws -> Any? {
@@ -394,18 +450,24 @@ final class Novels: ObservableObject {
         }
         let title = (info["title"] as? String) ?? ""
         guard !title.isEmpty else { throw NovelError.parse("title") }
-        let rows = try await allRows(site: site, first: (info["rows"] as? [[String: Any]]) ?? [], pages: (info["listPages"] as? [String]) ?? [], progress: progress)
+        let rows = try await allRows(site: site, first: (info["rows"] as? [[String: Any]]) ?? [], pages: (info["listPages"] as? [String]) ?? [], near: url, progress: progress)
         guard !rows.isEmpty else { throw NovelError.empty }
 
         var id = 0
+        var already: Novel?
         db.transaction {
+            // the same address may have been added meanwhile (a share from Safari and a typed link at once): look again here
+            if let have = db.query("SELECT * FROM novels WHERE url=?", [url]).first { already = Novel(row: have); return }
             id = Int(db.run("INSERT INTO novels(source,url,title,author,cover,summary,status,total,added,updated,translator,genres) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                             [site, url, title, info["author"] as? String, info["cover"] as? String, info["summary"] as? String,
                              info["status"] as? String, rows.count, Date().timeIntervalSince1970, Date().timeIntervalSince1970,
                              info["translator"] as? String, ((info["genres"] as? [String]) ?? []).joined(separator: "|")]))
+            // 0 means the insert failed: no chapters go under some other novel
+            guard id != 0 else { return }
             for (i, r) in rows.enumerated() { insert(r, novel: id, idx: i) }
         }
         reload()
+        if let a = already { return Added(novel: a, openIndex: openAt(a.id)) }
         guard let n = novel(id) else { throw NovelError.parse("save") }
         // your server follows it too
         if ServerLink.isOn { let u = url; Task { _ = try? await ServerLink.follow([u]) } }
@@ -460,20 +522,32 @@ final class Novels: ObservableObject {
         }
     }
 
-    /// Restores novels from a backup; a novel already here (same address) keeps its own data.
+    /// Restores novels from a backup. A novel already here (same address) takes the backup's reading progress and book
+    /// link (its chapters' read marks, where you stopped); its downloaded chapter texts stay as they are.
     func importAll(_ list: [[String: Any]]) {
         for n in list {
             let url = n["url"] as? String ?? ""
-            guard !url.isEmpty, db.query("SELECT id FROM novels WHERE url=?", [url]).isEmpty else { continue }
+            guard !url.isEmpty else { continue }
             let chs = (n["chapters"] as? [[Any]]) ?? []
+            let existing = db.query("SELECT id FROM novels WHERE url=?", [url]).first?.int("id")
             db.transaction {
-                let id = Int(db.run("INSERT INTO novels(source,url,title,author,cover,summary,status,total,added,updated,book,translator,genres) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                let id: Int
+                if let e = existing {
+                    id = e
+                    db.run("UPDATE novels SET book=?, updated=? WHERE id=?", [n["book"] as? String, Date().timeIntervalSince1970, id])
+                } else {
+                    id = Int(db.run("INSERT INTO novels(source,url,title,author,cover,summary,status,total,added,updated,book,translator,genres) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                     [n["source"] as? String ?? "", url, n["title"] as? String ?? "", n["author"] as? String, n["cover"] as? String,
                                      n["summary"] as? String, n["status"] as? String, chs.count, (n["added"] as? Double) ?? Date().timeIntervalSince1970,
                                      Date().timeIntervalSince1970, n["book"] as? String, n["translator"] as? String, n["genres"] as? String]))
+                    // 0: the insert failed, so nothing goes under another novel
+                    guard id != 0 else { return }
+                }
                 for c in chs where c.count >= 7 {
                     db.run("INSERT OR IGNORE INTO chapters(novel,idx,num,title,url,volume,date,read) VALUES(?,?,?,?,?,?,?,?)",
                            [id, NovelBridge.num(c[0]), c[1] as? String, c[2] as? String, c[3] as? String ?? "", c[4] as? String, c[5] as? String, NovelBridge.num(c[6])])
+                    // an existing chapter row isn't replaced by the insert, so its read mark is set here
+                    if existing != nil { db.run("UPDATE chapters SET read=? WHERE novel=? AND url=?", [NovelBridge.num(c[6]), id, c[3] as? String ?? ""]) }
                 }
                 if let cu = n["curURL"] as? String, !cu.isEmpty, let ch = db.query("SELECT id FROM chapters WHERE novel=? AND url=?", [id, cu]).first {
                     db.run("UPDATE novels SET cur_chapter=?, cur_p=?, cur_o=? WHERE id=?", [ch.int("id"), NovelBridge.num(n["curP"]), (n["curO"] as? Double) ?? 0, id])
@@ -486,6 +560,11 @@ final class Novels: ObservableObject {
     func setRead(_ ids: [Int], _ read: Bool) {
         guard !ids.isEmpty else { return }
         db.transaction { for i in ids { db.run("UPDATE chapters SET read=? WHERE id=?", [read, i]) } }
+    }
+
+    /// Removes the saved text of every chapter of a novel (they come back from the site when opened).
+    func undownloadAll(_ novel: Int) {
+        db.run("DELETE FROM texts WHERE chapter IN (SELECT id FROM chapters WHERE novel=?)", [novel])
     }
 
     /// Removes the saved text (the chapter stays in the list and comes back from the site when opened).
@@ -505,7 +584,10 @@ final class Novels: ObservableObject {
     }
 
     /// Every list page, four at a time, returned oldest chapter first.
-    func allRows(site: String, first: [[String: Any]], pages: [String], progress: @escaping (String) -> Void) async throws -> [[String: Any]] {
+    /// A site's list of pages is its own word, not trusted blindly: only http(s) pages of the novel's own site, and
+    /// at most 300 of them (the first is already read).
+    func allRows(site: String, first: [[String: Any]], pages allPages: [String], near: String = "", progress: @escaping (String) -> Void) async throws -> [[String: Any]] {
+        let pages = Array(allPages.prefix(1)) + Array(allPages.dropFirst().filter { Fetcher.allowed($0, near: near) }.prefix(299))
         var newestFirst = first
         var seen = Set(first.compactMap { $0["url"] as? String })
         var next = 1
@@ -585,23 +667,28 @@ final class Novels: ObservableObject {
     func checkAll(progress: @escaping (String) -> Void) async -> Int {
         // novels only being looked at (no book in the library yet) are not followed
         let list = self.list.filter { $0.source != "sample" && $0.source != "epub" && $0.source != "archive" && !$0.book.isEmpty }
-        var found = 0, done = 0
-        await withTaskGroup(of: (Int, Int).self) { group in
+        var found = 0, done = 0, worked = 0
+        await withTaskGroup(of: (Int, Int?).self) { group in
             var it = list.makeIterator()
             func next() {
                 guard let n = it.next() else { return }
-                group.addTask { @MainActor in (n.id, (try? await Novels.shared.refresh(n)) ?? 0) }
+                // nil: this refresh failed
+                group.addTask { @MainActor in (n.id, try? await Novels.shared.refresh(n)) }
             }
             for _ in 0..<3 { next() }
             for await (id, k) in group {
                 done += 1
-                found += k
-                if k > 0 { NovelBridge.sync(id) }
+                if let k = k {
+                    worked += 1
+                    found += k
+                    if k > 0 { NovelBridge.sync(id) }
+                }
                 progress("أفحص رواياتك: \(done) من \(list.count)")
                 next()
             }
         }
-        db.set("updates.checked", String(Date().timeIntervalSince1970))
+        // offline: every refresh failed, so the check is not counted as done and is tried again soon
+        if worked > 0 || list.isEmpty { db.set("updates.checked", String(Date().timeIntervalSince1970)) }
         return found
     }
 
@@ -631,10 +718,11 @@ final class Novels: ObservableObject {
                 return nil
             }
             let like = terms.map { _ in "t.paras LIKE ?" }.joined(separator: " OR ")
-            let hits = db.query("SELECT c.idx, c.num, t.paras FROM chapters c JOIN texts t ON t.chapter=c.id WHERE c.novel=? AND (\(like)) ORDER BY c.idx",
-                                ([novel] as [Any?]) + terms.map { "%" + $0 + "%" })
+            // the long scan runs on its own connection, so the main one stays free for the screens
+            let hits = db.queryAside("SELECT c.idx, c.num, t.paras FROM chapters c JOIN texts t ON t.chapter=c.id WHERE c.novel=? AND (\(like)) ORDER BY c.idx",
+                                     ([novel] as [Any?]) + terms.map { "%" + $0 + "%" })
             guard let first = hits.first(where: { has($0.str("paras")) }) else { return nil }
-            let missing = db.query("SELECT COUNT(*) AS k FROM chapters c WHERE c.novel=? AND c.idx < ? AND NOT EXISTS (SELECT 1 FROM texts t WHERE t.chapter=c.id)",
+            let missing = db.queryAside("SELECT COUNT(*) AS k FROM chapters c WHERE c.novel=? AND c.idx < ? AND NOT EXISTS (SELECT 1 FROM texts t WHERE t.chapter=c.id)",
                                    [novel, first.int("idx")]).first?.int("k") ?? 1
             return (num(first), missing == 0)
         }.value
@@ -643,6 +731,12 @@ final class Novels: ObservableObject {
 
     func delete(_ novel: Novel) {
         db.run("DELETE FROM novels WHERE id=?", [novel.id])
+        reload()
+    }
+
+    /// «ابدأ من الصفر»: every novel but the built-in sample goes, with its chapters and saved texts (they cascade).
+    func deleteAll() {
+        db.run("DELETE FROM novels WHERE source != 'sample'")
         reload()
     }
 
@@ -669,13 +763,18 @@ final class Novels: ObservableObject {
                 throw NovelError.message("هذا الفصل مو في الأرشيف المستورد")
             } else {
                 var html = try await Fetcher.html(ch.url)
-                guard var d = try await SourceEngine.shared.run(source, "chapter", html: html, url: ch.url) as? [String: Any] else { throw NovelError.parse("chapter") }
+                // the site's own translation the owner chose for this novel (SiteTranslation), said to the definition
+                // after the address's # (never sent to the site)
+                let asked = SiteTranslation.address(ch.url, source: source, novel: ch.novel)
+                guard var d = try await SourceEngine.shared.run(source, "chapter", html: html, url: asked) as? [String: Any] else { throw NovelError.parse("chapter") }
                 // fetch steps: the definition asks for another address (or a POST) and reads its answer
                 var hops = 0
                 while let f = d["fetch"] as? [String: Any], let u = f["url"] as? String, hops < 3 {
                     hops += 1
+                    // a definition can only ask for pages of the chapter's own site
+                    guard Fetcher.allowed(u, near: ch.url) else { throw NovelError.blocked }
                     html = try await Fetcher.html(u, method: (f["method"] as? String) ?? "GET", json: f["json"], headers: (f["headers"] as? [String: String]) ?? [:])
-                    guard let next = try await SourceEngine.shared.run(source, "chapter", html: html, url: ch.url) as? [String: Any] else { throw NovelError.parse("chapter") }
+                    guard let next = try await SourceEngine.shared.run(source, "chapter", html: html, url: asked) as? [String: Any] else { throw NovelError.parse("chapter") }
                     d = next
                 }
                 let paras = (d["paras"] as? [String]) ?? []
@@ -721,7 +820,7 @@ final class Novels: ObservableObject {
         ahead = Task { [weak self] in
             for ch in wanted {
                 if Task.isCancelled { return }
-                _ = try? await self?.text(ch, source: source)
+                do { _ = try await self?.text(ch, source: source) } catch NovelError.blocked { return } catch {}   // a refused site: stop asking
                 try? await Task.sleep(nanoseconds: 400_000_000)
             }
         }
@@ -769,12 +868,16 @@ enum Sample {
         return db.query("SELECT * FROM novels WHERE id=?", [id]).first.map(Novel.init(row:))
     }
 
+    /// set by the simulator route `readeren…`: the sample's chapters are in English (an English book in the Arabic app)
+    static var english = false
+
     static func text(_ ch: ChapterRow) -> ChapterText {
-        let root = (Bundle.main.resourceURL ?? Bundle.main.bundleURL).appendingPathComponent("www/reader/sample.json")
+        let root = (Bundle.main.resourceURL ?? Bundle.main.bundleURL).appendingPathComponent(english ? "www/reader/sample-en.json" : "www/reader/sample.json")
         let base = ((try? JSONSerialization.jsonObject(with: (try? Data(contentsOf: root)) ?? Data())) as? [String]) ?? ["نص تجريبي."]
         var paras: [String] = []
-        for i in 0..<(base.count * 3) { paras.append(base[(i + ch.idx) % base.count]) }
-        return ChapterText(title: ch.title, paras: paras, removed: 0)
+        for i in 0..<(base.count * (english ? 6 : 3)) { paras.append(base[(i + ch.idx) % base.count]) }
+        let titles = ["The Door That Would Not Open", "The Smell of Old Paper", "A Map Without North", "A Guest at Midnight", "The Seventh Shelf"]
+        return ChapterText(title: english ? titles[ch.idx % titles.count] : ch.title, paras: paras, removed: 0)
     }
 }
 

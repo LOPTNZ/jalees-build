@@ -28,13 +28,16 @@ final class SiteIcons {
         return nil
     }
 
-    func load(_ home: String) async -> UIImage? {
-        guard let u = URL(string: home), let host = u.host, let scheme = u.scheme else { return nil }
+    /// `logo`: the site's whole logo (its home page's og:image) comes first: some sites' own icon is a bad crop of it
+    /// (ملوك الروايات's cut its crown and wings off at an angle, and looked tilted).
+    func load(_ home: String, logo: Bool = false) async -> UIImage? {
+        guard let u = URL(string: home), let h = u.host, let scheme = u.scheme else { return nil }
+        let host = logo ? h + ".logo" : h
         if let i = cached(host) { return i }
         guard !asking.contains(host) else { return nil }
         asking.insert(host)
         defer { asking.remove(host) }
-        let base = scheme + "://" + host
+        let base = scheme + "://" + h
         var tries = [base + "/apple-touch-icon.png", base + "/apple-touch-icon-precomposed.png"]
         // the home page names its icon. A plain request: a site that answers with its robot check is skipped (the
         // app's own fetcher would ask the owner to pass the check, just for an icon)
@@ -51,16 +54,25 @@ final class SiteIcons {
                 }
             }
         }
+        if logo, let html = await Self.quietHTML(u),
+           let r = html.range(of: #"<meta[^>]+property=["']og:image["'][^>]*content=["']([^"']+)"#, options: [.regularExpression, .caseInsensitive]),
+           let c = html[r].range(of: #"content=["']([^"']+)"#, options: .regularExpression),
+           let abs = URL(string: String(html[r][c].dropFirst(9)), relativeTo: u)?.absoluteString {
+            tries.insert(abs, at: 0)
+        }
         tries.append(base + "/favicon.ico")
         for t in tries {
             guard let url = URL(string: t) else { continue }
             var r = URLRequest(url: url, timeoutInterval: 12)
             r.setValue(Fetcher.ua, forHTTPHeaderField: "User-Agent")
-            guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200,
-                  let img = UIImage(data: d), img.size.width >= 16 else { continue }
-            let out = img.size.width > 180 ? UIGraphicsImageRenderer(size: CGSize(width: 180, height: 180)).image { _ in img.draw(in: CGRect(x: 0, y: 0, width: 180, height: 180)) } : img
+            // no AVIF asked for: its decoder is slow and once stalled the whole app (same as RemoteImages)
+            r.setValue("image/webp,image/jpeg,image/png,*/*;q=0.5", forHTTPHeaderField: "Accept")
+            guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { continue }
+            // decoded and made small on the decode queue, not on the main thread
+            guard let out = await Library.decoded(d, max: 180), out.size.width >= 16 else { continue }
             memory[host] = out
-            if let png = out.pngData() { try? png.write(to: folder.appendingPathComponent(host + ".png")) }
+            let file = folder.appendingPathComponent(host + ".png")
+            Task.detached(priority: .utility) { if let png = out.pngData() { try? png.write(to: file) } }
             return out
         }
         return nil
@@ -82,6 +94,8 @@ struct SiteIcon: View {
     let name: String
     let look: JLook
     var size: CGFloat = 44
+    /// the site's whole logo rather than its icon (a site definition's `icon: 'og'`)
+    var logo = false
     @State private var img: UIImage?
 
     var body: some View {
@@ -98,8 +112,8 @@ struct SiteIcon: View {
         }
         .frame(width: size, height: size)
         .task(id: home) {
-            if let h = URL(string: home)?.host, let i = SiteIcons.shared.cached(h) { img = i; return }
-            img = await SiteIcons.shared.load(home)
+            if let h = URL(string: home)?.host, let i = SiteIcons.shared.cached(logo ? h + ".logo" : h) { img = i; return }
+            img = await SiteIcons.shared.load(home, logo: logo)
         }
     }
 }
