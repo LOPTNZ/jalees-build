@@ -1,7 +1,8 @@
 import UIKit
 
 /// Screens for pictures and checks on the simulator. Launch with `-JaleesRoute <route>`:
-/// `tab-<tab>` (a tab: library, notebook, progress, settings, browse, updates, downloads, history), `site-<id>` (a
+/// `tab-<tab>` (a tab: library, notebook, progress, settings, browse, updates, downloads, history), `notebook-home`,
+/// `notebook-marks`, `notebook-book|chars|words|time` (دفتري and the sample novel's notebook page), `site-<id>` (a
 /// site's list in تصفّح), `page` (the
 /// built-in sample novel's page), `reader` and `reader-<what>` (see ReaderViewController.debug), `epub` / `epub-read`,
 /// and `live <series url> <chapter number>` (adds a real novel and opens that chapter).
@@ -53,6 +54,18 @@ enum DebugRoute {
                     DB.shared.set("updates.checked", String(Date().timeIntervalSince1970))
                 }
                 Router.shared.select(t)
+            } else if route.hasPrefix("notebook") {
+                // دفتري (2.4): notebook-home, notebook-marks (every book's highlights), and the sample novel's own notebook
+                // (a few things kept from it first): notebook-book, notebook-chars, notebook-words, notebook-time
+                fillNotebook(sample, book: book)
+                switch route {
+                case "notebook-marks": Router.shared.openNotebook(book: nil, kind: "marks")
+                case "notebook-book": Router.shared.openNotebook(book: book, kind: nil)
+                case "notebook-chars": Router.shared.openNotebook(book: book, kind: "char")
+                case "notebook-words": Router.shared.openNotebook(book: book, kind: "word")
+                case "notebook-time": Router.shared.openNotebook(book: book, kind: "time")
+                default: Router.shared.openNotebook(book: nil, kind: "home")
+                }
             } else if route.hasPrefix("form") {
                 // the book form: adding (form), searching online (formsearch), editing (formedit), many (multi)
                 if route == "formedit" { Flows.editBook(Library.shared.state.lastBookId() ?? "") } else { Flows.addBook() }
@@ -144,6 +157,87 @@ enum DebugRoute {
                     (NovelBridge.top(h) as? ReaderViewController)?.debug(String(parts[1]))
                 }
             }
+        }
+    }
+
+    /// A few things kept from the sample novel, for the notebook's pictures: highlights in his named colours (one with
+    /// a note), quotes and a word taken from the text (each linked to its highlight), a thought, characters with their
+    /// first appearance and relations. Once: the sample's book keeps them.
+    static func fillNotebook(_ n: Novel, book: String) {
+        guard let b = Library.shared.state.book(book), b.marks.isEmpty, b.chars.isEmpty else { return }
+        let chs = Array(Novels.shared.chapters(n.id).prefix(6))
+        guard chs.count >= 4 else { return }
+        let now = Millis.now
+        func para(_ c: ChapterRow, _ i: Int) -> String {
+            let t = Sample.text(c).paras
+            return t.isEmpty ? "" : t[i % t.count]
+        }
+        func mark(_ c: ChapterRow, _ i: Int, _ color: String, note: String = "", style: String = "hl", len: Int = 90, ago: Double) -> JSONObject {
+            let text = String(para(c, i).prefix(len))
+            return ["id": .string(uid()), "color": .string(color), "style": .string(style), "ch": .number(Double(c.id)), "chLabel": .string(c.line),
+                    "p": .number(Double(i)), "s": .number(0), "pe": .number(Double(i)), "e": .number(Double(text.count)), "text": .string(text),
+                    "note": .string(note), "at": .number(now - ago * DAY)]
+        }
+        func nv(_ c: ChapterRow, _ i: Int) -> JSONValue {
+            .object(["ch": .number(Double(c.id)), "p": .number(Double(i)), "s": .number(0), "label": .string(c.line)])
+        }
+        var marks: [JSONObject] = [
+            mark(chs[0], 0, "purple", note: "المكتبة نفسها شخصية في الرواية؟", ago: 9),
+            mark(chs[0], 5, "blue", ago: 9),
+            mark(chs[1], 1, "pink", ago: 6),
+            mark(chs[2], 4, "yellow", note: "المفتاح الصغير: أكيد له دور بعدين.", ago: 3),
+            mark(chs[3], 2, "green", ago: 1)
+        ]
+        var quotes: [JSONObject] = []
+        for (c, i, color, fav, ago) in [(chs[0], 1, "yellow", true, 8.0), (chs[2], 3, "orange", false, 2.0)] {
+            var m = mark(c, i, color, len: 120, ago: ago)
+            let qid = uid()
+            m.set("kind", "quote")
+            m.set("item", qid)
+            marks.append(m)
+            quotes.append(["id": .string(qid), "at": m["at"] ?? .number(now), "text": m["text"] ?? .string(""), "loc": .number(Double(Int(c.num) ?? 1)),
+                           "vol": .number(0), "read": .number(1), "speakerId": .string(""), "speakerName": .string(""), "fav": .bool(fav),
+                           "nv": nv(c, i), "mark": m["id"] ?? .string(""), "tags": .array([.string("أجواء")])])
+        }
+        var w = mark(chs[1], 3, "blue", style: "ul", len: 7, ago: 5)
+        let wid = uid()
+        w.set("kind", "word")
+        w.set("item", wid)
+        w.set("text", "الفانوس")
+        marks.append(w)
+        let words: [JSONObject] = [
+            ["id": .string(wid), "at": w["at"] ?? .number(now), "word": .string("الفانوس"), "lang": .string("ar"), "tr": .string("lantern"),
+             "meaning": .string("مصباح تحيط به جدران من زجاج"), "ex": .string(String(para(chs[0], 0).prefix(80))), "loc": .number(2), "vol": .number(0),
+             "nv": nv(chs[1], 3), "mark": w["id"] ?? .string(""), "srs": .null],
+            ["id": .string(uid()), "at": .number(now - 4 * DAY), "word": .string("المواسم"), "lang": .string("ar"), "tr": .string(""),
+             "meaning": .string("الأوقات التي تتكرر كل عام"), "ex": .string(""), "loc": .number(1), "vol": .number(0),
+             "srs": .object(["ease": .number(2.5), "ivl": .number(3), "reps": .number(2), "due": .number(now + 2 * DAY)])]
+        ]
+        let thoughts: [JSONObject] = [
+            ["id": .string(uid()), "at": .number(now - 2 * DAY), "text": .string("كل باب في هذه المكتبة يسأل سؤال قبل ما ينفتح."),
+             "passage": .string(String(para(chs[2], 5).prefix(100))), "loc": .number(3), "vol": .number(0), "read": .number(1), "nv": nv(chs[2], 5)]
+        ]
+        let ids = (0..<4).map { _ in uid() }
+        func person(_ i: Int, _ name: String, _ alias: String, _ role: String, _ first: Int, _ rel: [(Int, String)], _ desc: String) -> JSONObject {
+            ["id": .string(ids[i]), "at": .number(now - Double(8 - i) * DAY), "name": .string(name), "alias": .string(alias), "role": .string(role),
+             "gender": .string(""), "age": .string(""), "desc": .string(desc), "importance": .string(""), "death": .string(""), "appearance": .string(""),
+             "traits": .string(""), "flaws": .string(""), "change": .string(""), "challenges": .string(""), "photo": .null, "first": .number(Double(first)),
+             "firstVol": .number(0), "rel": .array(rel.map { JSONValue.object(["to": .string(ids[$0.0]), "label": .string($0.1)]) }), "custom": .array([])]
+        }
+        let chars: [JSONObject] = [
+            person(0, "سالم", "الضيف", "main", 1, [(1, "تلميذه"), (2, "صديقته")], "يدخل المكتبة كل ليلة بحثًا عن كتاب وُعد به."),
+            person(1, "العجوز", "حارس المكتبة", "main", 1, [(0, "معلّمه"), (3, "خصمه")], "لا يرفع عينه عن دفتره."),
+            person(2, "ليلى", "", "secondary", 3, [(0, "صديقها")], "تعرف طريق الرف السابع."),
+            person(3, "صاحب الفانوس", "", "secondary", 4, [(1, "خصمه")], "علّق الفانوس النحاسي فوق المدخل.")
+        ]
+        Library.shared.changeBook(book) { bb in
+            bb.marks = marks
+            bb.raw.set("quotes", objects: bb.raw.objs("quotes") + quotes)
+            bb.raw.set("words", objects: bb.raw.objs("words") + words)
+            bb.raw.set("thoughts", objects: bb.raw.objs("thoughts") + thoughts)
+            bb.raw.set("chars", objects: chars)
+            let bm: JSONObject = ["id": .string(uid()), "ch": .number(Double(chs[2].id)), "chLabel": .string(chs[2].line), "p": .number(6), "o": .number(0), "at": .number(now - DAY)]
+            bb.bmarks = [bm]
         }
     }
 

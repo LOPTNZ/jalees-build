@@ -28,6 +28,8 @@ final class Router: ObservableObject {
     enum Page: Hashable {
         case book(String)
         case novel(Int, String)
+        /// a book's notebook in دفتري, opened at a section or a kind of passage («char», «word», «mark»…; "" its start)
+        case notebook(String, String)
     }
 
     @Published var group: Group = .main
@@ -68,12 +70,17 @@ final class Router: ObservableObject {
         BookLayer.shared.openNovel(id, book: book)
     }
 
-    /// The notebook, at a book (and a list).
+    /// The notebook: a book's own notebook page (at a section), or a list of every book («quotes», «marks»…).
     func openNotebook(book: String?, kind: String?) {
-        NotebookNav.shared.show(book: book, kind: kind)
         group = .main
         mainTab = .notebook
-        paths[.notebook] = []
+        if let b = book, !b.isEmpty {
+            NotebookNav.shared.show(book: nil, kind: nil)
+            paths[.notebook] = [.notebook(b, kind ?? "")]
+        } else {
+            NotebookNav.shared.show(book: nil, kind: kind)
+            paths[.notebook] = []
+        }
     }
 }
 

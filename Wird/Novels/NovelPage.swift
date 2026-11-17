@@ -658,6 +658,17 @@ struct NovelPageView: View {
                     .buttonStyle(.plain)
                 }
             }
+            if !model.bookID.isEmpty {
+                // the novel's whole notebook in دفتري (2.4): by chapter, the characters' map, the words' review
+                Button {
+                    // opened over دفتري itself: the page goes, the novel's notebook is under it
+                    if BookLayer.shared.isOpen && BookLayer.shared.tab == .notebook { BookLayer.shared.close() }
+                    Router.shared.openNotebook(book: model.bookID, kind: nil)
+                } label: {
+                    Label(model.novel.source == "epub" ? "دفتر الكتاب كاملًا" : "دفتر الرواية كاملًا", systemImage: "book.closed").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(JButtonStyle(look: L))
+            }
             Text("تضيف من القارئ: حدد النص واختر «للدفتر».").font(JFont.body(13)).foregroundStyle(Color(L.ink2))
         }
     }

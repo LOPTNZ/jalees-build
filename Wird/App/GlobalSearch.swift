@@ -70,12 +70,12 @@ enum SearchEngine {
 
         for b in st.books {
             for q in b.quotes where r.quotes.count < cap {
-                if match([q.text, q.passage, q.raw.str("note")], toks) {
+                if match([q.text, q.passage, q.raw.str("note"), q.raw.strs("tags").joined(separator: " ")], toks) {
                     r.quotes.append(GlobalHit(kind: .quote, bookID: b.id, itemID: q.id, title: q.text, detail: q.passage, meta: b.title))
                 }
             }
             for t in b.thoughts where r.thoughts.count < cap {
-                if match([t.text, t.passage], toks) {
+                if match([t.text, t.passage, t.raw.strs("tags").joined(separator: " ")], toks) {
                     r.thoughts.append(GlobalHit(kind: .thought, bookID: b.id, itemID: t.id, title: t.text, meta: b.title))
                 }
             }
@@ -95,7 +95,7 @@ enum SearchEngine {
             let linked = Set(b.linkedMarkIDs)
             for (i, m) in b.marks.enumerated() where r.marks.count < cap {
                 if linked.contains(m.str("id")) && m.str("note").isEmpty { continue }
-                if match([m.str("text"), m.str("note")], toks) {
+                if match([m.str("text"), m.str("note"), m.strs("tags").joined(separator: " ")], toks) {
                     let ch = m.str("chLabel")
                     r.marks.append(GlobalHit(kind: .mark, bookID: b.id, title: m.str("text"), detail: m.str("note"),
                                              meta: [ch, b.title].filter { !$0.isEmpty }.joined(separator: " · "),

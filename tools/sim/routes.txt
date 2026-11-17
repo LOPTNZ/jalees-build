@@ -1,10 +1,23 @@
 # name  seconds  launch arguments
 reader-tts 14 -JaleesRoute reader-tts -JaleesSilent
 reader-menu 10 -JaleesRoute reader-menu
+# the menu is his (reader 2.4): «خصّص القائمة», and every kind of item at once (quick rows, pairs, the scrubber)
+reader-menuedit 10 -JaleesRoute reader-menuedit
+reader-menucustom 10 -JaleesRoute reader-menucustom
+en-reader-menuedit 10 -JaleesLang en -JaleesRoute reader-menuedit
 # the book's notebook in the reader (a highlight with a note made first), the regrouped reading settings, a word's rule
 reader-notes 12 -JaleesRoute reader-notes
 reader-reading 10 -JaleesRoute reader-reading
 reader-rules 10 -JaleesRoute reader-rules
+# دفتري 2.4: the home (today, the review, the shelf of notebooks), every book's highlights, a novel's notebook page and its parts
+notebook-home 10 -JaleesRoute notebook-home
+notebook-marks 10 -JaleesRoute notebook-marks
+notebook-book 10 -JaleesRoute notebook-book
+notebook-chars 10 -JaleesRoute notebook-chars
+notebook-words 10 -JaleesRoute notebook-words
+notebook-time 10 -JaleesRoute notebook-time
+reader-marks 12 -JaleesRoute reader-marks
+en-notebook-book 10 -JaleesLang en -JaleesRoute notebook-book
 settings 8 -JaleesRoute settings
 en-library 8 -JaleesLang en -JaleesRoute tab-library
 en-notebook 8 -JaleesLang en -JaleesRoute tab-notebook

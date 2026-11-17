@@ -72,6 +72,7 @@ struct BookPage: View {
                     SocialBookRow(bookID: b.id)   // الأصدقاء: keep this book from friends (Wird/Social)
                     if b.status == .done || !b.review.isEmpty || !b.moods.isEmpty { reviewSection(b) }
                     if full {
+                        notebookLink(b)
                         notes(b, .quote, "الاقتباسات", 2, "ما فيه اقتباسات بعد.")
                         notes(b, .thought, "الأفكار", 2, "سجّل الأفكار اللي يلهمك فيها النص.")
                         notes(b, .char, "الشخصيات", 4, "أضف الشخصيات عشان تتذكر الكتاب أكثر.")
@@ -250,6 +251,30 @@ struct BookPage: View {
                     .buttonStyle(JButtonStyle(look: L, small: true))
             }
         }
+    }
+
+    /// The book's whole notebook in دفتري (2.4): its passages by chapter, its characters' map, its words.
+    private func notebookLink(_ b: Book) -> some View {
+        Button {
+            // opened over دفتري itself (a notebook's «صفحة الكتاب»): the page goes, its notebook is under it
+            if inLayer && BookLayer.shared.tab == .notebook { BookLayer.shared.close() }
+            Router.shared.openNotebook(book: b.id, kind: nil)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "book.closed").font(.system(size: 18, weight: .medium)).foregroundStyle(Color(L.primary)).frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(b.isNovel && b.novel?.isEpub != true ? "دفتر الرواية" : "دفتر الكتاب").font(JFont.body(15.5, .semibold)).foregroundStyle(Color(L.ink))
+                    Text("مقاطعه حسب الفصول، شخصياته وخريطة علاقاتها، كلماته ومراجعتها").font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.forward").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(L.ink2))
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(L.surface)))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func sectionHead(_ title: String, count: Int, add: (() -> Void)? = nil) -> some View {

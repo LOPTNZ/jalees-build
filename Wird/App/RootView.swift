@@ -158,6 +158,8 @@ private struct TabRoot: View {
                         NovelPageScreen(novelID: id, bookID: book)
                     case .book(let id):
                         BookPage(bookID: id)
+                    case .notebook(let id, let section):
+                        BookNotebookPage(bookID: id, start: section)
                     }
                 }
         }

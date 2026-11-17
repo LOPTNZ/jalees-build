@@ -55,6 +55,8 @@ final class ItemFormModel: ObservableObject {
     func str(_ k: String) -> Binding<String> { Binding(get: { self.x.str(k) }, set: { self.x.set(k, $0) }) }
     func bool(_ k: String) -> Binding<Bool> { Binding(get: { self.x.bool(k) }, set: { self.x.set(k, $0) }) }
     func num(_ k: String) -> Binding<Double?> { Binding(get: { self.x.optNum(k) }, set: { self.x.set(k, optional: $0) }) }
+    /// the entry's tags (دفتري 2.4): the owner's own collections
+    var tags: Binding<[String]> { Binding(get: { self.x.strs("tags") }, set: { self.x.set("tags", $0) }) }
 
     func discard() {
         guard !saved else { return }
@@ -111,6 +113,14 @@ final class ItemFormModel: ObservableObject {
             if x.str("name").isEmpty { err = "اكتب اسم الشخصية."; return false }
             x.set("rel", objects: x.objs("rel").filter { !$0.str("to").isEmpty })
             x.set("custom", objects: x.objs("custom").filter { !$0.str("k").trimmingCharacters(in: .whitespaces).isEmpty || !$0.str("v").trimmingCharacters(in: .whitespaces).isEmpty })
+        }
+        if x["tags"] != nil {
+            var clean: [String] = []
+            for t in x.strs("tags") {
+                let s = t.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !s.isEmpty && !clean.contains(s) { clean.append(s) }
+            }
+            x.set("tags", clean)
         }
         let newPic = kind == .char ? x.optStr("photo") : x.optStr("img")
         if let o = oldImg, o != newPic { Library.shared.deleteImage(o) }
@@ -198,6 +208,9 @@ struct ItemForm: View {
                     case .word: word
                     case .char: character
                     }
+                    // tags: the owner's own collections in دفتري (حبكة، فلسفة، للمراجعة…)
+                    JLabel(text: "الوسوم (اختياري)")
+                    TagField(tags: m.tags, suggestions: NotebookStore.shared.ix.tags)
                     if !m.err.isEmpty { Text(m.err).font(JFont.body(14)).foregroundStyle(Color(L.danger)) }
                     Button { afterEditing { if m.save() { dismiss() } } } label: { Text("حفظ").frame(maxWidth: .infinity) }.buttonStyle(JButtonStyle(look: L, primary: true))
                     if m.editing {

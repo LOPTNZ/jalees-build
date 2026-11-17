@@ -1,61 +1,59 @@
 import SwiftUI
 import UIKit
 
-// دفتري (inventory-2, 2.1–2.2): quotes, thoughts, words, characters and highlights («تظليلات», with their notes) from every
-// book. A quote, thought or word taken from a novel's text is also highlighted there (reader 2.3): it is listed once, here.
+// دفتري 2.4 (docs/plan/notebook-2.4.md). The tab's first page is alive: passages to read again today, the words due
+// for review, the shelf of the books' notebooks, the newest kept. The chips above it list one kind across every book
+// (quotes, highlights with their colours' names and notes, thoughts, words, characters), with a book, tags, sorting,
+// a search and picking several to copy, share or delete. A book's own notebook is a page of its own (BookNotebook.swift).
 
 struct NotebookView: View {
-    @ObservedObject private var lib = Library.shared
-    @ObservedObject private var router = Router.shared
+    @ObservedObject private var store = NotebookStore.shared
     @ObservedObject private var nav = NotebookNav.shared
     @Environment(\.look) private var L
-    @State private var tab = "quote"
+    @State private var tab = "home"
     @State private var bookFilter = ""
     @State private var query = ""
     @State private var favOnly = false
-    @State private var markColor: String?
-    /// a highlight whose note is being written
-    @State private var noteFor: MarkRef?
-    @State private var edit: ItemRef?
-    @State private var card: ItemRef?
-    @State private var review = false
+    /// "" all, "__note" the ones with your words, else a colour (its name is the owner's category)
+    @State private var markColor = ""
+    @State private var tagFilter = ""
+    /// "new", "old", "book"
+    @State private var sort = "new"
+    @State private var sheet: NBSheet?
+    /// nil: not picking
+    @State private var picked: Set<String>? = nil
+    @State private var askDeleteMany = false
+    @State private var shuffle = 0
     @State private var fabOpen = false
     @State private var fabDim = false
-    /// the + held down: when the finger went down, and the hold that opens the form at 0.3 s (while still held)
-    @State private var holdWork: DispatchWorkItem?
-    @State private var holdDone = false
     @State private var lastY: CGFloat = 0
 
-    /// the highlights next to the quotes: both are passages kept from books (and on screen without scrolling the row)
-    private static let tabs: [(String, String)] = [("quote", "اقتباسات"), ("mark", "تظليلات"), ("thought", "أفكار"), ("word", "كلمات"), ("char", "شخصيات")]
+    /// the home, then one list for each kind (the highlights next to the quotes: both are passages kept from books)
+    private static let tabs: [(String, String)] = [("home", "الرئيسية"), ("quote", "اقتباسات"), ("mark", "تظليلات"), ("thought", "أفكار"),
+                                                  ("word", "كلمات"), ("char", "شخصيات")]
 
     var body: some View {
         ScrollViewReader { proxy in
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text("دفتري").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink)).id("nbTop")
-                    HeaderSessionChip()
-                    Spacer()
-                }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Self.tabs, id: \.0) { t in
-                            JChip(look: L, text: t.1, count: count(t.0), on: tab == t.0) { tab = t.0; bookFilter = ""; query = "" }
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    header.id("nbTop")
+                    chips
+                    searchField
+                    if tab == "home" {
+                        if tokens.isEmpty { home } else { results }
+                    } else {
+                        kindList
                     }
                 }
-                filters
-                if tab == "mark" { marks } else { list }
+                .padding(.horizontal, 16).padding(.bottom, 130)
+                .readableColumn(820)
+                .background(GeometryReader { g in Color.clear.preference(key: ScrollY.self, value: g.frame(in: .named("nb")).minY) })
             }
-            .padding(.horizontal, 16).padding(.bottom, 110)
-            .readableColumn(820)
-            .background(GeometryReader { g in Color.clear.preference(key: ScrollY.self, value: g.frame(in: .named("nb")).minY) })
-        }
-        .coordinateSpace(name: "nb")
-        .onReceive(NotificationCenter.default.publisher(for: .tabRetap)) { n in
-            if (n.object as? String) == "notebook" { withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("nbTop", anchor: .top) } }
-        }
+            .coordinateSpace(name: "nb")
+            .scrollDismissesKeyboard(.interactively)
+            .onReceive(NotificationCenter.default.publisher(for: .tabRetap)) { n in
+                if (n.object as? String) == "notebook" { withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("nbTop", anchor: .top) } }
+            }
         }
         .onPreferenceChange(ScrollY.self) { y in
             // the + fades while scrolling down the list and comes back when scrolling up or near the top
@@ -64,338 +62,484 @@ struct NotebookView: View {
             else if y - lastY > 4 || y > -40 { if fabDim { withAnimation(.easeOut(duration: 0.2)) { fabDim = false } } }
             lastY = y
         }
-        .overlay { if fabOpen { Color(red: 6 / 255, green: 14 / 255, blue: 12 / 255).opacity(0.42).ignoresSafeArea().onTapGesture { fabMenu(false) }.transition(.opacity) } }
-        .overlay(alignment: .bottomLeading) { fab }
+        .overlay { if fabOpen { Color(red: 6 / 255, green: 14 / 255, blue: 12 / 255).opacity(0.42).ignoresSafeArea().onTapGesture { fabToggle(false) }.transition(.opacity) } }
+        .overlay(alignment: .bottomLeading) {
+            if picked == nil && (SessionModel.shared.timer == nil || !SessionModel.shared.showScreen) {
+                NotebookFab(open: $fabOpen, dim: fabDim, current: tab == "home" || tab == "mark" ? "quote" : tab) { k in fabPick(k) }
+            }
+        }
+        .overlay(alignment: .bottom) { if let p = picked { selectBar(p) } }
         .statusBarBackdrop(Color(L.bg))
         .background(Color(L.bg).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .onAppear(perform: follow)
-        // the + menu folds when you go to another tab
-        .onChange(of: router.tab) { _ in if fabOpen { fabMenu(false) } }
+        // the + fan folds when you go to another tab
+        .onReceive(Router.shared.$mainTab) { _ in if fabOpen { fabToggle(false) } }
+        .onReceive(Router.shared.$group) { _ in if fabOpen { fabToggle(false) } }
         .onChange(of: nav.book) { _ in follow() }
         .onChange(of: nav.kind) { _ in follow() }
         .onChange(of: nav.character) { _ in follow() }
-        .sheet(item: $edit) { r in ItemForm(ref: r).environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
-        .sheet(item: $card) { r in CharacterCard(bookID: r.book, charID: r.item ?? "").environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
-        .sheet(isPresented: $review) { WordReview(bookID: bookFilter.isEmpty ? nil : bookFilter).environment(\.look, L).environment(\.layoutDirection, Lang.direction) }
-        .sheet(item: $noteFor) { r in
-            NoteSheet(text: r.mark.str("text"), note: r.mark.str("note"), dark: L.dark) { NovelLibrary.setMarkNote(r.book, r.mark.str("id"), $0) }
+        .nbSheets($sheet)
+        .confirmationDialog("حذف المحدد؟", isPresented: $askDeleteMany, titleVisibility: .visible) {
+            Button("حذف", role: .destructive) { deletePicked() }
+            Button("إلغاء", role: .cancel) {}
+        } message: {
+            Text("تقدر تتراجع خلال ثواني.")
         }
     }
 
-    // MARK: the floating + (03-app's FAB): a fan of the four kinds and a photographed quote
+    private var act: NBDo {
+        var a = NBDo(show: { sheet = $0 })
+        // picking several is for the lists (the home has nothing to do with a selection)
+        if tab != "home" { a.pick = { e in togglePick(e) } }
+        return a
+    }
 
-    private static let fabItems: [(String, String, String)] = [("char", "شخصية", "person"), ("word", "كلمة", "character.book.closed"),
-                                                               ("thought", "فكرة", "lightbulb"), ("photo", "صوّر اقتباس", "camera"),
-                                                               ("quote", "اقتباس", "quote.opening")]
+    private func lib(_ id: String) -> Book? { Library.shared.state.book(id) }
 
-    @ViewBuilder private var fab: some View {
-        if SessionModel.shared.timer == nil || !SessionModel.shared.showScreen {
-            VStack(alignment: .leading, spacing: 12) {
-                if fabOpen {
-                    ForEach(Array(Self.fabItems.enumerated()), id: \.element.0) { i, it in
-                        Button { fabPick(it.0) } label: {
-                            HStack(spacing: 10) {
-                                let cur = it.0 == tab
-                                Image(systemName: it.2).font(.system(size: 18, weight: .medium))
-                                    .foregroundStyle(Color(cur ? L.onPrimary : L.primary))
-                                    .frame(width: 46, height: 46)
-                                    .background(Circle().fill(Color(cur ? L.primary : L.surface)))
-                                    .shadow(color: .black.opacity(0.35), radius: 8, y: 6)
-                                Text(it.1).font(JFont.body(15 * 0.92, .semibold)).foregroundStyle(Color(L.ink))
-                                    .padding(.horizontal, 12).padding(.vertical, 5)
-                                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
-                                    .shadow(color: .black.opacity(0.3), radius: 6, y: 4)
-                            }
-                            .contentShape(Rectangle())
+    private var tokens: [String] { Words.norm(query).split(separator: " ").map(String.init) }
+
+    // MARK: the top
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Text("دفتري").font(JFont.display(28, .bold)).foregroundStyle(Color(L.ink))
+            HeaderSessionChip()
+            Spacer()
+            if tab != "home" && picked == nil && store.ix.n(NBEntry.Kind(rawValue: tab) ?? .quote) > 0 {
+                Button { withAnimation(.easeOut(duration: 0.2)) { picked = [] } } label: {
+                    Text("تحديد").font(JFont.body(15, .medium)).foregroundStyle(Color(L.primary)).frame(minHeight: 36)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var chips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Self.tabs, id: \.0) { t in
+                    NBChip(text: t.1, count: t.0 == "home" ? nil : store.ix.n(NBEntry.Kind(rawValue: t.0) ?? .quote),
+                           symbol: t.0 == "home" ? "sparkles" : nil, on: tab == t.0) { pickTab(t.0) }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.horizontal, -16)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Color(L.ink2))
+            TextField(tab == "home" ? "ابحث في دفترك" : "بحث", text: $query).font(JFont.body(15)).autocorrectionDisabled()
+                .clearButton($query, Color(L.ink2))
+        }
+        .padding(.horizontal, 12).frame(height: 44)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
+    }
+
+    private func pickTab(_ t: String) {
+        withAnimation(.easeOut(duration: 0.15)) {
+            tab = t
+            query = ""
+            markColor = ""
+            tagFilter = ""
+            favOnly = false
+            picked = nil
+            if t == "word" || t == "char", sort == "book" { sort = "new" }
+        }
+    }
+
+    // MARK: the home
+
+    @ViewBuilder private var home: some View {
+        let ix = store.ix
+        if ix.all.isEmpty {
+            welcome
+        } else {
+            today
+            if ix.n(.word) > 0 {
+                NBReviewPanel(stats: ix.words(), review: { sheet = .review(nil) })
+            }
+            shelf
+            recent
+        }
+    }
+
+    @ViewBuilder private var today: some View {
+        let list = store.today(shuffle: shuffle)
+        if !list.isEmpty {
+            let w = min(UIScreen.main.bounds.width - 56, 520)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top) {
+                    NBTitle(title: "من دفترك اليوم", sub: "مقاطع ترجع لك كل يوم، والمفضّلة أكثر")
+                    Spacer()
+                    if list.count > 1 {
+                        Button { withAnimation(.easeOut(duration: 0.25)) { shuffle += 1 } } label: {
+                            Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 15, weight: .semibold)).foregroundStyle(Color(L.primary))
+                                .frame(width: 38, height: 38).background(Circle().fill(Color(L.surface)))
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(it.1)
-                        .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 14)).combined(with: .scale(scale: 0.9))
-                                                    .animation(.spring(response: 0.3, dampingFraction: 0.8).delay(Double(Self.fabItems.count - 1 - i) * 0.03)),
-                                                removal: .opacity.animation(.easeOut(duration: 0.15))))
+                        .accessibilityLabel("مقاطع أخرى")
                     }
-                    .padding(.leading, 6)
                 }
-                // tap: the menu; hold half a second: add to the list you are on (1.8.0)
-                Image(systemName: "plus").font(.system(size: 24, weight: .semibold))
-                    .rotationEffect(.degrees(fabOpen ? 135 : 0))
-                    .foregroundStyle(Color(L.onPrimary))
-                    .frame(width: 58, height: 58)
-                    .background(Circle().fill(Color(L.primary)))
-                    .shadow(color: .black.opacity(0.4), radius: 12, y: 10)
-                    .contentShape(Circle())
-                    // one touch: a tap opens the menu; held 0.3 s, the form for the list you are on opens right then,
-                    // with the finger still down (SwiftUI's tap + long press pair fired late or not at all)
-                    .gesture(DragGesture(minimumDistance: 0)
-                        .onChanged { g in
-                            if holdWork == nil && !holdDone {
-                                let w = DispatchWorkItem {
-                                    holdDone = true
-                                    Haptics.play("soft")
-                                    fabPick(tab == "mark" ? "quote" : tab)
-                                }
-                                holdWork = w
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: w)
-                            } else if hypot(g.translation.width, g.translation.height) > 14 {
-                                holdWork?.cancel()
-                            }
-                        }
-                        .onEnded { g in
-                            holdWork?.cancel()
-                            holdWork = nil
-                            if !holdDone && hypot(g.translation.width, g.translation.height) <= 14 { fabMenu(!fabOpen) }
-                            holdDone = false
-                        })
-                    .accessibilityElement()
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityLabel(fabOpen ? "إغلاق القائمة" : "إضافة للدفتر")
-                    .accessibilityHint("اضغط مطوّلًا لإضافة " + (NoteKind(rawValue: tab)?.name ?? "اقتباس"))
-                    .accessibilityAction { fabMenu(!fabOpen) }
-                .opacity(fabDim && !fabOpen ? 0.38 : 1)
-                .scaleEffect(fabDim && !fabOpen ? 0.88 : 1)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(list) { e in TodayCard(e: e, book: lib(e.book), act: act).frame(width: w) }
+                    }
+                    .modifier(NBPagingTargets())
+                }
+                .modifier(NBPagingRow())
+                .padding(.horizontal, -16)
             }
-            // above the tab bar (58 high, with 8 over it and 4 under it), as the web's nav height + 16
-            .padding(.leading, 16).padding(.bottom, 16 + 70)
         }
     }
 
-    private func fabMenu(_ on: Bool) {
-        if on { Haptics.play("soft"); fabDim = false }
+    private var shelf: some View {
+        let books = store.ix.books
+        return VStack(alignment: .leading, spacing: 10) {
+            NBTitle(title: "دفاتر كتبك", count: books.count, sub: "كل كتاب بدفتره: مقاطعه حسب الفصول، شخصياته وكلماته")
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 14) {
+                    ForEach(books) { info in
+                        if let b = lib(info.id) {
+                            Button { Router.shared.push(.notebook(info.id, ""), in: .notebook) } label: { BookNotebookCard(book: b, info: info) }
+                                .buttonStyle(NBPress())
+                                .accessibilityIdentifier("nb-book-" + info.id)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .padding(.horizontal, -16)
+        }
+    }
+
+    private var recent: some View {
+        let list = Array(store.ix.all.prefix(10))
+        return VStack(alignment: .leading, spacing: 10) {
+            NBTitle(title: "آخر ما حفظت")
+            VStack(spacing: 10) {
+                ForEach(list) { e in entry(e, showBook: true, compact: true) }
+            }
+        }
+    }
+
+    @ViewBuilder private func entry(_ e: NBEntry, showBook: Bool, compact: Bool) -> some View {
+        if e.isPassage {
+            PassageCard(e: e, act: act, book: lib(e.book), showBook: showBook, compact: compact, picked: pickState(e))
+        } else if e.kind == .word && tab != "home" {
+            WordTile(e: e, act: act, book: lib(e.book), showBook: showBook, picked: pickState(e))
+        } else {
+            NBRow(e: e, act: act, book: lib(e.book), showBook: showBook, boxed: true)
+        }
+    }
+
+    private var welcome: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Image(systemName: "book.closed").font(.system(size: 34, weight: .light)).foregroundStyle(Color(L.primary))
+            Text("دفترك يبدأ من أول سطر يعجبك").font(JFont.display(22, .semibold)).foregroundStyle(Color(L.ink))
+            tip("highlighter", "وأنت تقرأ رواية أو كتاب: حدد النص واختر «تظليل» أو «ملاحظة» أو «للدفتر».")
+            tip("plus.circle", "من زر + هنا: اقتباس، فكرة، كلمة، شخصية، أو صوّر صفحة وأنا أكتب نصها.")
+            tip("sparkles", "اللي تحفظه يرجع لك هنا كل يوم، ويفتح لك مكانه في القارئ.")
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(L.surface)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
+    }
+
+    private func tip(_ symbol: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 15, weight: .semibold)).foregroundStyle(Color(L.primary)).frame(width: 22)
+            Text(text).font(JFont.body(14.5)).foregroundStyle(Color(L.ink2)).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// What the home's search finds: every kind, every book.
+    @ViewBuilder private var results: some View {
+        let toks = tokens
+        let hits = store.ix.all.filter { e in toks.allSatisfy { e.hay.contains($0) } }
+        if hits.isEmpty {
+            Text("ما لقيت شيئًا يطابق بحثك.").font(JFont.body(15)).foregroundStyle(Color(L.ink2)).padding(.top, 12)
+        } else {
+            Text(Words.cnt(Double(hits.count), ["نتيجة واحدة", "نتيجتان", "نتائج", "نتيجة"])).font(JFont.body(13, .medium)).foregroundStyle(Color(L.ink2))
+            LazyVStack(spacing: 10) {
+                ForEach(Array(hits.prefix(200))) { e in entry(e, showBook: true, compact: true) }
+            }
+        }
+    }
+
+    // MARK: a kind across the books
+
+    @ViewBuilder private var kindList: some View {
+        let kind = NBEntry.Kind(rawValue: tab) ?? .quote
+        let base = store.ix.all.filter { $0.kind == kind }
+        let shown = filtered(base, kind)
+        filterBar(kind, base)
+        if shown.isEmpty {
+            empty(kind, filtered: !base.isEmpty)
+        } else {
+            switch kind {
+            case .word:
+                NBWords(entries: shown, act: act, stats: store.ix.words(bookFilter.isEmpty ? nil : bookFilter),
+                        review: { sheet = .review(bookFilter.isEmpty ? nil : bookFilter) },
+                        anki: { NotebookExport.anki(bookFilter.isEmpty ? nil : bookFilter) },
+                        add: { fabPick("word") }, books: bookMap, showBook: bookFilter.isEmpty, picked: picked)
+            case .char:
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 10)], spacing: 10) {
+                    ForEach(shown) { e in CharacterTile(e: e, act: act, book: lib(e.book), showBook: bookFilter.isEmpty, picked: pickState(e)) }
+                }
+            default:
+                if sort == "book" {
+                    byBook(shown)
+                } else {
+                    LazyVStack(spacing: 12) {
+                        ForEach(shown) { e in PassageCard(e: e, act: act, book: lib(e.book), showBook: bookFilter.isEmpty, picked: pickState(e)) }
+                    }
+                }
+            }
+        }
+    }
+
+    private var bookMap: [String: Book] {
+        Dictionary(Library.shared.state.books.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    private func filtered(_ base: [NBEntry], _ kind: NBEntry.Kind) -> [NBEntry] {
+        let toks = tokens
+        var l = base.filter { e in
+            if !bookFilter.isEmpty && e.book != bookFilter { return false }
+            if favOnly && !e.fav { return false }
+            if !tagFilter.isEmpty && !e.tags.contains(tagFilter) { return false }
+            if kind == .mark && !markColor.isEmpty {
+                if markColor == "__note" {
+                    if e.note.isEmpty { return false }
+                } else if e.color != markColor {
+                    return false
+                }
+            }
+            return toks.allSatisfy { e.hay.contains($0) }
+        }
+        if sort == "old" { l.reverse() }
+        return l
+    }
+
+    private func filterBar(_ kind: NBEntry.Kind, _ base: [NBEntry]) -> some View {
+        let books = store.ix.books.filter { $0.n(kind) > 0 }
+        let tags = Array(Set(base.flatMap(\.tags))).sorted()
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                bookMenu(books)
+                if !bookFilter.isEmpty {
+                    Button { Router.shared.push(.notebook(bookFilter, kind == .mark ? "mark" : kind.rawValue), in: .notebook) } label: {
+                        Image(systemName: "book.closed").font(.system(size: 15, weight: .semibold)).foregroundStyle(Color(L.primary))
+                            .frame(width: 42, height: 42)
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("دفتر الكتاب")
+                }
+                sortMenu(kind)
+            }
+            if kind == .quote && base.contains(where: { $0.fav }) {
+                NBChip(text: "★ المفضّلة فقط", on: favOnly) { favOnly.toggle() }
+            }
+            if kind == .mark { markChips(base) }
+            if !tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(tags, id: \.self) { x in
+                            NBChip(text: "#" + x, on: tagFilter == x) { tagFilter = tagFilter == x ? "" : x }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+                .padding(.horizontal, -16)
+            }
+        }
+    }
+
+    private func bookMenu(_ books: [NBBook]) -> some View {
+        Menu {
+            Button("كل الكتب") { bookFilter = "" }
+            ForEach(books) { b in Button(b.title) { bookFilter = b.id } }
+        } label: {
+            HStack {
+                Text(bookFilter.isEmpty ? "كل الكتب" : (lib(bookFilter)?.title ?? "كل الكتب")).lineLimit(1)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
+            }
+            .font(JFont.body(14.5)).foregroundStyle(Color(L.ink))
+            .padding(.horizontal, 12).frame(height: 42)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
+        }
+    }
+
+    private func sortMenu(_ kind: NBEntry.Kind) -> some View {
+        Menu {
+            Picker("الترتيب", selection: $sort) {
+                Label("الأحدث أولًا", systemImage: "clock").tag("new")
+                Label("الأقدم أولًا", systemImage: "clock.arrow.circlepath").tag("old")
+                if kind != .word && kind != .char { Label("حسب الكتاب", systemImage: "books.vertical").tag("book") }
+            }
+            Button { withAnimation(.easeOut(duration: 0.2)) { picked = [] } } label: { Label("تحديد", systemImage: "checkmark.circle") }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down").font(.system(size: 14, weight: .semibold)).foregroundStyle(Color(L.ink))
+                .frame(width: 42, height: 42)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
+        }
+        .accessibilityLabel("الترتيب")
+    }
+
+    /// The highlights' own row: all, the ones with your words, and each colour by the name you gave it.
+    private func markChips(_ base: [NBEntry]) -> some View {
+        let inBook = base.filter { bookFilter.isEmpty || $0.book == bookFilter }
+        let noted = inBook.filter { !$0.note.isEmpty }.count
+        let counts = Dictionary(grouping: inBook, by: { $0.color ?? "" }).mapValues { $0.count }
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                NBChip(text: "الكل", on: markColor.isEmpty) { markColor = "" }
+                if noted > 0 || markColor == "__note" {
+                    NBChip(text: "ملاحظات", count: noted, symbol: "text.bubble", on: markColor == "__note") { markColor = "__note" }
+                }
+                ForEach(MarkColor.allCases.filter { counts[$0.rawValue] != nil }, id: \.self) { c in
+                    NBChip(text: NotebookExport.colorName(c.rawValue), count: counts[c.rawValue], dot: UIColor(hex: c.hex), on: markColor == c.rawValue) {
+                        markColor = c.rawValue
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.horizontal, -16)
+    }
+
+    /// Passages grouped under their books (sorted «حسب الكتاب»).
+    private func byBook(_ shown: [NBEntry]) -> some View {
+        var order: [String] = []
+        var seen = Set<String>()
+        for e in shown where !seen.contains(e.book) { seen.insert(e.book); order.append(e.book) }
+        let groups = Dictionary(grouping: shown, by: { $0.book })
+        return LazyVStack(alignment: .leading, spacing: 12, pinnedViews: [.sectionHeaders]) {
+            ForEach(order, id: \.self) { bid in
+                Section {
+                    ForEach(groups[bid] ?? []) { e in PassageCard(e: e, act: act, picked: pickState(e)) }
+                } header: {
+                    HStack(spacing: 8) {
+                        if let b = lib(bid) { NBBookLine(book: b) }
+                        Spacer(minLength: 8)
+                        Text(verbatim: "\((groups[bid] ?? []).count)").font(JFont.body(12.5, .medium)).foregroundStyle(Color(L.ink2)).monospacedDigit()
+                        Button { Router.shared.push(.notebook(bid, tab), in: .notebook) } label: {
+                            Image(systemName: "chevron.forward").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(L.primary)).frame(width: 30, height: 30)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("دفتر الكتاب")
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 6)
+                    .background(Color(L.bg))
+                    .padding(.horizontal, -16)
+                }
+            }
+        }
+    }
+
+    private func empty(_ k: NBEntry.Kind, filtered: Bool) -> some View {
+        let t: [NBEntry.Kind: (String, String)] = [
+            .quote: ("ما فيه اقتباسات بعد.", "أثناء الجلسة اضغط «اقتباس»، أو صوّر الصفحة وحدد السطر اللي يعجبك وأنا أكتبه لك."),
+            .mark: ("ما فيه تظليلات بعد.", "حدد نص وأنت تقرأ رواية أو كتاب واختر «تظليل» أو «ملاحظة». لكل لون اسم تختاره (معلومة، مضحك، تلميح…)، وكل اللي ظلّلته يتجمّع هنا. الاقتباسات والأفكار والكلمات اللي تحفظها من النص تنظلّل فيه وتطلع في قوائمها."),
+            .thought: ("ما فيه أفكار بعد.", "سجّل اللي يخطر في بالك وأنت تقرأ، مع النص اللي ألهمك."),
+            .word: ("ما فيه كلمات بعد.", "أضف الكلمات الجديدة بمعناها وترجمتها، وراجعها بالبطاقات أو صدّرها لـ Anki."),
+            .char: ("ما فيه شخصيات بعد.", "أضف شخصيات الكتاب بأوصافها وعلاقاتها عشان ما تضيع بينها.")
+        ]
+        let short: [NBEntry.Kind: String] = [.quote: "ما فيه اقتباسات.", .mark: "ما فيه تظليلات هنا.", .thought: "ما فيه أفكار.", .word: "ما فيه كلمات.", .char: "ما فيه شخصيات."]
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(filtered ? (short[k] ?? "") : (t[k]?.0 ?? "")).font(JFont.body(15, .medium)).foregroundStyle(Color(L.ink))
+            if !filtered { Text(t[k]?.1 ?? "").font(JFont.body(13.5)).foregroundStyle(Color(L.ink2)) }
+        }
+        .padding(.top, 12)
+    }
+
+    // MARK: picking several
+
+    private func pickState(_ e: NBEntry) -> Bool? { picked.map { $0.contains(e.id) } }
+
+    private func togglePick(_ e: NBEntry) {
+        var p = picked ?? []
+        if p.contains(e.id) { p.remove(e.id) } else { p.insert(e.id) }
+        withAnimation(.easeOut(duration: 0.15)) { picked = p }
+        Haptics.play("sel")
+    }
+
+    private var pickedEntries: [NBEntry] {
+        guard let p = picked else { return [] }
+        return store.ix.all.filter { p.contains($0.id) }
+    }
+
+    private func selectBar(_ p: Set<String>) -> some View {
+        NBSelectBar(count: p.count,
+                    all: {
+                        let kind = NBEntry.Kind(rawValue: tab) ?? .quote
+                        picked = Set(filtered(store.ix.all.filter { $0.kind == kind }, kind).map(\.id))
+                    },
+                    copy: { UIPasteboard.general.string = NotebookExport.text(pickedEntries); Haptics.play("soft"); ToastCenter.shared.show("تم النسخ") },
+                    shareText: { NotebookExport.shareText(pickedEntries) },
+                    shareMarkdown: { NotebookExport.shareMarkdown(pickedEntries, name: "جليس - دفتري".tr) },
+                    delete: { askDeleteMany = true },
+                    done: { withAnimation(.easeOut(duration: 0.2)) { picked = nil } })
+    }
+
+    private func deletePicked() {
+        let list = pickedEntries
+        withAnimation(.easeOut(duration: 0.2)) { picked = nil }
+        NoteItems.deleteMany(list)
+    }
+
+    // MARK: the floating +
+
+    private func fabToggle(_ on: Bool) {
+        if on { fabDim = false }
         withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) { fabOpen = on }
     }
 
     private func fabPick(_ k: String) {
         let wasOpen = fabOpen
-        fabMenu(false)
-        // the book shown in the notebook, or none: the form asks (it does not guess the last book read)
+        fabToggle(false)
+        // the book shown in the list, or none: the form asks (it does not guess the last book read)
         let b = bookFilter
-        let open = {
-            if k == "photo" { edit = ItemRef(book: b, kind: "quote", item: nil, pick: true, photo: true, fromNotebook: true) }
-            else { edit = ItemRef(book: b, kind: k, item: nil, pick: true, fromNotebook: true) }
+        let run = {
+            if k == "photo" {
+                sheet = .form(ItemRef(book: b, kind: "quote", item: nil, pick: true, photo: true, fromNotebook: true))
+            } else {
+                sheet = .form(ItemRef(book: b, kind: k, item: nil, pick: true, fromNotebook: true))
+            }
         }
-        // straight away from a hold; after the menu folds when picked from it
-        if wasOpen { DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: open) } else { open() }
+        // straight away from a hold; after the fan folds when picked from it
+        if wasOpen { DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: run) } else { run() }
     }
 
-    /// Opened from somewhere else (a book, the reader): its book, its list, maybe a character's card.
+    /// Opened from somewhere else: a list («quotes», «marks»…), a book's notebook, a character's card.
     private func follow() {
-        if let b = nav.book { bookFilter = b }
         if let k = nav.kind {
             let map = ["quotes": "quote", "thoughts": "thought", "words": "word", "chars": "char", "marks": "mark"]
-            tab = map[k] ?? (NoteKind(rawValue: k) != nil || k == "mark" ? k : tab)
+            let t = map[k] ?? k
+            if Self.tabs.contains(where: { $0.0 == t }) { pickTab(t) }
         }
-        if let c = nav.character, let b = nav.book {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { card = ItemRef(book: b, kind: "char", item: c) }
-        }
-        nav.book = nil; nav.kind = nil; nav.character = nil
-    }
-
-    private func add() {
-        if let k = NoteKind(rawValue: tab) {
-            // the book shown in the notebook, or none: the form asks (it does not guess the last book read)
-            edit = ItemRef(book: bookFilter, kind: k.rawValue, item: nil, pick: true, fromNotebook: true)
-        }
-    }
-
-    private func count(_ k: String) -> Int {
-        if k == "mark" { return lib.state.books.reduce(0) { $0 + $1.plainMarks.count } }
-        guard let kind = NoteKind(rawValue: k) else { return 0 }
-        return lib.state.books.reduce(0) { $0 + $1.items(kind).count }
-    }
-
-    // MARK: filters
-
-    private var filters: some View {
-        let books = lib.state.books.filter { b in tab == "mark" ? !b.plainMarks.isEmpty : !(NoteKind(rawValue: tab).map { b.items($0) } ?? []).isEmpty }
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Menu {
-                    Button("كل الكتب") { bookFilter = "" }
-                    ForEach(books) { b in Button(b.title) { bookFilter = b.id } }
-                } label: {
-                    HStack {
-                        Text(lib.state.book(bookFilter)?.title ?? "كل الكتب").lineLimit(1)
-                        Spacer(minLength: 4)
-                        Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
-                    }
-                    .font(JFont.body(14.5)).foregroundStyle(Color(L.ink))
-                    .padding(.horizontal, 12).frame(height: 44)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
-                }
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(Color(L.ink2))
-                    TextField("بحث", text: $query).font(JFont.body(15)).autocorrectionDisabled()
-                        .clearButton($query, Color(L.ink2))
-                }
-                .padding(.horizontal, 12).frame(height: 44)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
-            }
-            if tab == "word" && count("word") > 0 {
-                HStack(spacing: 8) {
-                    Button { review = true } label: { Label("اختبار" + dueText, systemImage: "rectangle.on.rectangle").frame(maxWidth: .infinity) }
-                        .buttonStyle(JButtonStyle(look: L, primary: true))
-                    Button { exportAnki() } label: { Text("تصدير لـ Anki") }.buttonStyle(JButtonStyle(look: L))
-                }
-            }
-            if tab == "quote" && count("quote") > 0 {
-                JChip(look: L, text: "★ المفضّلة فقط", on: favOnly) { favOnly.toggle() }
+        if let b = nav.book, !b.isEmpty {
+            if let c = nav.character {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { sheet = .character(b, c) }
+            } else {
+                Router.shared.paths[.notebook] = [.notebook(b, "")]
             }
         }
-    }
-
-    private var dueText: String {
-        guard lib.state.settings.raw.str("review", "srs") == "srs" else { return "" }
-        let n = WordReview.pool(bookFilter.isEmpty ? nil : bookFilter).filter { WordReview.isDue($0.item) }.count
-        return n > 0 ? " · \(n) مستحقة" : ""
-    }
-
-    // MARK: lists
-
-    @ViewBuilder private var list: some View {
-        let k = NoteKind(rawValue: tab) ?? .quote
-        let q = Words.norm(query)
-        let rows: [(Book, NoteItem)] = lib.state.books.filter { bookFilter.isEmpty || $0.id == bookFilter }.flatMap { b in
-            b.items(k).map { (b, $0) }
-        }.filter { b, x in
-            if favOnly && k == .quote && !x.fav { return false }
-            guard !q.isEmpty else { return true }
-            let r = x.raw
-            let hay = [r.str("text"), r.str("passage"), r.str("word"), r.str("tr"), r.str("meaning"), r.str("name"), r.str("alias"), r.str("desc"), r.str("speakerName"), b.title]
-            return Words.norm(hay.joined(separator: " ")).contains(q)
+        if nav.book != nil || nav.kind != nil || nav.character != nil {
+            nav.book = nil
+            nav.kind = nil
+            nav.character = nil
         }
-        let sorted = k == .char ? rows : rows.sorted { $0.1.at > $1.1.at }
-        if sorted.isEmpty {
-            empty(k, filtered: !q.isEmpty || favOnly || !bookFilter.isEmpty)
-        } else if k == .char {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
-                ForEach(sorted, id: \.1.id) { b, x in
-                    Button { card = ItemRef(book: b.id, kind: "char", item: x.id) } label: { CharTile(book: b, item: x, showBook: bookFilter.isEmpty) }.buttonStyle(.plain)
-                        .noteMenu(book: b, item: x, kind: .char) { edit = ItemRef(book: b.id, kind: "char", item: x.id) }
-                }
-            }
-        } else if k == .word {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 10)], spacing: 10) {
-                ForEach(sorted, id: \.1.id) { b, x in
-                    Button { edit = ItemRef(book: b.id, kind: "word", item: x.id) } label: { WordCard(book: b, item: x, showBook: bookFilter.isEmpty) }.buttonStyle(.plain)
-                        .noteMenu(book: b, item: x, kind: .word) { edit = ItemRef(book: b.id, kind: "word", item: x.id) }
-                }
-            }
-        } else {
-            LazyVStack(spacing: 0) {
-                ForEach(sorted, id: \.1.id) { b, x in
-                    Button { edit = ItemRef(book: b.id, kind: k.rawValue, item: x.id) } label: { QuoteRow(book: b, item: x, kind: k, showBook: bookFilter.isEmpty) }.buttonStyle(.plain)
-                        .noteMenu(book: b, item: x, kind: k) { edit = ItemRef(book: b.id, kind: k.rawValue, item: x.id) }
-                }
-            }
-        }
-    }
-
-    private func empty(_ k: NoteKind, filtered: Bool) -> some View {
-        let t: [NoteKind: (String, String)] = [
-            .quote: ("ما فيه اقتباسات بعد.", "أثناء الجلسة اضغط «اقتباس»، أو صوّر الصفحة وحدد السطر اللي يعجبك وأنا أكتبه لك."),
-            .thought: ("ما فيه أفكار بعد.", "سجّل اللي يخطر في بالك وأنت تقرأ، مع النص اللي ألهمك."),
-            .word: ("ما فيه كلمات بعد.", "أضف الكلمات الجديدة بمعناها وترجمتها، وراجعها بالبطاقات أو صدّرها لـ Anki."),
-            .char: ("ما فيه شخصيات بعد.", "أضف شخصيات الكتاب بأوصافها وعلاقاتها عشان ما تضيع بينها.")
-        ]
-        let short: [NoteKind: String] = [.quote: "ما فيه اقتباسات.", .thought: "ما فيه أفكار.", .word: "ما فيه كلمات.", .char: "ما فيه شخصيات."]
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(filtered ? (short[k] ?? "") : (t[k]?.0 ?? "")).font(JFont.body(15, .medium)).foregroundStyle(Color(L.ink))
-            if !filtered { Text(t[k]?.1 ?? "").font(JFont.body(13.5)).foregroundStyle(Color(L.ink2)) }
-        }
-        .padding(.top, 20)
-    }
-
-    // MARK: highlights
-
-    @ViewBuilder private var marks: some View {
-        let labels = lib.state.settings.markLabels
-        // a highlight that is a quote's, thought's or word's place is listed as that entry, in its own tab
-        let all: [(Book, JSONObject)] = lib.state.books.filter { bookFilter.isEmpty || $0.id == bookFilter }.flatMap { b in b.plainMarks.map { (b, $0) } }
-            .sorted { $0.1.num("at") > $1.1.num("at") }
-        // "" all, "__note" the ones with your words, else a colour (its name is the owner's category)
-        let col = markColor ?? ""
-        let counts = Dictionary(grouping: all, by: { $0.1.str("color") }).mapValues(\.count)
-        let noted = all.filter { !$0.1.str("note").isEmpty }.count
-        let q = Words.norm(query)
-        let shown = all.filter { b, m in
-            (col.isEmpty || (col == "__note" ? !m.str("note").isEmpty : m.str("color") == col))
-                && (q.isEmpty || Words.norm([m.str("text"), m.str("note"), b.title].joined(separator: " ")).contains(q))
-        }
-        if all.isEmpty {
-            Text("حدد نص وأنت تقرأ رواية أو كتاب واختر «تظليل» أو «ملاحظة». لكل لون اسم تختاره (معلومة، مضحك، تلميح…)، وكل اللي ظلّلته يتجمّع هنا. الاقتباسات والأفكار والكلمات اللي تحفظها من النص تنظلّل فيه وتطلع في قوائمها.")
-                .font(JFont.body(14)).foregroundStyle(Color(L.ink2)).padding(.top, 16)
-        } else {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    JChip(look: L, text: "الكل", on: col.isEmpty) { markColor = "" }
-                    if noted > 0 {
-                        JChip(look: L, text: "ملاحظات", count: noted, on: col == "__note") { markColor = "__note" }
-                    }
-                    ForEach(MarkColor.allCases.filter { counts[$0.rawValue] != nil }, id: \.self) { c in
-                        JChip(look: L, text: name(c, labels), count: counts[c.rawValue], dot: UIColor(hex: c.hex), on: col == c.rawValue) { markColor = c.rawValue }
-                    }
-                }
-            }
-            if shown.isEmpty { Text("ما فيه تظليلات هنا.").font(JFont.body(14)).foregroundStyle(Color(L.ink2)) }
-            LazyVStack(spacing: 0) {
-                ForEach(Array(shown.enumerated()), id: \.offset) { _, x in
-                    let (b, m) = x
-                    Button { openMark(b, m) } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(m.str("text")).font(JFont.quote(18)).foregroundStyle(Color(L.ink)).lineSpacing(4)
-                            if !m.str("note").isEmpty {
-                                Text(m.str("note")).font(JFont.quote(15.5)).foregroundStyle(Color(L.ink2)).padding(.leading, 10)
-                                    .overlay(alignment: .leading) { Rectangle().fill(Color(L.line)).frame(width: 3) }
-                            }
-                            Text([name(MarkColor(rawValue: m.str("color")) ?? .yellow, labels), m.str("chLabel"), b.title, Words.date(m.num("at"))].filter { !$0.isEmpty }.joined(separator: " · "))
-                                .font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
-                        }
-                        .padding(.vertical, 14).padding(.leading, 12).frame(maxWidth: .infinity, alignment: .leading)
-                        .overlay(alignment: .leading) { Rectangle().fill(Color(hex: (MarkColor(rawValue: m.str("color")) ?? .yellow).hex)).frame(width: 4) }
-                        .overlay(alignment: .bottom) { Rectangle().fill(Color(L.line)).frame(height: 1) }
-                    }
-                    .buttonStyle(.plain)
-                    // the same highlight the reader shows: its note and its deletion reach the open page too
-                    .contextMenu {
-                        Button { noteFor = MarkRef(book: b.id, mark: m) } label: {
-                            Label(m.str("note").isEmpty ? "إضافة ملاحظة" : "تعديل الملاحظة", systemImage: "note.text")
-                        }
-                        Button { UIPasteboard.general.string = m.str("text"); Haptics.play("soft"); ToastCenter.shared.show("تم النسخ") } label: {
-                            Label("نسخ", systemImage: "doc.on.doc")
-                        }
-                        if b.novel != nil {
-                            Button { openMark(b, m) } label: { Label("افتح مكانه في القارئ", systemImage: "book") }
-                        }
-                        Divider()
-                        Button(role: .destructive) { NoteItems.deleteMark(b.id, m.str("id")) } label: { Label("حذف", systemImage: "trash") }
-                    }
-                }
-            }
-        }
-    }
-
-    private func name(_ c: MarkColor, _ labels: [String: String]) -> String { (labels[c.rawValue]).flatMap { $0.isEmpty ? nil : $0 } ?? c.plain }
-
-    private func openMark(_ b: Book, _ m: JSONObject) {
-        guard let n = b.novel else { return }
-        NovelBridge.openReader(novel: n.novelID, book: b.id, index: nil, chapter: m.int("ch"), paragraph: m.int("p"))
-    }
-
-    // MARK: Anki
-
-    private func exportAnki() {
-        let rows = lib.state.books.filter { bookFilter.isEmpty || $0.id == bookFilter }.flatMap { b in b.words.map { (b, $0) } }
-        func esc(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
-        let csv = rows.map { b, w in
-            [w.raw.str("word"), [w.raw.str("tr"), w.raw.str("meaning"), w.raw.str("ex").isEmpty ? "" : "«" + w.raw.str("ex") + "»"].filter { !$0.isEmpty }.joined(separator: "<br>"), b.title]
-                .map(esc).joined(separator: ",")
-        }.joined(separator: "\n")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("jalees-words.csv")
-        try? ("\u{FEFF}" + csv).data(using: .utf8)?.write(to: url)
-        Share.files([url])
     }
 }
 
@@ -433,7 +577,7 @@ struct ScrollY: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
-/// Shares files from wherever the app is.
+/// Shares files (or text) from wherever the app is: over the topmost screen.
 @MainActor
 enum Share {
     static func files(_ urls: [URL]) {
@@ -442,9 +586,17 @@ enum Share {
         vc.popoverPresentationController?.sourceView = h.view
         NovelBridge.top(h).present(vc, animated: true)
     }
+
+    static func text(_ s: String) {
+        guard let h = NovelBridge.host, !s.isEmpty else { return }
+        let vc = UIActivityViewController(activityItems: [s], applicationActivities: nil)
+        vc.popoverPresentationController?.sourceView = h.view
+        vc.popoverPresentationController?.sourceRect = CGRect(x: h.view.bounds.midX, y: h.view.bounds.maxY - 80, width: 1, height: 1)
+        NovelBridge.top(h).present(vc, animated: true)
+    }
 }
 
-/// A quote or a thought in the notebook.
+/// A quote or a thought in a list (a character's card shows its quotes so).
 struct QuoteRow: View {
     let book: Book
     let item: NoteItem
@@ -489,52 +641,6 @@ struct QuoteRow: View {
     }
 }
 
-/// A word as a card.
-struct WordCard: View {
-    let book: Book
-    let item: NoteItem
-    let showBook: Bool
-    @Environment(\.look) private var L
-
-    var body: some View {
-        let r = item.raw
-        VStack(alignment: .leading, spacing: 4) {
-            Text(r.str("word")).font(JFont.display(20, .semibold)).foregroundStyle(Color(L.ink))
-            if !r.str("tr").isEmpty { Text(r.str("tr")).font(JFont.body(14.5, .medium)).foregroundStyle(Color(L.primary)) }
-            if !r.str("meaning").isEmpty { Text(r.str("meaning")).font(JFont.body(13.5)).foregroundStyle(Color(L.ink)).lineLimit(3) }
-            Text([Words.lang(r.str("lang")), NoteItems.locLabel(book, item), showBook ? book.title : ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(JFont.body(11.5)).foregroundStyle(Color(L.ink2))
-        }
-        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(L.surface)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
-    }
-}
-
-/// A character as a tile: its face (or initial), name, alias, role, book.
-struct CharTile: View {
-    let book: Book
-    let item: NoteItem
-    let showBook: Bool
-    @Environment(\.look) private var L
-
-    var body: some View {
-        let r = item.raw
-        HStack(spacing: 10) {
-            Avatar(name: r.str("name"), photo: r.optStr("photo"), size: 44)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(r.str("name")).font(JFont.body(15, .semibold)).foregroundStyle(Color(L.ink)).lineLimit(1)
-                Text([r.str("alias"), ["main": "رئيسية", "secondary": "ثانوية"][r.str("role")] ?? "", showBook ? book.title : ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(JFont.body(12)).foregroundStyle(Color(L.ink2)).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(L.line), lineWidth: 1))
-    }
-}
-
 /// A character's face, or its first letter on a colour from its name.
 struct Avatar: View {
     let name: String
@@ -550,35 +656,6 @@ struct Avatar: View {
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
-    }
-}
-
-/// An entry held down, wherever it is listed: copy, share as a card (a quote), its book, edit, delete (with undo).
-private struct NoteMenu: ViewModifier {
-    let book: Book
-    let item: NoteItem
-    let kind: NoteKind
-    let edit: () -> Void
-
-    func body(content: Content) -> some View {
-        content.contextMenu {
-            Button { UIPasteboard.general.string = NoteItems.plainText(book, item, kind); Haptics.play("soft"); ToastCenter.shared.show("تم النسخ") } label: {
-                Label("نسخ", systemImage: "doc.on.doc")
-            }
-            if kind == .quote {
-                Button { Flows.quoteCard(book.id, quote: item.id) } label: { Label("مشاركة كبطاقة", systemImage: "square.and.arrow.up") }
-            }
-            Button(action: edit) { Label("تعديل", systemImage: "pencil") }
-            Button { BookLayer.shared.open(book.id) } label: { Label("صفحة «\(book.title)»", systemImage: "book") }
-            Divider()
-            Button(role: .destructive) { NoteItems.delete(book.id, kind, item.id) } label: { Label("حذف", systemImage: "trash") }
-        }
-    }
-}
-
-extension View {
-    func noteMenu(book: Book, item: NoteItem, kind: NoteKind, edit: @escaping () -> Void) -> some View {
-        modifier(NoteMenu(book: book, item: item, kind: kind, edit: edit))
     }
 }
 

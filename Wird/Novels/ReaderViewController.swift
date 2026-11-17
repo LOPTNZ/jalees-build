@@ -215,6 +215,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         closeButton.button.accessibilityLabel = "إغلاق".tr
         menuButton.button.addTarget(self, action: #selector(menuTapped), for: .touchUpInside)
         menuButton.button.accessibilityLabel = "القائمة".tr
+        // «690 من 2334»: a tap asks for a chapter's number and goes there (reader 2.4)
+        bottomPill.isUserInteractionEnabled = true
+        bottomPill.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(pillTapped)))
     }
 
     // MARK: talking to the page and to the library
@@ -683,14 +686,28 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
 
     @objc private func menuTapped() {
         if menu != nil { closeOverlays(); return }
+        openMenu()
+    }
+
+    /// The menu, as the owner arranged it (ReaderMenuView, «خصّص القائمة»).
+    func openMenu() {
+        guard menu == nil, presentedViewController == nil else { return }
         let m = ReaderMenuView(reader: self)
         menu = m
         m.show(in: view, above: menuButton)
+        // the menu's chapter bar says it: the pill under it goes meanwhile
+        if m.showsChapterBar { UIView.animate(withDuration: 0.16) { self.bottomPill.alpha = 0 } }
         Haptics.play("soft")
     }
 
+    @objc private func pillTapped() { askChapter() }
+
     func closeOverlays() {
-        menu?.hide(); menu = nil
+        if let m = menu {
+            m.hide()
+            menu = nil
+            UIView.animate(withDuration: 0.16) { self.bottomPill.alpha = self.chromeShown ? 1 : 0 }
+        }
         markBar?.removeFromSuperview(); markBar = nil
     }
 
@@ -956,6 +973,21 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     func editEntry(of m: [String: Any]) {
         guard let k = m["kind"] as? String, let id = m["item"] as? String else { return }
         editItem(kind: k, id: id)
+    }
+
+    /// A highlight as a picture: the notebook's quote card in the book's colours (a quote's highlight: that quote's
+    /// own card, with its speaker), over the page.
+    func passageCard(_ m: [String: Any]) {
+        closeOverlays()
+        guard let b = bookID, Library.shared.state.book(b) != nil else { toast("افتح الرواية من مكتبتك عشان تنحفظ في دفترها"); return }
+        var req = CardRequest(kind: .quote, book: b, quote: nil, text: (m["text"] as? String) ?? "")
+        if let book = Library.shared.state.book(b), let jm = JSONValue(any: m).object, let e = book.entry(of: jm), e.kind == .quote {
+            req = CardRequest(kind: .quote, book: b, quote: e.item.id)
+        }
+        let look = Appearance.shared.look
+        let host = sheetHost(CardSheet(request: req).environment(\.look, look), large: true)
+        host.overrideUserInterfaceStyle = look.dark ? .dark : .light
+        presentOnTop(host)
     }
 
     private func openMarkBar(id: String, chapter: Int, rect: CGRect) {
@@ -1253,32 +1285,265 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         openNotebook(kind: kind, text: "", sentence: "", at: here)
     }
 
-    /// «المزيد» in the menu: what is rare. The chapter (its site, a second source, loading it again, its link), then the
-    /// replacement rules and the reading settings.
-    func moreMenu() -> UIMenu {
-        func act(_ title: String, _ symbol: String, _ f: @escaping (ReaderViewController) -> Void) -> UIAction {
-            UIAction(title: title.tr, image: UIImage(systemName: symbol)) { [weak self] _ in
-                guard let self = self else { return }
-                self.closeOverlays()
-                f(self)
+    // MARK: the menu's items (reader 2.4: ReaderMenuView draws them where the owner put them, ReaderMenuEditor.swift)
+
+    var isEpub: Bool { novel.source == "epub" }
+
+    /// Whether an item has something to do in this book (the chapter's site and link are not an EPUB's; a second
+    /// source only when the novel has one; comments only where the site has them).
+    func menuOffers(_ i: ReaderMenuItem) -> Bool {
+        switch i {
+        case .site, .refetch, .share: return !isEpub
+        case .mirror: return !isEpub && !Novels.shared.mirrors(novel.id).isEmpty
+        case .comments: return novel.source == "kolnovel" && settings.prefs.comments
+        case .chapters: return chapters.count > 1
+        default: return true
+        }
+    }
+
+    /// a switch that is on now (lit in the menu)
+    func menuIsOn(_ i: ReaderMenuItem) -> Bool {
+        switch i {
+        case .bookmark: return bookmarkedHere
+        case .guide: return guideOn
+        case .autoScroll: return autoScrolling
+        case .lock: return orientationLocked
+        default: return false
+        }
+    }
+
+    func menuSymbol(_ i: ReaderMenuItem) -> String {
+        switch i {
+        case .bookmark: return bookmarkedHere ? "bookmark.fill" : "bookmark"
+        case .autoScroll: return autoScrolling ? "pause.circle" : "play.circle"
+        case .pageStyle: return pageStyle.icon
+        default: return i.symbol
+        }
+    }
+
+    /// the small number beside a row's words: how far into the novel, what the notebook holds, this novel's rules
+    func menuDetail(_ i: ReaderMenuItem) -> String? {
+        switch i {
+        case .contents: return progressText
+        case .notebook:
+            let n = notebookCount
+            return n > 0 ? "\(n)" : nil
+        case .rules:
+            let n = Replacer.rules(String(novel.id)).filter(\.on).count
+            return n > 0 ? "\(n)" : nil
+        default: return nil
+        }
+    }
+
+    /// What an item does. An action or a switch closes the menu first; an adjustment is made in place (its row,
+    /// button or submenu does it) and leaves the menu open.
+    func menuAction(_ i: ReaderMenuItem) {
+        if i.kind != .adjust { closeOverlays() }
+        switch i {
+        case .contents: openContents()
+        case .notebook: openNotebookList()
+        case .aloud: startReadAloud()
+        case .rules: openRules(seed: "")
+        case .themes: openThemes()
+        case .chapters: askChapter()
+        case .search: openSearch()
+        case .bookmark: toggleBookmark()
+        case .guide: toggleGuide()
+        case .autoScroll: toggleAutoScroll()
+        case .lock: toggleLock()
+        case .site: openSite()
+        case .mirror: chapterFromMirror()
+        case .refetch: refetch()
+        case .share: share()
+        case .comments: openComments()
+        case .reading: setChrome(false); openReading()
+        case .customize: setChrome(false); openCustomize()
+        case .theme, .brightness, .fontSize, .pageStyle: break
+        }
+    }
+
+    /// The chapter before or after, from the menu's chapter bar.
+    func menuTurn(_ step: Int) {
+        closeOverlays()
+        turn(step)
+    }
+
+    func stepFont(_ d: Double) {
+        settings.edit { $0.size += d }
+        Haptics.play("sel")
+    }
+
+    /// The screen's brightness (the themes panel's slider, the menu's row and button).
+    var brightness: CGFloat {
+        get { (view.window?.windowScene?.screen ?? UIScreen.main).brightness }
+        set { (view.window?.windowScene?.screen ?? UIScreen.main).brightness = newValue }
+    }
+
+    /// «690 من 2334», as the chapter bar and the pill under the page say it
+    var chapterPosition: String {
+        guard chapters.indices.contains(index) else { return "" }
+        let ch = chapters[index]
+        if ch.numbered, let last = chapters.last(where: { $0.numbered }) { return "\(ch.num) من \(last.num)" }
+        return "\(index + 1) من \(chapters.count)"
+    }
+
+    /// The ways pages can move here: the novels' five, or an EPUB's three.
+    var pageStyles: [ReaderPageStyle] {
+        let p = settings.prefs
+        let s = settings
+        if isEpub {
+            return [
+                ReaderPageStyle(name: "تمرير متصل", icon: "arrow.down.to.line.compact", on: p.epubMode == "continuous") { s.prefs.epubMode = "continuous" },
+                ReaderPageStyle(name: "تمرير لكل قسم", icon: "scroll", on: p.epubMode == "chapter") { s.prefs.epubMode = "chapter" },
+                ReaderPageStyle(name: "تقليب", icon: "book.pages", on: p.epubMode == "paged") { s.prefs.epubMode = "paged" }
+            ]
+        }
+        return ThemesSheet.modes.map { m in
+            ReaderPageStyle(name: m.name, icon: m.icon, on: p.mode == m.id && (m.anim == nil || p.anim == m.anim)) {
+                s.prefs.mode = m.id
+                if let a = m.anim { s.prefs.anim = a }
             }
         }
-        let web = novel.source != "epub"
-        var chapter: [UIMenuElement] = []
-        if web { chapter.append(act("افتح الفصل في الموقع", "safari") { $0.openSite() }) }
-        if !Novels.shared.mirrors(novel.id).isEmpty { chapter.append(act("الفصل من مصدر ثاني", "arrow.triangle.2.circlepath") { $0.chapterFromMirror() }) }
-        if web {
-            chapter.append(act("حمّل الفصل من جديد", "arrow.clockwise") { $0.refetch() })
-            chapter.append(act("مشاركة رابط الفصل", "square.and.arrow.up") { $0.share() })
+    }
+
+    var pageStyle: ReaderPageStyle {
+        pageStyles.first(where: \.on) ?? pageStyles[0]
+    }
+
+    /// The menu of an adjustment: the theme, the brightness, the font size, how pages move. Picked from a round
+    /// button or from «المزيد»; the reader's menu stays open.
+    func quickMenu(_ i: ReaderMenuItem) -> UIMenu {
+        let title = i.title(epub: isEpub).tr
+        let image = UIImage(systemName: menuSymbol(i))
+        switch i {
+        case .theme:
+            return UIMenu(title: title, subtitle: settings.current.name.tr, image: image, options: .singleSelection, children: settings.themes.map { t in
+                UIAction(title: t.name.tr, state: t.id == settings.currentID ? .on : .off) { [weak self] _ in
+                    self?.settings.select(t.id)
+                    Haptics.play("sel")
+                }
+            })
+        case .brightness:
+            let now = Double(brightness)
+            let levels: [Double] = [1, 0.75, 0.5, 0.3, 0.15, 0.05]
+            let near = levels.min { abs($0 - now) < abs($1 - now) } ?? 1
+            return UIMenu(title: title, subtitle: "\(Int((now * 100).rounded()))٪".tr, image: image, options: .singleSelection, children: levels.map { l in
+                UIAction(title: "\(Int((l * 100).rounded()))٪".tr, state: l == near ? .on : .off) { [weak self] _ in self?.brightness = CGFloat(l) }
+            })
+        case .fontSize:
+            let now = Int(settings.current.size)
+            let sizes = Set(stride(from: 14, through: 36, by: 2)).union([now]).sorted()
+            return UIMenu(title: title, subtitle: "\(now)", image: image, options: .singleSelection, children: sizes.map { n in
+                UIAction(title: "\(n)", state: n == now ? .on : .off) { [weak self] _ in self?.settings.edit { $0.size = Double(n) } }
+            })
+        default:
+            return UIMenu(title: title, subtitle: pageStyle.name.tr, image: image, options: .singleSelection, children: pageStyles.map { m in
+                UIAction(title: m.name.tr, image: UIImage(systemName: m.icon), state: m.on ? .on : .off) { _ in m.pick() }
+            })
         }
-        let setup: [UIMenuElement] = [
-            act("قواعد الاستبدال", "character.cursor.ibeam") { $0.openRules(seed: "") },
-            act("إعدادات القراءة", "gearshape") { $0.openReading() }
-        ]
+    }
+
+    /// «المزيد»: what the owner put there, then whatever the menu had no room for (rows on a short screen, round
+    /// buttons past six), with a line between kinds; «خصّص القائمة» always last.
+    func moreMenu(_ spill: [ReaderMenuItem] = []) -> UIMenu {
+        let list = (spill + ReaderMenuLayout.current.more).filter { menuOffers($0) }
         var groups: [UIMenuElement] = []
-        if !chapter.isEmpty { groups.append(UIMenu(title: "", options: .displayInline, children: chapter)) }
-        groups.append(UIMenu(title: "", options: .displayInline, children: setup))
+        var run: [UIMenuElement] = []
+        var last: ReaderMenuItem.Group?
+        for i in list {
+            if let g = last, g != i.group, !run.isEmpty {
+                groups.append(UIMenu(title: "", options: .displayInline, children: run))
+                run = []
+            }
+            last = i.group
+            run += menuElements(i)
+        }
+        if !run.isEmpty { groups.append(UIMenu(title: "", options: .displayInline, children: run)) }
+        let edit = UIAction(title: "خصّص القائمة".tr, image: UIImage(systemName: "slider.horizontal.3")) { [weak self] _ in self?.openMenuEditor() }
+        groups.append(UIMenu(title: "", options: .displayInline, children: [edit]))
         return UIMenu(title: "", children: groups)
+    }
+
+    private func menuElements(_ i: ReaderMenuItem) -> [UIMenuElement] {
+        switch i {
+        case .chapters:
+            return [
+                UIAction(title: "الفصل التالي".tr, image: UIImage(systemName: bookRTL ? "chevron.left" : "chevron.right")) { [weak self] _ in self?.menuTurn(1) },
+                UIAction(title: "الفصل السابق".tr, image: UIImage(systemName: bookRTL ? "chevron.right" : "chevron.left")) { [weak self] _ in self?.menuTurn(-1) },
+                UIAction(title: "اذهب لفصل…".tr, image: UIImage(systemName: "number")) { [weak self] _ in self?.menuAction(.chapters) }
+            ]
+        case .theme, .brightness, .fontSize, .pageStyle:
+            return [quickMenu(i)]
+        default:
+            return [UIAction(title: i.title(epub: isEpub).tr, image: UIImage(systemName: menuSymbol(i)), state: menuIsOn(i) ? .on : .off) { [weak self] _ in
+                self?.menuAction(i)
+            }]
+        }
+    }
+
+    /// «خصّص القائمة», over the page. Closing it shows the menu as it is now, to see the change at once.
+    func openMenuEditor() {
+        closeOverlays()
+        setChrome(false)
+        let editor = MenuEditorView(epub: isEpub, close: { [weak self] in
+            self?.dismiss(animated: true) {
+                self?.setChrome(true)
+                self?.openMenu()
+            }
+        })
+        let host = UIHostingController(rootView: editor)
+        // its list (UIKit underneath) goes the app's way, whatever the phone's language is
+        if #available(iOS 17.0, *) { host.traitOverrides.layoutDirection = Lang.english ? .leftToRight : .rightToLeft }
+        presentPanel(host, height: 640, tall: true)
+    }
+
+    /// «اذهب لفصل»: a chapter by its number (the chapter bar's number, the pill under the page).
+    func askChapter() {
+        closeOverlays()
+        guard chapters.count > 1 else { return }
+        let last = chapters.last(where: { $0.numbered })?.num ?? "\(chapters.count)"
+        let first = chapters.first(where: { $0.numbered })?.num ?? "1"
+        let a = UIAlertController(title: "اذهب لفصل".tr, message: "رقم الفصل، من \(first) إلى \(last)".tr, preferredStyle: .alert)
+        a.addTextField { f in
+            f.keyboardType = .numberPad
+            f.textAlignment = .center
+            f.placeholder = self.chapters.indices.contains(self.index) ? self.chapters[self.index].num : ""
+        }
+        a.addAction(UIAlertAction(title: "إلغاء".tr, style: .cancel))
+        a.addAction(UIAlertAction(title: "اذهب".tr, style: .default) { [weak self, weak a] _ in
+            self?.goToChapter(number: a?.textFields?.first?.text ?? "")
+        })
+        present(a, animated: true)
+    }
+
+    /// The chapter with that number (written in any digits), or the n-th one when none is numbered so.
+    func goToChapter(number raw: String) {
+        let digits: [Character: Character] = ["٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+                                              "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9"]
+        let s = String(raw.trimmingCharacters(in: .whitespacesAndNewlines).map { digits[$0] ?? $0 })
+        guard !s.isEmpty else { return }
+        var at = chapters.firstIndex { $0.numbered && $0.num == s }
+        if at == nil, let n = Int(s) {
+            at = chapters.firstIndex { Int($0.num) == n } ?? (chapters.indices.contains(n - 1) ? n - 1 : nil)
+        }
+        guard let i = at else { toast("ما لقيت الفصل \(s)"); return }
+        if i != index { goTo(chapterIndex: i) }
+    }
+
+    /// «قفل الاتجاه الرأسي» from the menu (the same setting as in إعدادات القراءة).
+    private func toggleLock() {
+        let on = !orientationLocked
+        DB.shared.set("reader.lock", on ? "1" : nil)
+        NotificationCenter.default.post(name: .readerLockChanged, object: nil)
+        toast(on ? "قفل الاتجاه الرأسي: مشغّل" : "قفل الاتجاه الرأسي: متوقف")
+    }
+
+    /// «تعليقات الفصل»: to the end of the chapter, where its comments are, and they come.
+    private func openComments() {
+        guard chapters.indices.contains(index) else { return }
+        let id = chapters[index].id
+        call("JR.goTo(pos)", ["pos": ["id": id, "end": true] as [String: Any]])
+        loadComments(id, more: false)
     }
 
     /// This novel's replacement rules over the page; with `seed` (a selected word), its rule already started.
@@ -1649,7 +1914,15 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         NSLog("jalees debug: %@ (in window: %@)", what, view.window == nil ? "no" : "yes")
         switch what {
         case "chrome": setChrome(true)
-        case "menu": setChrome(true); menuTapped()
+        case "menu": setChrome(true); openMenu()
+        case "menuedit": openMenuEditor()
+        case "menucustom":
+            // every kind of item at once, shown and not saved: the quick rows (theme, brightness, size, page style), the
+            // chapter bar, five round buttons, the scrubber
+            ReaderMenuLayout.preview = ReaderMenuLayout(rows: [.contents, .theme, .brightness, .fontSize, .pageStyle, .chapters],
+                                                        buttons: [.aloud, .search, .bookmark, .guide, .autoScroll], more: [], hidden: [], scrubber: true).completed()
+            setChrome(true)
+            openMenu()
         case "rules": openRules(seed: "سالم")
         case "notes":
             // a highlight with a note made from a selection, then the book's list showing it

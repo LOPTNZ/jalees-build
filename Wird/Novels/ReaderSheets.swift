@@ -18,7 +18,8 @@ struct ThemesSheet: View {
     @State private var path: [String] = []
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
-    private static let modes: [(id: String, anim: String?, name: String, icon: String)] = [
+    /// also the menu's «طريقة القراءة» (ReaderViewController.pageStyles)
+    static let modes: [(id: String, anim: String?, name: String, icon: String)] = [
         ("chapter", nil, "تمرير لكل فصل", "scroll"), ("continuous", nil, "تمرير متصل", "arrow.down.to.line.compact"),
         ("paged", "curl", "تقليب: طي", "book"), ("paged", "slide", "تقليب: سحب", "book.pages"), ("paged", "fade", "تقليب: تلاشي", "circle.lefthalf.filled")
     ]
@@ -337,7 +338,15 @@ struct ReadingSheet: View {
                 }
                 Section {
                     SliderRow(title: "سرعة التمرير التلقائي", text: "\(Int(settings.prefs.autoSpeed))", value: $settings.prefs.autoSpeed, range: 8...240, step: 4)
-                } header: { Text("أدوات القراءة") } footer: { Text("دليل السطر والتمرير التلقائي من أزرار القائمة؛ دليل السطر له زر تحت لتعتيمه وارتفاعه.") }
+                } header: { Text("أدوات القراءة") } footer: { Text("دليل السطر والتمرير التلقائي في قائمة القارئ؛ دليل السطر له زر تحت لتعتيمه وارتفاعه.") }
+                Section {
+                    // back to these settings, or «تم» to the page
+                    NavigationLink {
+                        MenuEditorView(epub: Novels.shared.list.first(where: { $0.id == novelID })?.source == "epub", close: close, embedded: true)
+                    } label: { Label("خصّص القائمة", systemImage: "slider.horizontal.3") }
+                } header: { Text("قائمة القارئ") } footer: {
+                    Text("رتّب صفوف القائمة وأزرارها و«المزيد» مثل ما تبي، أو أخفِ اللي ما تحتاجه.")
+                }
                 Section("النص") {
                     // back to these settings, or «تم» to the page (the rules are already on it)
                     NavigationLink {
@@ -608,61 +617,20 @@ struct ChapterLine: View {
     }
 }
 
-// MARK: - دفتر الرواية: everything kept from this book (was «الوقفات والتمييزات»)
+// MARK: - دفتر الرواية: the book's notebook, inside the reader (دفتري 2.4: the same notebook as the tab's)
 
-/// One thing kept from the book, as the reader's list shows it.
-struct KeptEntry: Identifiable {
-    enum Kind: String { case mark, quote, thought, word, char, bmark }
-    let kind: Kind
-    /// the highlight's, entry's or bookmark's own id
-    let rawID: String
-    var id: String { kind.rawValue + ":" + rawID }
-    /// where it is: the chapter's id (0 when it has no place in the text), the paragraph, the letter in it
-    let ch: Int
-    let p: Int
-    let s: Int
-    let at: Double
-    let text: String
-    let sub: String
-    let note: String
-    /// the highlight's colour: a highlight's, or the one marking an entry taken from the text
-    let color: String?
-    let fav: Bool
-    /// a highlight as the reader keeps it (its note is edited on it)
-    let mark: [String: Any]?
-}
-
-private struct KeptSection: Identifiable {
-    let id: Int
-    let title: String
-    let rows: [KeptEntry]
-}
-
-/// The book's notebook inside the reader: highlights, notes, quotes, thoughts, words, characters and bookmarks, in
-/// one list. It reads the library itself, so a change anywhere (the notebook tab, a form over the page) shows here,
-/// and what is deleted here leaves the page and the notebook at once.
+/// The book's notebook over the page: the same view, cards and actions as the book's page in دفتري
+/// (BookNotebookBody), in Jalees's look. A passage moves the open reader to it, a heading opens its chapter, the forms
+/// and cards open over the page, the + adds a bookmark or an entry at the chapter being read. It reads the library
+/// itself, so a change anywhere (the notebook tab, a form over the page) shows here, and what is deleted here leaves
+/// the page and the notebook at once.
 struct ReaderNotebookSheet: View {
     let bookID: String
     let title: String
     let labels: [String: String]
     let bookmarkedHere: Bool
-    var open: (Int, Int) -> Void
-    var editNote: ([String: Any]) -> Void
-    var editItem: (String, String) -> Void
-    var openCharacter: (String) -> Void
-    var add: (String) -> Void
-    var toNotebook: () -> Void
-
-    /// the chapters: id → place in the novel, id → its line («الفصل 3 · …»), number → id
-    private let order: [Int: Int]
-    private let lines: [Int: String]
-    private let byNum: [String: Int]
-
-    @ObservedObject private var lib = Library.shared
-    @State private var filter: String
-    @State private var color = ""
-    @State private var newestFirst = false
-    @State private var askDelete: KeptEntry?
+    private let link: NBReaderLink
+    private let start: String
     @Environment(\.dismiss) private var dismiss
 
     init(bookID: String, title: String, chapters: [ChapterRow], labels: [String: String], bookmarkedHere: Bool, filter: String = "all",
@@ -672,358 +640,32 @@ struct ReaderNotebookSheet: View {
         self.title = title
         self.labels = labels
         self.bookmarkedHere = bookmarkedHere
-        self.open = open
-        self.editNote = editNote
-        self.editItem = editItem
-        self.openCharacter = openCharacter
-        self.add = add
-        self.toNotebook = toNotebook
-        var o: [Int: Int] = [:], l: [Int: String] = [:], n: [String: Int] = [:]
-        for (i, c) in chapters.enumerated() {
-            o[c.id] = i
-            l[c.id] = c.line
-            if c.numbered, n[c.num] == nil { n[c.num] = c.id }
-        }
-        order = o
-        lines = l
-        byNum = n
-        _filter = State(initialValue: filter)
+        link = NBReaderLink(chapters: NBChapters(chapters), bookmarkedHere: bookmarkedHere, open: open, editNote: editNote, editItem: editItem,
+                            openCharacter: openCharacter, add: add, toNotebook: toNotebook)
+        start = filter
     }
-
-    private static let filters: [(String, String)] = [("all", "الكل"), ("mark", "تظليلات"), ("note", "ملاحظات"), ("quote", "اقتباسات"),
-                                                      ("thought", "أفكار"), ("word", "كلمات"), ("char", "شخصيات"), ("bmark", "وقفات")]
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let b = lib.state.book(bookID) {
-                    content(entries(b))
-                } else {
-                    empty("افتح الرواية من مكتبتك", "دفترها يكون مع كتابها في مكتبتك.")
+        let look = Appearance.shared.look
+        Group {
+            if Library.shared.state.book(bookID) != nil {
+                BookNotebookBody(bookID: bookID, start: start == "all" ? "" : start, reader: link, title: title, close: { dismiss() })
+            } else {
+                VStack(spacing: 8) {
+                    Spacer(minLength: 60)
+                    Text("افتح الرواية من مكتبتك").font(JFont.body(17, .semibold)).foregroundStyle(Color(look.ink))
+                    Text("دفترها يكون مع كتابها في مكتبتك.").font(JFont.body(14)).foregroundStyle(Color(look.ink2))
+                    Button("تم") { dismiss() }.buttonStyle(JButtonStyle(look: look, small: true)).padding(.top, 8)
+                    Spacer(minLength: 0)
                 }
-            }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { addMenu }
-                ToolbarItem(placement: .primaryAction) { optionsMenu }
-                ToolbarItem(placement: .confirmationAction) { Button("تم") { dismiss() } }
-            }
-            .confirmationDialog("حذف؟", isPresented: Binding(get: { askDelete != nil }, set: { if !$0 { askDelete = nil } }), titleVisibility: .visible) {
-                Button("حذف", role: .destructive) {
-                    if let e = askDelete, let k = NoteKind(rawValue: e.kind.rawValue) { NoteItems.delete(bookID, k, e.rawID) }
-                    askDelete = nil
-                }
-                Button("إلغاء", role: .cancel) { askDelete = nil }
-            } message: {
-                Text("ينحذف من دفترك، وتظليله في النص معه.")
+                .frame(maxWidth: .infinity)
+                .background(Color(look.bg).ignoresSafeArea())
             }
         }
+        .environment(\.look, look)
         .environment(\.layoutDirection, Lang.direction)
         .environment(\.locale, arabicLatn)
-        .preferredColorScheme(.dark)
-    }
-
-    // MARK: what the book keeps
-
-    private func entries(_ b: Book) -> [KeptEntry] {
-        var out: [KeptEntry] = []
-        for m in b.plainMarks {
-            out.append(KeptEntry(kind: .mark, rawID: m.str("id"), ch: m.int("ch"), p: m.int("p"), s: m.int("s"), at: m.num("at"),
-                                 text: m.str("text"), sub: "", note: m.str("note"), color: m.str("color", "yellow"), fav: false,
-                                 mark: JSONValue.object(m).any as? [String: Any]))
-        }
-        // the highlights that are entries' places: they give the entry its place and colour
-        var markOf: [String: JSONObject] = [:]
-        for m in b.marks where !m.str("item").isEmpty { markOf[m.str("item")] = m }
-        for k in [NoteKind.quote, .thought, .word] {
-            for x in b.items(k) {
-                let r = x.raw
-                let lm = markOf[x.id]
-                let at = place(r, lm)
-                var text = r.str("text"), sub = ""
-                switch k {
-                case .quote:
-                    let sid = r.str("speakerId")
-                    let who = sid == "__o" ? r.str("speakerName") : (b.chars.first { $0.id == sid }?.name ?? "")
-                    sub = who.isEmpty ? "" : "— " + who
-                case .thought: sub = r.str("passage")
-                default:
-                    text = r.str("word")
-                    sub = r.str("meaning").isEmpty ? r.str("tr") : r.str("meaning")
-                }
-                let note = [r.str("note"), lm?.str("note") ?? ""].first { !$0.isEmpty } ?? ""
-                out.append(KeptEntry(kind: KeptEntry.Kind(rawValue: k.rawValue) ?? .quote, rawID: x.id, ch: at.ch, p: at.p, s: at.s, at: x.at,
-                                     text: text, sub: sub, note: note, color: lm?.str("color", "yellow"), fav: x.fav, mark: nil))
-            }
-        }
-        for c in b.chars {
-            let ch = c.first.flatMap { chapter(number: $0) } ?? 0
-            out.append(KeptEntry(kind: .char, rawID: c.id, ch: ch, p: 0, s: 0, at: c.at, text: c.name,
-                                 sub: c.alias.isEmpty ? c.desc : c.alias, note: "", color: nil, fav: false, mark: nil))
-        }
-        for m in b.bmarks {
-            out.append(KeptEntry(kind: .bmark, rawID: m.str("id"), ch: m.int("ch"), p: m.int("p"), s: 0, at: m.num("at"),
-                                 text: "", sub: "", note: "", color: nil, fav: false, mark: nil))
-        }
-        return out
-    }
-
-    /// An entry's place: its highlight's, else where it was taken (nv), else the chapter its number names.
-    private func place(_ r: JSONObject, _ lm: JSONObject?) -> (ch: Int, p: Int, s: Int) {
-        if let m = lm { return (m.int("ch"), m.int("p"), m.int("s")) }
-        if let nv = r["nv"]?.object, nv.int("ch") != 0 { return (nv.int("ch"), nv.int("p"), nv.int("s")) }
-        if let loc = r.optNum("loc"), let id = chapter(number: loc) { return (id, 0, 0) }
-        return (0, 0, 0)
-    }
-
-    private func chapter(number v: Double) -> Int? {
-        guard v.isFinite, v >= 1, v < 1e7 else { return nil }
-        return byNum[String(Int(v))]
-    }
-
-    private func matches(_ e: KeptEntry, _ f: String) -> Bool {
-        switch f {
-        // characters have their own list: their place is every mention, and the text marks their names already
-        case "all": return e.kind != .char
-        case "note": return e.kind == .mark && !e.note.isEmpty
-        default: return e.kind.rawValue == f
-        }
-    }
-
-    private func placed(_ e: KeptEntry) -> Bool { e.ch != 0 && order[e.ch] != nil }
-
-    // MARK: the list
-
-    @ViewBuilder private func content(_ all: [KeptEntry]) -> some View {
-        let byColor = filter == "mark" || filter == "note"
-        let inFilter = all.filter { matches($0, filter) }
-        let shown = inFilter.filter { !byColor || color.isEmpty || $0.color == color }
-        let used = MarkBar.colors.filter { c in inFilter.contains { $0.color == c.id } }
-        VStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Self.filters, id: \.0) { f in
-                        let n = all.filter { matches($0, f.0) }.count
-                        if f.0 == "all" || n > 0 || f.0 == filter {
-                            chip(f.1, nil, n, filter == f.0) { filter = f.0; color = "" }
-                        }
-                    }
-                }
-                .padding(.horizontal)
-            }
-            if byColor && used.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        chip("كل الألوان", nil, nil, color.isEmpty) { color = "" }
-                        ForEach(used, id: \.id) { c in chip(colorName(c.id), c.ui, nil, color == c.id) { color = c.id } }
-                    }
-                    .padding(.horizontal)
-                }
-            }
-            if shown.isEmpty {
-                if all.isEmpty {
-                    empty("ما حفظت شي من هالرواية بعد", "حدد نص وأنت تقرأ واختر «تظليل» أو «ملاحظة» أو «للدفتر» (اقتباس، فكرة، كلمة، شخصية). اللي تحفظه يتظلّل في النص ويطلع هنا وفي دفتري. والوقفة من زرها في القائمة.")
-                } else {
-                    empty("ما فيه شي هنا", "")
-                }
-            } else {
-                List {
-                    if newestFirst {
-                        ForEach(shown.sorted { $0.at > $1.at }) { e in line(e, withChapter: true) }
-                    } else {
-                        ForEach(sections(shown)) { sec in
-                            Section {
-                                ForEach(sec.rows) { e in line(e, withChapter: false) }
-                            } header: { Text(verbatim: sec.title) }
-                        }
-                    }
-                }
-                .listStyle(.plain)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    /// By chapter, in the novel's order; inside a chapter, by place. What has no place in the text comes last.
-    private func sections(_ list: [KeptEntry]) -> [KeptSection] {
-        let sorted = list.sorted { a, b in
-            let oa = placed(a) ? order[a.ch]! : Int.max, ob = placed(b) ? order[b.ch]! : Int.max
-            if oa != ob { return oa < ob }
-            if a.p != b.p { return a.p < b.p }
-            if a.s != b.s { return a.s < b.s }
-            return a.at < b.at
-        }
-        var out: [KeptSection] = []
-        for e in sorted {
-            let key = placed(e) ? e.ch : 0
-            if let last = out.last, last.id == key {
-                out[out.count - 1] = KeptSection(id: key, title: last.title, rows: last.rows + [e])
-            } else {
-                out.append(KeptSection(id: key, title: key == 0 ? "بدون مكان في النص".tr : (lines[key] ?? ""), rows: [e]))
-            }
-        }
-        return out
-    }
-
-    private func line(_ e: KeptEntry, withChapter: Bool) -> some View {
-        Button { tapped(e) } label: { row(e, withChapter: withChapter) }
-            .swipeActions(edge: .trailing) {
-                Button("حذف", role: .destructive) { delete(e) }
-                if e.kind != .bmark { Button("تعديل") { edit(e) }.tint(.gray) }
-            }
-            .contextMenu {
-                if e.kind != .bmark {
-                    Button { edit(e) } label: { Label(e.kind == .mark ? (e.note.isEmpty ? "إضافة ملاحظة" : "تعديل الملاحظة") : "تعديل", systemImage: "pencil") }
-                }
-                if !e.text.isEmpty {
-                    Button { UIPasteboard.general.string = e.text; Haptics.play("soft") } label: { Label("نسخ", systemImage: "doc.on.doc") }
-                }
-                Button(role: .destructive) { delete(e) } label: { Label("حذف", systemImage: "trash") }
-            }
-            .listRowBackground(Color.clear)
-    }
-
-    private func row(_ e: KeptEntry, withChapter: Bool) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            if let c = e.color {
-                RoundedRectangle(cornerRadius: 2).fill(Color(MarkBar.colors.first { $0.id == c }?.ui ?? .systemYellow)).frame(width: 4)
-            } else {
-                Image(systemName: icon(e)).font(.system(size: 14)).foregroundStyle(.secondary).frame(width: 18)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                if e.kind == .bmark {
-                    Text("وقفة").font(.system(size: 15, weight: .semibold))
-                } else if !e.text.isEmpty {
-                    Text(verbatim: e.kind == .quote ? "«" + e.text + "»" : e.text)
-                        .font(.system(size: 15, weight: e.kind == .word || e.kind == .char ? .semibold : .regular)).lineLimit(4)
-                }
-                if !e.sub.isEmpty { Text(verbatim: e.sub).font(.system(size: 13.5)).foregroundStyle(.secondary).lineLimit(3) }
-                if !e.note.isEmpty {
-                    Text(verbatim: e.note).font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(3).padding(.leading, 8)
-                        .overlay(alignment: .leading) { Rectangle().fill(Color.white.opacity(0.25)).frame(width: 2) }
-                }
-                Text(verbatim: meta(e, withChapter: withChapter)).font(.system(size: 12)).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-    }
-
-    private func icon(_ e: KeptEntry) -> String {
-        switch e.kind {
-        case .bmark: return "bookmark.fill"
-        case .mark: return "highlighter"
-        default: return NoteKind(rawValue: e.kind.rawValue)?.symbol ?? "circle"
-        }
-    }
-
-    private func meta(_ e: KeptEntry, withChapter: Bool) -> String {
-        var parts: [String] = []
-        if let k = NoteKind(rawValue: e.kind.rawValue) { parts.append(k.name.tr) }
-        if e.fav { parts.append("★") }
-        if e.kind == .mark, let c = e.color { parts.append(colorName(c)) }
-        if withChapter && placed(e) { parts.append(lines[e.ch] ?? "") }
-        parts.append(date(e.at))
-        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-
-    private func colorName(_ c: String) -> String {
-        let n = (labels[c] ?? "").trimmingCharacters(in: .whitespaces)
-        return n.isEmpty ? (MarkBar.colors.first { $0.id == c }?.plain.tr ?? c) : n
-    }
-
-    // MARK: actions
-
-    private func tapped(_ e: KeptEntry) {
-        if e.kind == .char { openCharacter(e.rawID); return }
-        if placed(e) { open(e.ch, e.p); return }
-        edit(e)
-    }
-
-    private func edit(_ e: KeptEntry) {
-        switch e.kind {
-        case .mark: if let m = e.mark { editNote(m) }
-        case .bmark: break
-        default: editItem(e.kind.rawValue, e.rawID)
-        }
-    }
-
-    /// A highlight or a bookmark goes at once (it is made again in a moment); an entry asks first.
-    private func delete(_ e: KeptEntry) {
-        switch e.kind {
-        case .mark: NovelLibrary.markDel(bookID, e.rawID)
-        case .bmark: NovelLibrary.bmarkDel(bookID, e.rawID)
-        default: askDelete = e
-        }
-        Haptics.play("warn")
-    }
-
-    // MARK: toolbar
-
-    private var addMenu: some View {
-        Menu {
-            Button { add("bmark") } label: { Label(bookmarkedHere ? "فيه وقفة هنا" : "وقفة هنا", systemImage: "bookmark") }
-                .disabled(bookmarkedHere)
-            Divider()
-            ForEach(NoteKind.allCases, id: \.self) { k in
-                Button { add(k.rawValue) } label: { Label(k.name, systemImage: k.symbol) }
-            }
-        } label: {
-            Image(systemName: "plus")
-        }
-        .accessibilityLabel("إضافة للدفتر")
-    }
-
-    private var optionsMenu: some View {
-        Menu {
-            Picker("الترتيب", selection: $newestFirst) {
-                Label("حسب المكان", systemImage: "list.number").tag(false)
-                Label("الأحدث أولاً", systemImage: "clock").tag(true)
-            }
-            Divider()
-            Button { toNotebook() } label: { Label("افتح في دفتري", systemImage: "book.closed") }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-        }
-        .accessibilityLabel("خيارات")
-    }
-
-    // MARK: pieces
-
-    private func chip(_ t: String, _ c: UIColor?, _ n: Int?, _ on: Bool, _ a: @escaping () -> Void) -> some View {
-        Button(action: a) {
-            HStack(spacing: 6) {
-                if let c = c { Circle().fill(Color(c)).frame(width: 10, height: 10) }
-                Text(t).font(.system(size: 14, weight: .medium))
-                if let n = n, n > 0 { Text(verbatim: "\(n)").font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.secondary) }
-            }
-            .padding(.horizontal, 12).frame(minHeight: 32)
-            .background(on ? Color.white.opacity(0.22) : Color.white.opacity(0.08), in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(t.tr)
-        .accessibilityAddTraits(on ? .isSelected : [])
-    }
-
-    private func empty(_ t: String, _ d: String) -> some View {
-        VStack(spacing: 8) {
-            Spacer(minLength: 60)
-            Text(t).font(.system(size: 17, weight: .semibold))
-            if !d.isEmpty { Text(d).font(.system(size: 14)).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 30) }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func date(_ ms: Double) -> String {
-        guard ms > 0 else { return "" }
-        let d = Date(timeIntervalSince1970: ms / 1000)
-        if Calendar.current.isDateInToday(d) { return "اليوم".tr }
-        let f = DateFormatter()
-        f.locale = arabicLatn
-        f.dateFormat = "d MMMM"
-        return f.string(from: d)
+        .preferredColorScheme(look.dark ? .dark : .light)
     }
 }
 

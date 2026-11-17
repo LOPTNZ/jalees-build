@@ -194,8 +194,10 @@ final class FlowTests: XCTestCase {
             tap(button("حفظ"), "save quote")
             sleep(2)
             shot("ui22-notebook-after")
-            // the saved quote: its form, then its card
-            let row = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "نص اقتباس من اختبار")).firstMatch
+            // the saved quote, first in the quotes of every book (a card: a button or its text): its form, then its card
+            tap(chip("اقتباسات"), "quotes list")
+            sleep(1)
+            let row = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "نص اقتباس من اختبار")).firstMatch
             if tap(row, "the saved quote") {
                 sleep(1)
                 reveal(buttonStarting("بطاقة الاقتباس"))
@@ -530,15 +532,14 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "زمرد")).firstMatch.waitForExistence(timeout: 6),
                       "the rule did not show in the open chapter")
         XCTAssertFalse(web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "آخر")).firstMatch.exists, "«آخر» is still there")
-        // the rule goes again (the next walks read the sample as it was)
+        // the rule goes again (the next walks read the sample as it was), this time from the menu's own row (reader
+        // 2.4: the replacement rules are one tap from the menu, with how many this novel has)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         sleep(1)
         if tap(button("القائمة"), "reader menu again") {
-            tap(buttonStarting("السمات والإعدادات"), "themes and settings")
-            tap(buttonStarting("إعدادات القراءة"), "reading settings")
-            n = 0
-            while n < 6 && !(rules.exists && rules.isHittable) { app.swipeUp(velocity: .slow); n += 1 }
-            if tap(rules, "rules") {
+            sleep(1)
+            if tap(buttonStarting("قواعد الاستبدال"), "the rules' row") {
+                sleep(1)
                 tap(buttonStarting("حذف القاعدة"), "delete the rule")
                 sleep(1)
                 tap(button("تم"), "done")
@@ -689,7 +690,8 @@ final class FlowTests: XCTestCase {
         tab("دفتري")
         tap(chip("كلمات"), "words")
         sleep(1)
-        guard tap(buttonStarting("اختبار"), "review") else { return }
+        // the words' review panel (دفتري 2.4): «مراجعة المستحقة», or «مراجعة» when none is due
+        guard tap(buttonStarting("مراجعة"), "review") else { return }
         sleep(1)
         shot("ui77-review-start")
         let start = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@ OR label BEGINSWITH %@", "ابدأ", "راجع الكل", "ابدأ المستحقة")).firstMatch
@@ -771,6 +773,10 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(buttonStarting("المحتويات").exists, "the contents row")
         XCTAssertTrue(button("المزيد").exists, "the «more» button")
         XCTAssertFalse(buttonStarting("الوقفات والتمييزات").exists, "the old list's row is gone")
+        // reader 2.4's default: the rules and the chapter bar one tap away, the line guide in «المزيد»
+        XCTAssertTrue(buttonStarting("قواعد الاستبدال").exists, "the rules' row")
+        XCTAssertTrue(buttonStarting("اذهب لفصل").exists, "the chapter bar (its number goes to any chapter)")
+        XCTAssertFalse(button("دليل السطر").exists, "the line guide is in «المزيد» by default")
         guard tap(buttonStarting("دفتر الرواية"), "the book's notebook") else { return }
         sleep(1)
         shot("ui84-reader-notebook")
@@ -877,6 +883,150 @@ final class FlowTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         sleep(1)
         app.launch()
+    }
+
+    /// Reader 2.4: the menu is his. «المزيد» → «خصّص القائمة»: the line guide moved from «المزيد» to the rows is a row
+    /// of the menu when it opens again; «رجّع الافتراضي» puts it back.
+    func test21ReaderMenuEditor() {
+        _ = openReader()
+        func showButtons() {
+            for _ in 0..<4 where !button("القائمة").exists {
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.74)).tap()
+                sleep(2)
+            }
+        }
+        /// an item of a button's menu, or a dialog's (shown as buttons or menu items, depending on the system)
+        func named(_ label: String) -> XCUIElement {
+            app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
+        }
+        /// the menu, open (closing the editor opens it again by itself)
+        func menuOpen() -> Bool {
+            if buttonStarting("المحتويات").waitForExistence(timeout: 3) { return true }
+            showButtons()
+            guard tap(button("القائمة"), "reader menu") else { return false }
+            sleep(1)
+            return true
+        }
+        func openEditor() -> Bool {
+            guard tap(button("المزيد"), "«more»") else { return false }
+            sleep(1)
+            guard tap(named("خصّص القائمة"), "customize the menu") else { return false }
+            sleep(2)
+            return true
+        }
+        /// an editor row's move button, scrolled into view
+        func moveButton(_ title: String) -> XCUIElement {
+            let b = button("انقل «" + title + "»")
+            var n = 0
+            while n < 8 && !(b.exists && b.isHittable) { app.swipeUp(velocity: .slow); sleep(1); n += 1 }
+            return b
+        }
+
+        showButtons()
+        guard tap(button("القائمة"), "reader menu") else { return }
+        sleep(1)
+        shot("ui96-reader-menu")
+        XCTAssertFalse(button("دليل السطر").exists, "the line guide starts in «المزيد»")
+        guard openEditor() else { return }
+        shot("ui97-menu-editor")
+        guard tap(moveButton("دليل السطر"), "move the line guide") else { return }
+        sleep(1)
+        guard tap(named("إلى الصفوف"), "to the rows") else { return }
+        sleep(1)
+        shot("ui98-menu-editor-moved")
+        tap(button("تم"), "close the editor")
+        sleep(2)
+        guard menuOpen() else { return }
+        shot("ui99-menu-with-guide")
+        let guide = button("دليل السطر")
+        XCTAssertTrue(guide.waitForExistence(timeout: 3), "the line guide is not in the menu after moving it to the rows")
+        if guide.exists { XCTAssertGreaterThan(guide.frame.width, 200, "the line guide is a row, not a round button") }
+
+        // back to the default
+        guard openEditor() else { return }
+        let reset = button("رجّع الافتراضي")
+        var n = 0
+        while n < 10 && !(reset.exists && reset.isHittable) { app.swipeUp(velocity: .slow); n += 1 }
+        guard tap(reset, "restore the default") else { return }
+        sleep(1)
+        // the dialog's own «رجّع الافتراضي» (the list's is under it)
+        let sure = app.sheets.buttons["رجّع الافتراضي"].firstMatch
+        if sure.waitForExistence(timeout: 2) { sure.tap() } else {
+            let all = app.buttons.matching(NSPredicate(format: "label == %@", "رجّع الافتراضي")).allElementsBoundByIndex.filter { $0.isHittable }
+            if let last = all.last { last.tap() } else { XCTFail("no confirmation for the default") }
+        }
+        sleep(1)
+        tap(button("تم"), "close the editor")
+        sleep(2)
+        if menuOpen() {
+            XCTAssertFalse(button("دليل السطر").exists, "the default puts the line guide back in «المزيد»")
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)).tap()
+            sleep(1)
+        }
+        showButtons()
+        tap(button("إغلاق"), "close the reader")
+    }
+
+    /// دفتري 2.4: the home (today's passages, the words' review, the shelf of books' notebooks, the newest kept), a book's
+    /// notebook page (its passages by chapter, its characters' gallery and map, its timeline), a character's card from
+    /// the map, and picking several quotes.
+    func test22NotebookHome() {
+        tab("دفتري")
+        sleep(1)
+        shot("ui100-notebook-home")
+        XCTAssertTrue(buttonStarting("الرئيسية").exists, "the home's chip")
+        // the shelf: its row is dragged sideways until «لورد الغوامض» (its characters are related) is on screen
+        let anyCard = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "nb-book-")).firstMatch
+        guard anyCard.waitForExistence(timeout: 5) else { XCTFail("no shelf of notebooks on the home"); return }
+        reveal(anyCard)
+        shot("ui101-notebook-shelf")
+        let lotm = app.buttons.matching(NSPredicate(format: "identifier == %@", "nb-book-cc9bfeteov4")).firstMatch
+        var n = 0
+        while !(lotm.exists && lotm.isHittable) && n < 8 && anyCard.exists {
+            let y = max(0.05, min(0.95, anyCard.frame.midY / app.frame.height))
+            let toRight = n < 4
+            app.coordinate(withNormalizedOffset: CGVector(dx: toRight ? 0.2 : 0.8, dy: y))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: toRight ? 0.8 : 0.2, dy: y)))
+            sleep(1)
+            n += 1
+        }
+        guard tap(lotm, "a book's notebook from the shelf") else { return }
+        sleep(2)
+        shot("ui102-notebook-book")
+        XCTAssertTrue(button("رجوع").exists, "the page's way back to دفتري")
+        if tap(chip("الشخصيات"), "the characters") {
+            sleep(1)
+            shot("ui103-notebook-chars")
+            // the map's faces are buttons named by the character alone (the gallery's say more)
+            let face = button("كلاين موريتي")
+            XCTAssertTrue(face.waitForExistence(timeout: 3), "the relations' map")
+            reveal(face)
+            shot("ui104-notebook-map")
+            if tap(face, "a face on the map") {
+                sleep(2)
+                shot("ui105-notebook-char-card")
+                if button("إغلاق").exists { button("إغلاق").tap() } else { app.swipeDown(velocity: .fast) }
+                sleep(1)
+            }
+        }
+        app.swipeDown(velocity: .fast)
+        sleep(1)
+        if tap(chip("الخط الزمني"), "the timeline") {
+            sleep(1)
+            shot("ui106-notebook-timeline")
+        }
+        tap(button("رجوع"), "back to دفتري")
+        sleep(1)
+        // several quotes picked at once: copy, share, delete
+        tap(chip("اقتباسات"), "quotes")
+        sleep(1)
+        if tap(button("تحديد"), "pick several") {
+            sleep(1)
+            let q = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "نص اقتباس من اختبار")).firstMatch
+            if q.waitForExistence(timeout: 3) { q.tap(); sleep(1) }
+            shot("ui107-notebook-picking")
+            tap(button("إلغاء"), "stop picking")
+        }
     }
 
     /// Last (it leaves the app in English): the English interface reads left to right and its tabs say so.

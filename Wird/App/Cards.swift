@@ -10,6 +10,8 @@ struct CardRequest: Identifiable {
     let kind: Kind
     let book: String
     var quote: String? = nil
+    /// a passage that is not a quote (a highlight): its words on the same card
+    var text: String? = nil
 }
 
 struct CardSheet: View {
@@ -51,8 +53,13 @@ enum Cards {
         switch r.kind {
         case .book: view = AnyView(BookCardArt(book: b))
         case .quote:
-            guard let q = b.items(.quote).first(where: { $0.id == r.quote }) else { return nil }
-            view = AnyView(QuoteCardArt(book: b, quote: q))
+            if let q = b.items(.quote).first(where: { $0.id == r.quote }) {
+                view = AnyView(QuoteCardArt(book: b, quote: q))
+            } else if let t = r.text, !t.isEmpty {
+                view = AnyView(QuoteCardArt(book: b, quote: NoteItem(["text": .string(t)])))
+            } else {
+                return nil
+            }
         }
         let renderer = ImageRenderer(content: view.frame(width: W, height: H).environment(\.layoutDirection, .rightToLeft))
         renderer.scale = 1
