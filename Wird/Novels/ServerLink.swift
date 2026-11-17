@@ -51,7 +51,7 @@ enum ServerLink {
         }
     }
 
-    private static func request(_ path: String, method: String = "GET", body: Data? = nil, timeout: Double = 30) async throws -> Data {
+    static func request(_ path: String, method: String = "GET", body: Data? = nil, timeout: Double = 30) async throws -> Data {
         guard isOn, let u = URL(string: url + path) else { throw Failure.off }
         var r = URLRequest(url: u, timeoutInterval: timeout)
         r.httpMethod = method
@@ -194,7 +194,22 @@ struct ServerSettings: View {
     @State private var note: String?
     @State private var showToken = false
 
+    @StateObject private var model = ServerModel()
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 32) {
+            SettingsSection(title: "الاتصال") { connection }
+            if !url.isEmpty && !token.isEmpty {
+                ServerArchiveSection(model: model)
+                ServerFollowSection(model: model)
+                ServerStorageSection(model: model)
+            }
+        }
+        // polls while the page is open (a few seconds while a job runs); .task stops it when the page closes
+        .task(id: url + token) { await model.poll() }
+    }
+
+    private var connection: some View {
         VStack(alignment: .leading, spacing: 10) {
             JLabel(text: "سيرفرك (اختياري)")
             field("100.75.48.114:8790", $url, secure: false)
