@@ -362,7 +362,7 @@ private struct SocialSignIn: View {
             else { try await S.signIn(server: server, username: username, password: password, invite: invite) }
             S.clearWaitingInvite()
             password = ""
-        } catch let e as SocialError { error = e.message } catch { error = "تعذّر الطلب." }
+        } catch let e as SocialError { self.error = e.message } catch { self.error = "تعذّر الطلب." }
     }
 }
 
