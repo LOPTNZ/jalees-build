@@ -69,6 +69,7 @@ struct BookPage: View {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     statusSection(b)
                     ListsRow(bookID: b.id)
+                    SocialBookRow(bookID: b.id)   // الأصدقاء: keep this book from friends (Wird/Social)
                     if b.status == .done || !b.review.isEmpty || !b.moods.isEmpty { reviewSection(b) }
                     if full {
                         notes(b, .quote, "الاقتباسات", 2, "ما فيه اقتباسات بعد.")

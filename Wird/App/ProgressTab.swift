@@ -20,9 +20,11 @@ struct ProgressTab: View {
                         Spacer(minLength: 0)
                     }
                     .id("top")
-                    JSeg(options: [("goals", "الأهداف"), ("stats", "الإحصائيات")], value: $sub)
+                    JSeg(options: [("goals", "الأهداف"), ("stats", "الإحصائيات"), ("friends", "الأصدقاء")], value: $sub)
                         .padding(.bottom, 4)
-                    if sub == "goals" { GoalsPage(state: lib.state) } else { StatsPage(state: lib.state, range: $range) }
+                    if sub == "goals" { GoalsPage(state: lib.state) }
+                    else if sub == "friends" { FriendsHome() }   // الأصدقاء (Wird/Social)
+                    else { StatsPage(state: lib.state, range: $range) }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 110)
                 .readableColumn(820)

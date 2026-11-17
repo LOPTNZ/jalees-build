@@ -21,6 +21,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         Task { @MainActor in
             NovelBridge.host = vc
             _ = Library.shared
+            SocialStore.shared.start()   // الأصدقاء: syncs by itself once signed in (Wird/Social)
             if let url = connectionOptions.urlContexts.first?.url { open(url) }
             DebugRoute.run()
         }
@@ -46,6 +47,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidBecomeActive(_ scene: UIScene) {
         if let s = scene as? UIWindowScene { AppLock.shared.becameActive(s) }
+        Task { @MainActor in SocialStore.shared.becameActive() }
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
@@ -71,6 +73,11 @@ enum DeepLink {
         if url.host == "add" {
             // a link shared from Safari (it closes the reader and sheets once the novel is in)
             SharedAdd.process(q["url"])
+            return
+        }
+        if url.host == "friends" {
+            // wird://friends/join?s=<server>&c=<code>: connects to the friends server (asks first), Wird/Social
+            SocialStore.shared.receiveJoin(url)
             return
         }
         if url.host == "session" || q["session"] != nil {
