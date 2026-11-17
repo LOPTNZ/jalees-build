@@ -76,7 +76,13 @@ final class Router: ObservableObject {
         mainTab = .notebook
         if let b = book, !b.isEmpty {
             NotebookNav.shared.show(book: nil, kind: nil)
-            paths[.notebook] = [.notebook(b, kind ?? "")]
+            let page = Page.notebook(b, kind ?? "")
+            // the same page already open: the path does not change, so the page is asked for the section itself
+            let same = paths[.notebook]?.last == page
+            if !same { paths[.notebook] = [page] }
+            if same, let k = kind, !k.isEmpty {
+                NotificationCenter.default.post(name: .notebookSection, object: b, userInfo: ["section": k])
+            }
         } else {
             NotebookNav.shared.show(book: nil, kind: kind)
             paths[.notebook] = []

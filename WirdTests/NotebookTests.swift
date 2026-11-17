@@ -85,6 +85,57 @@ final class NotebookTests: XCTestCase {
         XCTAssertNotEqual(ix.today(5, shuffle: 1).map(\.id), a, "another set when asked for others")
     }
 
+    /// An undo puts back only what the deletion took: the quote and its highlight return, and what changed in the book
+    /// in the meantime (the place read) stays.
+    func testUndoPutsBackOnlyWhatWasTaken() {
+        var b = sample()
+        var r = NoteItems.Removal(book: "bk")
+        NoteItems.take(.quote, "q1", from: &b, into: &r)
+        XCTAssertTrue(b.quotes.isEmpty)
+        XCTAssertFalse(b.marks.contains { $0.str("id") == "m2" }, "the quote's highlight goes with it")
+        b.pos = 42
+        NoteItems.put(r, into: &b)
+        XCTAssertEqual(b.quotes.map(\.id), ["q1"])
+        XCTAssertEqual(b.marks.map { $0.str("id") }, ["m1", "m2"], "back in its place")
+        XCTAssertEqual(b.pos, 42, "the rest of the book is not rolled back")
+
+        // a character: the others' relations and its quotes' speaker come back too
+        var c = book(["id": .string("c"), "title": .string("ك"),
+                      "chars": .array([.object(["id": .string("a"), "name": .string("أ"), "rel": .array([.object(["to": .string("b"), "label": .string("أخوه")])])]),
+                                       .object(["id": .string("b"), "name": .string("ب"), "rel": .array([])])]),
+                      "quotes": .array([.object(["id": .string("q"), "text": .string("نص"), "speakerId": .string("b")])])])
+        var rc = NoteItems.Removal(book: "c")
+        NoteItems.take(.char, "b", from: &c, into: &rc)
+        XCTAssertEqual(c.chars.first?.rel.count, 0)
+        XCTAssertEqual(c.quotes.first?.raw.str("speakerName"), "ب")
+        NoteItems.put(rc, into: &c)
+        XCTAssertEqual(c.chars.map(\.id), ["a", "b"])
+        XCTAssertEqual(c.chars.first?.rel.first?.str("to"), "b")
+        XCTAssertEqual(c.quotes.first?.raw.str("speakerId"), "b")
+
+        // an empty id takes nothing
+        var e = NoteItems.Removal(book: "bk")
+        var d = sample()
+        NoteItems.take(.mark, "", from: &d, into: &e)
+        XCTAssertEqual(d.marks.count, 2)
+    }
+
+    /// Chapters the novel's list does not hold, at the same rank, stay separate groups with ids of their own.
+    func testJournalGroupIdsAreUnique() {
+        var a = NBEntry(kind: .mark, book: "x", rawID: "1")
+        a.ch = 500; a.place = "الفصل 9"; a.num = 9
+        var b = NBEntry(kind: .mark, book: "x", rawID: "2")
+        b.ch = 501; b.place = "الفصل 9"; b.num = 9
+        var c = NBEntry(kind: .mark, book: "x", rawID: "3")
+        c.ch = 500; c.place = "الفصل 9"; c.num = 9; c.p = 3
+        let groups = NBIndex.journal([a, b, c], chapters: NBChapters(), pages: false, byDay: false)
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertEqual(Set(groups.map(\.id)).count, groups.count)
+        var huge = NBEntry(kind: .quote, book: "x", rawID: "4")
+        huge.num = 1e300
+        XCTAssertEqual(NBIndex.journal([huge], chapters: NBChapters(), pages: false, byDay: false).first?.id, "none", "no trap on a huge number")
+    }
+
     /// a library written before 2.4 (no tags, no links): read as before
     func testOldDataStillReads() {
         let old = book(["id": .string("o"), "title": .string("قديم"), "quotes": .array([.object(["id": .string("x"), "text": .string("نص"), "loc": .number(12)])])])

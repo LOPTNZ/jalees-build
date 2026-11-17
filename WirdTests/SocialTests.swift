@@ -157,9 +157,14 @@ final class SocialTests: XCTestCase {
 
     func testPrivateBookIsHiddenNotAnnounced() {
         let e = diff(["1": snap("A", "reading")], ["1": snap("A", "done", rating: 5, priv: true)])
-        XCTAssertEqual(e.count, 1)
-        XCTAssertTrue(e[0].priv)
-        XCTAssertTrue(e[0].kinds.isEmpty)
+        // nothing of a private book is uploaded: the server is told to forget it
+        XCTAssertEqual(e.map(\.type), ["forget"])
+        XCTAssertEqual(e[0].title, "A")
+    }
+
+    func testTwinBookKeepsTheKeyWhenOneIsDeleted() {
+        let e = diff(["1": snap("A"), "2": snap("A")], ["2": snap("A")])
+        XCTAssertEqual(e.map(\.type), ["book"])
     }
 
     func testDeletedAndRenamedBooksAreForgotten() {

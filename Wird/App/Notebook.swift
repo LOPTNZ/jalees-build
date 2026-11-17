@@ -64,8 +64,8 @@ struct NotebookView: View {
         }
         .overlay { if fabOpen { Color(red: 6 / 255, green: 14 / 255, blue: 12 / 255).opacity(0.42).ignoresSafeArea().onTapGesture { fabToggle(false) }.transition(.opacity) } }
         .overlay(alignment: .bottomLeading) {
-            if picked == nil && (SessionModel.shared.timer == nil || !SessionModel.shared.showScreen) {
-                NotebookFab(open: $fabOpen, dim: fabDim, current: tab == "home" || tab == "mark" ? "quote" : tab) { k in fabPick(k) }
+            if picked == nil {
+                NBFabGate { NotebookFab(open: $fabOpen, dim: fabDim, current: tab == "home" || tab == "mark" ? "quote" : tab) { k in fabPick(k) } }
             }
         }
         .overlay(alignment: .bottom) { if let p = picked { selectBar(p) } }
@@ -84,8 +84,10 @@ struct NotebookView: View {
             Button("حذف", role: .destructive) { deletePicked() }
             Button("إلغاء", role: .cancel) {}
         } message: {
-            Text("تقدر تتراجع خلال ثواني.")
+            Text("تنحذف \(pickedEntries.count) من دفترك، وتقدر تتراجع خلال ثواني.")
         }
+        // another filter, book, order or search: what was picked and is no longer shown is let go
+        .onChange(of: "\(bookFilter)|\(query)|\(favOnly)|\(markColor)|\(tagFilter)|\(sort)") { _ in if picked != nil { picked = [] } }
     }
 
     private var act: NBDo {
@@ -480,13 +482,14 @@ struct NotebookView: View {
         Haptics.play("sel")
     }
 
+    /// what is picked and still shown (one hidden by a filter is never copied or deleted with the rest)
     private var pickedEntries: [NBEntry] {
-        guard let p = picked else { return [] }
-        return store.ix.all.filter { p.contains($0.id) }
+        guard let p = picked, let kind = NBEntry.Kind(rawValue: tab) else { return [] }
+        return filtered(store.ix.all.filter { $0.kind == kind }, kind).filter { p.contains($0.id) }
     }
 
     private func selectBar(_ p: Set<String>) -> some View {
-        NBSelectBar(count: p.count,
+        NBSelectBar(count: pickedEntries.count,
                     all: {
                         let kind = NBEntry.Kind(rawValue: tab) ?? .quote
                         picked = Set(filtered(store.ix.all.filter { $0.kind == kind }, kind).map(\.id))
@@ -679,41 +682,31 @@ enum NoteItems {
 
     /// itemDel: a character also leaves the others' relations, and its quotes keep its name as «another person».
     /// The toast takes it all back.
+    /// (A quote, thought or word taken from the text goes with its highlight there: they are one thing.) The toast
+    /// puts back only what was taken, into the book as it is then (NoteItems.take / restore): a session or the place
+    /// read, saved in the meantime, stays.
     @MainActor
     static func delete(_ bookID: String, _ k: NoteKind, _ id: String) {
-        guard let b = Library.shared.state.book(bookID), let x = b.items(k).first(where: { $0.id == id }) else { return }
-        let snapshot = b
-        let name = x.raw.str("name")
-        Library.shared.changeBook(bookID) { bb in
-            bb.raw.set(k.listKey, objects: bb.raw.objs(k.listKey).filter { $0.str("id") != id })
-            // a quote (thought, word) taken from the text goes with its highlight there: they are one thing
-            if k != .char { bb.marks = bb.marks.filter { $0.str("item") != id } }
-            if k == .char {
-                bb.raw.set("chars", objects: bb.raw.objs("chars").map { c in var c = c; c.set("rel", objects: c.objs("rel").filter { $0.str("to") != id }); return c })
-                bb.raw.set("quotes", objects: bb.raw.objs("quotes").map { q in
-                    var q = q
-                    if q.str("speakerId") == id { q.set("speakerId", "__o"); q.set("speakerName", name) }
-                    return q
-                })
-            }
-        }
+        guard !id.isEmpty, let b = Library.shared.state.book(bookID), b.items(k).contains(where: { $0.id == id }),
+              let kind = NBEntry.Kind(rawValue: k.rawValue) else { return }
+        var r = Removal(book: bookID)
+        Library.shared.changeBook(bookID) { bb in take(kind, id, from: &bb, into: &r) }
         Haptics.play("warn")
         let this = ["quote": "هذا الاقتباس", "thought": "هذه الفكرة", "word": "هذه الكلمة", "char": "هذه الشخصية"][k.rawValue] ?? ""
-        ToastCenter.shared.show("تم حذف " + this) {
-            Library.shared.change { st in if let i = st.index(of: snapshot.id) { st.books[i] = snapshot } }
-        }
+        let undo = r
+        ToastCenter.shared.show("تم حذف " + this) { NoteItems.restore([undo]) }
     }
 
-    /// A highlight deleted from the notebook (the open reader follows); the toast takes it back.
+    /// A highlight deleted from the notebook (the open reader follows); the toast puts back that highlight (and its
+    /// entry's link to it), nothing else.
     @MainActor
     static func deleteMark(_ bookID: String, _ id: String) {
-        guard let b = Library.shared.state.book(bookID) else { return }
-        let snapshot = b
-        NovelLibrary.markDel(bookID, id)
+        guard !id.isEmpty, Library.shared.state.book(bookID) != nil else { return }
+        var r = Removal(book: bookID)
+        Library.shared.changeBook(bookID) { bb in take(.mark, id, from: &bb, into: &r) }
         Haptics.play("warn")
-        ToastCenter.shared.show("تم حذف التظليل") {
-            Library.shared.change { st in if let i = st.index(of: snapshot.id) { st.books[i] = snapshot } }
-        }
+        let undo = r
+        ToastCenter.shared.show("تم حذف التظليل") { NoteItems.restore([undo]) }
     }
 
     /// Where an entry is in its book: «ص 12», «ف 30», «1:05», with the volume for a series.

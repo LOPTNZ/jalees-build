@@ -145,6 +145,25 @@ struct SocialOutbox: Codable, Equatable {
 
     func batch(_ n: Int = 40) -> [SocialEvent] { Array(events.prefix(n)) }
 
+    /// The next events to send: at most `n`, and by size too (the server refuses a body over 96 KB), always at least one.
+    func batch(_ n: Int = 40, maxBytes: Int) -> [SocialEvent] {
+        var out: [SocialEvent] = [], used = 0
+        for e in events.prefix(n) {
+            let size = (try? JSONSerialization.data(withJSONObject: e.payload()).count) ?? 2000
+            if !out.isEmpty && used + size + 1 > maxBytes { break }
+            out.append(e); used += size + 1
+        }
+        return out
+    }
+
+    /// These events were taken by the server. Removed by their ids, not by position: the outbox may have changed
+    /// (a newer change, a forget, the cap) while the request was in the air.
+    mutating func sent(cids: Set<String>) {
+        events.removeAll { cids.contains($0.cid) }
+        failures = 0
+        nextTry = 0
+    }
+
     /// the first `n` events were taken by the server
     mutating func sent(_ n: Int) {
         events.removeFirst(min(n, events.count))
@@ -160,6 +179,7 @@ struct SocialOutbox: Codable, Equatable {
 
     /// a wrong answer the server will never accept (a bad request): that batch is dropped so it doesn't block the rest
     mutating func drop(_ n: Int) { events.removeFirst(min(n, events.count)); failures = 0; nextTry = 0 }
+    mutating func drop(cids: Set<String>) { events.removeAll { cids.contains($0.cid) }; failures = 0; nextTry = 0 }
 }
 
 /// What the server last heard about one book.
@@ -184,28 +204,40 @@ enum SocialDiff {
     static func events(old: [String: SocialBookSnap], new: [String: SocialBookSnap], baseline: Bool, now: Double,
                        cid: () -> String = { UUID().uuidString }) -> (events: [SocialEvent], snaps: [String: SocialBookSnap]) {
         var out: [SocialEvent] = []
+        // Two books can share one title and author, and so one key on the server. A book that goes away (deleted, renamed,
+        // made private) only forgets the key when no other shared book still has it; else that book is sent again.
+        var twins: [String: (id: String, snap: SocialBookSnap)] = [:]
+        for (id, n) in new.sorted(by: { $0.key < $1.key }) where !n.priv {
+            let k = SocialEvent.key(n.title, n.author)
+            if twins[k] == nil { twins[k] = (id, n) }
+        }
+        func bookEvent(_ n: SocialBookSnap, _ kinds: [String]) -> SocialEvent {
+            var e = SocialEvent(cid: cid(), type: "book", at: now, title: n.title, author: n.author)
+            e.isbn = n.isbn; e.hue = n.hue; e.status = n.status; e.rating = n.rating; e.review = n.review; e.spoiler = n.spoiler
+            e.start = n.start; e.finish = n.finish; e.priv = n.priv; e.kinds = kinds
+            return e
+        }
+        func leave(_ o: SocialBookSnap) {
+            if let t = twins[SocialEvent.key(o.title, o.author)] { out.append(bookEvent(t.snap, [])) }
+            else { out.append(SocialEvent(cid: cid(), type: "forget", at: now, title: o.title, author: o.author)) }
+        }
         for (id, n) in new.sorted(by: { $0.key < $1.key }) {
             let o = old[id]
             if o == n { continue }
+            // the title or author changed: the old one goes, the new one comes
+            if let o = o, SocialEvent.key(o.title, o.author) != SocialEvent.key(n.title, n.author) { leave(o) }
+            // a private book is never uploaded: the server is told to forget it, nothing else
+            if n.priv { leave(n); continue }
             var kinds: [String] = []
-            if !baseline && !n.priv {
+            if !baseline {
                 if n.status == "reading" && o?.status != "reading" { kinds.append("started") }
                 if n.status == "done" && o?.status != "done" { kinds.append("finished") }
                 if n.rating > 0 && n.rating != o?.rating { kinds.append("rated") }
                 if !n.review.isEmpty && n.review != o?.review { kinds.append("reviewed") }
             }
-            // the book's title or author changed: the old one goes, the new one comes
-            if let o = o, SocialEvent.key(o.title, o.author) != SocialEvent.key(n.title, n.author) {
-                out.append(SocialEvent(cid: cid(), type: "forget", at: now, title: o.title, author: o.author))
-            }
-            var e = SocialEvent(cid: cid(), type: "book", at: now, title: n.title, author: n.author)
-            e.isbn = n.isbn; e.hue = n.hue; e.status = n.status; e.rating = n.rating; e.review = n.review; e.spoiler = n.spoiler
-            e.start = n.start; e.finish = n.finish; e.priv = n.priv; e.kinds = kinds
-            out.append(e)
+            out.append(bookEvent(n, kinds))
         }
-        for (id, o) in old.sorted(by: { $0.key < $1.key }) where new[id] == nil {
-            out.append(SocialEvent(cid: cid(), type: "forget", at: now, title: o.title, author: o.author))
-        }
+        for (id, o) in old.sorted(by: { $0.key < $1.key }) where new[id] == nil { leave(o) }
         return (out, new)
     }
 }

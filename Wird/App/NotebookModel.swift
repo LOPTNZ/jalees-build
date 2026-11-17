@@ -92,8 +92,10 @@ struct NBEntry: Identifiable, Equatable {
     var due = false
     /// everything searchable about it, in the search's own form (Words.norm), the book's title too
     var hay = ""
+    /// a second (third…) entry of the book with the same id (data from an old import): shown, with an id of its own
+    var dup = 0
 
-    var id: String { book + "/" + kind.rawValue + "/" + rawID }
+    var id: String { book + "/" + kind.rawValue + "/" + rawID + (dup > 0 ? "#\(dup)" : "") }
     /// what reading keeps from the text: quotes, highlights, thoughts
     var isPassage: Bool { kind == .quote || kind == .mark || kind == .thought }
 }
@@ -271,7 +273,16 @@ struct NBIndex {
             e.num = number(in: e.place)
             out.append(e)
         }
-        return out.sorted { $0.at > $1.at }
+        // an entry without an id cannot be opened or deleted safely: it is left out; one whose id is taken gets its own
+        var seen: [String: Int] = [:]
+        var unique: [NBEntry] = []
+        for var e in out where !e.rawID.isEmpty {
+            let k = e.kind.rawValue + "/" + e.rawID
+            e.dup = seen[k, default: 0]
+            seen[k] = e.dup + 1
+            unique.append(e)
+        }
+        return unique.sorted { $0.at > $1.at }
     }
 
     /// the first number in a place's words («الفصل 37: …» → 37)
@@ -334,15 +345,20 @@ struct NBIndex {
     /// A book's entries as its journal: by chapter in the book's order and inside a chapter by place; or by day,
     /// newest first.
     static func journal(_ list: [NBEntry], chapters: NBChapters, pages: Bool, byDay: Bool) -> [NBGroup] {
+        // each key once (a list's ids must be unique), in the order its first entry comes
+        var out: [NBGroup] = []
+        var at: [String: Int] = [:]
+        func put(_ e: NBEntry, _ key: String, _ title: String, _ ch: Int) {
+            if let i = at[key] {
+                out[i].rows.append(e)
+            } else {
+                at[key] = out.count
+                out.append(NBGroup(id: key, title: title, ch: ch, rows: [e]))
+            }
+        }
         if byDay {
-            var out: [NBGroup] = []
             for e in list.sorted(by: { $0.at > $1.at }) {
-                let key = e.at > 0 ? "d" + Words.dkey(e.at) : "d-"
-                if let last = out.last, last.id == key {
-                    out[out.count - 1].rows.append(e)
-                } else {
-                    out.append(NBGroup(id: key, title: e.at > 0 ? Words.date(e.at) : "", ch: 0, rows: [e]))
-                }
+                put(e, e.at > 0 ? "d" + Words.dkey(e.at) : "d-", e.at > 0 ? Words.date(e.at) : "", 0)
             }
             return out
         }
@@ -363,7 +379,7 @@ struct NBIndex {
             if e.ch != 0 {
                 return Placed(e: e, key: "c\(e.ch)", rank: 1e7 + (e.num ?? 0), title: e.place, ch: e.ch)
             }
-            if let n = e.num {
+            if let n = e.num, n.isFinite, n > 0, n < 1e7 {
                 if pages { return Placed(e: e, key: "pages", rank: 0, title: "", ch: 0) }
                 return Placed(e: e, key: "n\(Int(n))", rank: n, title: "الفصل " + Words.n0(n), ch: 0)
             }
@@ -371,20 +387,15 @@ struct NBIndex {
         }
         let sorted = placed.sorted { a, b in
             if a.rank != b.rank { return a.rank < b.rank }
+            // the same rank, two chapters (ones the novel's list does not hold): kept apart
+            if a.key != b.key { return a.key < b.key }
             let na = a.e.num ?? 0, nb = b.e.num ?? 0
             if na != nb { return na < nb }
             if a.e.p != b.e.p { return a.e.p < b.e.p }
             if a.e.s != b.e.s { return a.e.s < b.e.s }
             return a.e.at < b.e.at
         }
-        var out: [NBGroup] = []
-        for x in sorted {
-            if let last = out.last, last.id == x.key {
-                out[out.count - 1].rows.append(x.e)
-            } else {
-                out.append(NBGroup(id: x.key, title: x.title, ch: x.ch, rows: [x.e]))
-            }
-        }
+        for x in sorted { put(x.e, x.key, x.title, x.ch) }
         return out
     }
 }
@@ -534,46 +545,139 @@ extension NoteItems {
     /// Several entries at once (the notebook's selection), with one undo for all of them.
     @MainActor static func deleteMany(_ list: [NBEntry]) {
         guard !list.isEmpty else { return }
-        let lib = Library.shared
-        let ids = Set(list.map(\.book))
-        let snapshots = lib.state.books.filter { ids.contains($0.id) }
+        var taken: [Removal] = []
         for (bid, group) in Dictionary(grouping: list, by: { $0.book }) {
-            lib.changeBook(bid) { bb in
-                for e in group { remove(e, from: &bb) }
+            var r = Removal(book: bid)
+            Library.shared.changeBook(bid) { bb in
+                for e in group { take(e.kind, e.rawID, from: &bb, into: &r) }
             }
+            taken.append(r)
         }
         Haptics.play("warn")
-        ToastCenter.shared.show("تم حذف " + Words.cnt(Double(list.count), ["عنصر واحد", "عنصران", "عناصر", "عنصرًا"])) {
-            Library.shared.change { st in
-                for s in snapshots { if let i = st.index(of: s.id) { st.books[i] = s } }
+        let n = Words.cnt(Double(list.count), ["عنصر واحد", "عنصران", "عناصر", "عنصرًا"])
+        let undo = taken
+        ToastCenter.shared.show("تم حذف \(n)") { NoteItems.restore(undo) }
+    }
+
+    /// What a deletion took out of a book, to put back into the book as it is now: an undo never rolls back the rest
+    /// of the book (a session saved, the place read, a highlight made in the meantime all stay).
+    struct Removal {
+        let book: String
+        /// the list ("quotes", "marks", "chars"…), the object's place in it, the object
+        var objects: [(key: String, index: Int, obj: JSONObject)] = []
+        /// relations other characters had to a deleted character: (that character, the relation)
+        var rels: [(char: String, rel: JSONObject)] = []
+        /// quotes whose speaker was a deleted character: (the quote, the character)
+        var speakers: [(quote: String, char: String)] = []
+        /// entries a deleted highlight was the place of: (their list, the entry, the highlight)
+        var links: [(key: String, item: String, mark: String)] = []
+    }
+
+    /// Takes one thing kept out of a book, with what goes with it, and notes all it took: an entry's highlights go with
+    /// it (they are one thing); a highlight that was an entry's place leaves the entry unmarked; a character leaves the
+    /// others' relations, and its quotes keep its name. Only the first object with the id goes (a second one from an
+    /// old import stays); an empty id takes nothing.
+    static func take(_ kind: NBEntry.Kind, _ id: String, from bb: inout Book, into r: inout Removal) {
+        guard !id.isEmpty else { return }
+        func cut(_ key: String) -> JSONObject? {
+            var l = bb.raw.objs(key)
+            guard let i = l.firstIndex(where: { $0.str("id") == id }) else { return nil }
+            let o = l.remove(at: i)
+            bb.raw.set(key, objects: l)
+            r.objects.append((key: key, index: i, obj: o))
+            return o
+        }
+        switch kind {
+        case .mark:
+            guard let m = cut("marks") else { return }
+            let item = m.str("item")
+            if let k = NoteKind(rawValue: m.str("kind")), k != .char, !item.isEmpty {
+                var l = bb.raw.objs(k.listKey)
+                if let j = l.firstIndex(where: { $0.str("id") == item }), l[j]["mark"] != nil {
+                    l[j]["mark"] = nil
+                    bb.raw.set(k.listKey, objects: l)
+                    r.links.append((key: k.listKey, item: item, mark: id))
+                }
             }
+        case .bmark:
+            _ = cut("bmarks")
+        case .char:
+            guard let c = cut("chars") else { return }
+            let name = c.str("name")
+            var chars = bb.raw.objs("chars")
+            for j in chars.indices {
+                let rel = chars[j].objs("rel")
+                let gone = rel.filter { $0.str("to") == id }
+                if gone.isEmpty { continue }
+                for x in gone { r.rels.append((char: chars[j].str("id"), rel: x)) }
+                chars[j].set("rel", objects: rel.filter { $0.str("to") != id })
+            }
+            bb.raw.set("chars", objects: chars)
+            var quotes = bb.raw.objs("quotes")
+            for j in quotes.indices where quotes[j].str("speakerId") == id {
+                r.speakers.append((quote: quotes[j].str("id"), char: id))
+                quotes[j].set("speakerId", "__o")
+                quotes[j].set("speakerName", name)
+            }
+            bb.raw.set("quotes", objects: quotes)
+        default:
+            guard let k = kind.note, cut(k.listKey) != nil else { return }
+            var marks = bb.marks
+            var i = 0, gone = 0
+            while i < marks.count {
+                if marks[i].str("item") == id {
+                    // its place in the list before any was taken, so putting them back in order rebuilds it
+                    r.objects.append((key: "marks", index: i + gone, obj: marks.remove(at: i)))
+                    gone += 1
+                } else {
+                    i += 1
+                }
+            }
+            bb.marks = marks
         }
     }
 
-    /// One entry out of its book, as its own deletion does (an entry's highlight goes with it; a character leaves the
-    /// others' relations and its quotes keep its name).
-    static func remove(_ e: NBEntry, from bb: inout Book) {
-        switch e.kind {
-        case .mark:
-            bb.marks = bb.marks.filter { $0.str("id") != e.rawID }
-        case .bmark:
-            bb.bmarks = bb.bmarks.filter { $0.str("id") != e.rawID }
-        case .char:
-            let id = e.rawID, name = e.text
-            bb.raw.set("chars", objects: bb.raw.objs("chars").filter { $0.str("id") != id }.map { c in
-                var c = c
-                c.set("rel", objects: c.objs("rel").filter { $0.str("to") != id })
-                return c
-            })
-            bb.raw.set("quotes", objects: bb.raw.objs("quotes").map { q in
-                var q = q
-                if q.str("speakerId") == id { q.set("speakerId", "__o"); q.set("speakerName", name) }
-                return q
-            })
-        default:
-            guard let k = e.kind.note else { return }
-            bb.raw.set(k.listKey, objects: bb.raw.objs(k.listKey).filter { $0.str("id") != e.rawID })
-            bb.marks = bb.marks.filter { $0.str("item") != e.rawID }
+    /// Puts back what deletions took, into the books as they are now.
+    @MainActor static func restore(_ list: [Removal]) {
+        for r in list {
+            Library.shared.changeBook(r.book) { bb in put(r, into: &bb) }
+        }
+    }
+
+    /// One removal put back into its book as it is now (what is there already is not doubled).
+    static func put(_ r: Removal, into bb: inout Book) {
+        for o in r.objects.sorted(by: { $0.index < $1.index }) {
+            var l = bb.raw.objs(o.key)
+            let oid = o.obj.str("id")
+            if l.contains(where: { $0.str("id") == oid }) { continue }
+            l.insert(o.obj, at: min(max(0, o.index), l.count))
+            bb.raw.set(o.key, objects: l)
+        }
+        if !r.rels.isEmpty {
+            var chars = bb.raw.objs("chars")
+            for x in r.rels {
+                guard let j = chars.firstIndex(where: { $0.str("id") == x.char }) else { continue }
+                var rel = chars[j].objs("rel")
+                if rel.contains(where: { $0.str("to") == x.rel.str("to") }) { continue }
+                rel.append(x.rel)
+                chars[j].set("rel", objects: rel)
+            }
+            bb.raw.set("chars", objects: chars)
+        }
+        if !r.speakers.isEmpty {
+            var quotes = bb.raw.objs("quotes")
+            for x in r.speakers {
+                guard let j = quotes.firstIndex(where: { $0.str("id") == x.quote }), quotes[j].str("speakerId") == "__o" else { continue }
+                quotes[j].set("speakerId", x.char)
+                quotes[j].set("speakerName", "")
+            }
+            bb.raw.set("quotes", objects: quotes)
+        }
+        for x in r.links {
+            var l = bb.raw.objs(x.key)
+            guard let j = l.firstIndex(where: { $0.str("id") == x.item }), l[j]["mark"] == nil else { continue }
+            l[j].set("mark", x.mark)
+            bb.raw.set(x.key, objects: l)
         }
     }
 }

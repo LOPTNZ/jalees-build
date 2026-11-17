@@ -19,6 +19,11 @@ enum NBSection: String, CaseIterable {
     }
 }
 
+extension Notification.Name {
+    /// Router.openNotebook for the book page already open: its part (object: the book's id; "section" in userInfo)
+    static let notebookSection = Notification.Name("jalees.notebookSection")
+}
+
 /// A book's notebook as a page of دفتري (Router.Page.notebook).
 struct BookNotebookPage: View {
     let bookID: String
@@ -68,13 +73,29 @@ struct BookNotebookBody: View {
             }
             Button("إلغاء", role: .cancel) { askDelete = nil }
         } message: {
-            Text("ينحذف من دفترك، وتظليله في النص معه.")
+            Text(askDelete.map { Self.deleteNote($0.kind) } ?? "")
         }
         .confirmationDialog("حذف المحدد؟", isPresented: $askDeleteMany, titleVisibility: .visible) {
             Button("حذف", role: .destructive) { deletePicked() }
             Button("إلغاء", role: .cancel) {}
         } message: {
-            Text("تقدر تتراجع خلال ثواني.")
+            Text("تنحذف \(pickedEntries.count) من دفترك، وتقدر تتراجع خلال ثواني.")
+        }
+        // a new filter, part or order: what was picked and is no longer shown is let go (a deletion takes only what is seen)
+        .onChange(of: "\(section.rawValue)|\(filter)|\(color)|\(tag)|\(byPlace)") { _ in if picked != nil { picked = [] } }
+        // دفتري asked again for this page at a part («الشخصيات»…): the same page, that part
+        .onReceive(NotificationCenter.default.publisher(for: .notebookSection)) { n in
+            guard (n.object as? String) == bookID, let s = n.userInfo?["section"] as? String else { return }
+            apply(s)
+        }
+    }
+
+    /// what a deletion over the reader says before it goes
+    static func deleteNote(_ k: NBEntry.Kind) -> String {
+        switch k {
+        case .mark: return "يختفي التظليل من النص ومن دفترك."
+        case .bmark: return "تنحذف الوقفة."
+        default: return "ينحذف من دفترك، وتظليله في النص معه."
         }
     }
 
@@ -92,8 +113,8 @@ struct BookNotebookBody: View {
             }
             .overlay { if fabOpen { Color(red: 6 / 255, green: 14 / 255, blue: 12 / 255).opacity(0.42).ignoresSafeArea().onTapGesture { fabToggle(false) }.transition(.opacity) } }
             .overlay(alignment: .bottomLeading) {
-                if picked == nil && (SessionModel.shared.timer == nil || !SessionModel.shared.showScreen) {
-                    NotebookFab(open: $fabOpen, dim: fabDim, current: fabKind) { k in fabPick(k) }
+                if picked == nil {
+                    NBFabGate { NotebookFab(open: $fabOpen, dim: fabDim, current: fabKind) { k in fabPick(k) } }
                 }
             }
             .overlay(alignment: .bottom) { if let p = picked { selectBar(p) } }
@@ -163,14 +184,7 @@ struct BookNotebookBody: View {
     private func begin() -> Int {
         guard !started else { return 0 }
         started = true
-        switch start {
-        case "char", "chars": section = .chars
-        case "word", "words": section = .words
-        case "time": section = .time
-        case "bmark", "bmarks": section = .bmarks
-        case "quote", "mark", "note", "thought": filter = start
-        default: break
-        }
+        apply(start)
         let n = Library.shared.state.book(bookID)?.novel
         var here = 0
         if let r = reader {
@@ -181,6 +195,20 @@ struct BookNotebookBody: View {
             chapters = NBChapters(Novels.shared.chapters(n.novelID))
         }
         return here
+    }
+
+    /// A part asked for: a section («char», «word», «time», «bmark») or a kind of passage («quote», «mark», «note»…).
+    private func apply(_ s: String) {
+        switch s {
+        case "char", "chars": section = .chars
+        case "word", "words": section = .words
+        case "time": section = .time
+        case "bmark", "bmarks": section = .bmarks
+        case "quote", "mark", "note", "thought":
+            section = .passages
+            filter = s
+        default: break
+        }
     }
 
     private func back() {
@@ -499,13 +527,14 @@ struct BookNotebookBody: View {
         Haptics.play("sel")
     }
 
+    /// what is picked and still shown (a passage hidden by a filter is never copied or deleted with the rest)
     private var pickedEntries: [NBEntry] {
-        guard let p = picked else { return [] }
-        return (store.ix.byBook[bookID] ?? []).filter { p.contains($0.id) }
+        guard let p = picked, section == .passages else { return [] }
+        return (store.ix.byBook[bookID] ?? []).filter { $0.isPassage && matches($0) && p.contains($0.id) }
     }
 
     private func selectBar(_ p: Set<String>) -> some View {
-        NBSelectBar(count: p.count,
+        NBSelectBar(count: pickedEntries.count,
                     all: { picked = Set((store.ix.byBook[bookID] ?? []).filter { $0.isPassage && matches($0) }.map(\.id)) },
                     copy: { UIPasteboard.general.string = NotebookExport.text(pickedEntries); Haptics.play("soft"); ToastCenter.shared.show("تم النسخ") },
                     shareText: { NotebookExport.shareText(pickedEntries) },
@@ -724,6 +753,8 @@ struct NBWords: View {
                 }
             } else {
                 NBReviewPanel(stats: stats, review: review, anki: anki)
+                // (while several are picked every word shows: a hidden one is never deleted with the rest)
+                if picked == nil {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         NBChip(text: "الكل", count: entries.count, on: stage < 0) { stage = -1 }
@@ -733,8 +764,9 @@ struct NBWords: View {
                         }
                     }
                 }
+                }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 158), spacing: 10)], spacing: 10) {
-                    ForEach(entries.filter { stage < 0 || $0.stage == stage }) { e in
+                    ForEach(entries.filter { picked != nil || stage < 0 || $0.stage == stage }) { e in
                         WordTile(e: e, act: act, book: books[e.book], showBook: showBook, picked: picked.map { $0.contains(e.id) })
                     }
                 }

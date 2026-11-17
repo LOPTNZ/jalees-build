@@ -40,6 +40,8 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     private var pagesLeft = 0
     private var pinchBase: Double = 22
     private var menu: ReaderMenuView?
+    /// «خصّص القائمة» while it is over the page (swiped away, it brings the menu back as its «تم» does)
+    private weak var menuEditorHost: UIViewController?
     /// pulling the page down (with the controls showing) closes the book, as in Apple Books
     private lazy var pullPan: UIPanGestureRecognizer = {
         let p = UIPanGestureRecognizer(target: self, action: #selector(pulled(_:)))
@@ -1237,10 +1239,12 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     var searchTitle: String { novel.source == "epub" ? "بحث في الكتاب" : "بحث في الرواية" }
 
     /// Everything kept from this book: highlights (a quote's highlight counts as the quote), quotes, thoughts, words,
-    /// characters, bookmarks.
+    /// characters. Bookmarks are not counted.
     var notebookCount: Int {
-        guard let b = bookID, let book = Library.shared.state.book(b) else { return marksHere.count + bookmarks.count }
-        return book.plainMarks.count + book.quotes.count + book.thoughts.count + book.words.count + book.chars.count + book.bmarks.count
+        // counted as the notebook counts it («N في الدفتر» in its reader bar): its index, bookmarks left out (a place,
+        // not a note)
+        guard let b = bookID else { return marksHere.count }
+        return (NotebookStore.shared.ix.byBook[b] ?? []).filter { $0.kind != .bmark }.count
     }
 
     /// The book's list: one list of what is kept from it, filtered by kind, live from the library.
@@ -1486,6 +1490,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         closeOverlays()
         setChrome(false)
         let editor = MenuEditorView(epub: isEpub, bookRTL: bookRTL, close: { [weak self] in
+            self?.menuEditorHost = nil
             self?.dismiss(animated: true) {
                 self?.setChrome(true)
                 self?.openMenu()
@@ -1495,6 +1500,9 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         // its list (UIKit underneath) goes the app's way, whatever the phone's language is
         if #available(iOS 17.0, *) { host.traitOverrides.layoutDirection = Lang.english ? .leftToRight : .rightToLeft }
         presentPanel(host, height: 640, tall: true)
+        // pulled down instead of «تم»: the page's buttons and the menu come back all the same (presentationControllerDidDismiss)
+        menuEditorHost = host
+        host.presentationController?.delegate = self
     }
 
     /// «اذهب لفصل»: a chapter by its number (the chapter bar's number, the pill under the page).
@@ -2008,6 +2016,15 @@ private final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
 }
 
 extension ReaderViewController: UIAdaptivePresentationControllerDelegate {
-    /// A card or sheet over the page was swiped away: what it changed (a character's name) shows in the page.
-    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) { loadLabels() }
+    /// A card or sheet over the page was swiped away: what it changed (a character's name) shows in the page. The
+    /// menu's editor («خصّص القائمة») brings back the page's buttons and the menu, as its «تم» does.
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        if let editor = menuEditorHost, presentationController.presentedViewController === editor {
+            menuEditorHost = nil
+            setChrome(true)
+            openMenu()
+            return
+        }
+        loadLabels()
+    }
 }

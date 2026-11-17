@@ -230,18 +230,29 @@ extension ServerLink {
     /// change since the last pull. Returns how many novels got something, and how many chapters.
     static func pullNew(progress: @escaping (String) -> Void) async throws -> (novels: Int, chapters: Int) {
         let library = Novels.shared.list.filter { !["epub", "sample", "archive"].contains($0.source) && !$0.book.isEmpty }
-        var touched = 0, total = 0
+        var touched = 0, total = 0, lastError: Error?, failedNovels = 0
         for (i, n) in library.enumerated() {
             if Task.isCancelled { break }
             progress("أنزّل من السيرفر: \(i + 1) من \(library.count)")
             let since = Double(DB.shared.get("server.pull.\(n.id)") ?? "") ?? 0
             var have = Set(Novels.shared.chapters(n.id).filter { $0.saved }.map { $0.url })
             var got = 0, added = 0, stamp = 0.0, rounds = 0
+            // changed chapters already taken: they stay in \`have\`, so the server is told not to send them again
+            var taken = Set<String>()
+            // the pull reached its end; the stamp is kept only then, or a failed novel would skip its changes next time
+            var finished = false
             while rounds < 80 {
                 rounds += 1
-                let body: [String: Any] = ["url": n.url, "have": Array(have), "since": since, "limit": 40]
+                let body: [String: Any] = ["url": n.url, "have": Array(have), "done": Array(taken), "since": since, "limit": 40]
                 let r: [String: Any]
-                do { r = try await json("/pull", method: "POST", body: body, timeout: 120) } catch Failure.status(404) { break }
+                do { r = try await json("/pull", method: "POST", body: body, timeout: 120) }
+                catch Failure.status(404) { finished = true; break }
+                catch {
+                    // one novel failing doesn't stop the others
+                    if Task.isCancelled { throw error }
+                    lastError = error; failedNovels += 1
+                    break
+                }
                 stamp = ArchiveFormat.num(r["now"])
                 let chapters = (r["chapters"] as? [[String: Any]]) ?? []
                 var progressed = false
@@ -259,11 +270,14 @@ extension ServerLink {
                     guard let ch = row else { continue }
                     Novels.shared.keep(ch, ChapterText(title: (c["title"] as? String) ?? "", paras: paras, removed: 0))
                     if have.insert(url).inserted { progressed = true }
+                    // a changed chapter counts as progress too (it is already in \`have\`)
+                    if (c["changed"] as? Bool) == true, taken.insert(url).inserted { progressed = true }
                     got += 1
                 }
-                if !((r["more"] as? Bool) ?? false) || (chapters.isEmpty) || (!progressed && rounds > 1) { break }
+                if !((r["more"] as? Bool) ?? false) || chapters.isEmpty { finished = true; break }
+                if !progressed && rounds > 1 { break }
             }
-            if stamp > 0 { DB.shared.set("server.pull.\(n.id)", String(stamp)) }
+            if stamp > 0 && finished { DB.shared.set("server.pull.\(n.id)", String(stamp)) }
             if added > 0 {
                 DB.shared.run("UPDATE novels SET total=(SELECT COUNT(*) FROM chapters WHERE novel=?), updated=? WHERE id=?", [n.id, Date().timeIntervalSince1970, n.id])
                 Novels.shared.reload()
@@ -271,6 +285,8 @@ extension ServerLink {
             if got > 0 { touched += 1; total += got; NovelBridge.sync(n.id) }
         }
         NewChapters.afterCheck()
+        // every novel failed: that is the server's problem, and the page says so
+        if let e = lastError, failedNovels == library.count, touched == 0 { throw e }
         return (touched, total)
     }
 
@@ -291,31 +307,43 @@ final class ServerModel: ObservableObject {
     @Published var note: String?
     @Published var busy = false
     @Published var reachable = true
-    private var rounds = 0
 
     var anyActive: Bool { jobs.contains { $0.state == "running" || $0.state == "queued" } }
 
-    /// Polls while the page is open (cancelled by .task when it closes): every 3 s while a job runs, every 15 s otherwise.
+    /// Polls while the page is open (cancelled by .task when it closes): the jobs every 3 s while one runs, every 15 s
+    /// otherwise. The slow reads (status, the followed list, which can take a minute) run on their own beat so they
+    /// never hold the jobs back.
     func poll() async {
         guard ServerLink.isOn else { return }
+        let slow = Task { @MainActor in
+            while !Task.isCancelled {
+                await self.refreshSlow()
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            }
+        }
+        defer { slow.cancel() }
         while !Task.isCancelled {
-            await refresh(full: rounds % 8 == 0)
-            rounds += 1
+            await refreshJobs()
             try? await Task.sleep(nanoseconds: anyActive ? 3_000_000_000 : 15_000_000_000)
         }
     }
 
     func refresh(full: Bool = true) async {
         guard ServerLink.isOn else { return }
+        await refreshJobs()
+        if full { await refreshSlow() }
+    }
+
+    private func refreshJobs() async {
+        do { jobs = try await ServerLink.jobs(); reachable = true } catch { reachable = false }
+    }
+
+    private func refreshSlow() async {
         do {
-            jobs = try await ServerLink.jobs()
-            reachable = true
-            if full {
-                status = try await ServerLink.status()
-                followed = try await ServerLink.followed()
-                if settings.isEmpty { settings = try await ServerLink.settings() }
-            }
-        } catch { reachable = false }
+            status = try await ServerLink.status()
+            followed = try await ServerLink.followed()
+            if settings.isEmpty { settings = try await ServerLink.settings() }
+        } catch {}
     }
 
     func loadStorage() async {
@@ -379,6 +407,10 @@ struct ServerArchiveSection: View {
 
     var body: some View {
         SettingsSection(title: "الأرشيف") {
+            if !model.reachable {
+                Label("تعذّر الوصول إلى السيرفر. ما تراه هنا قد لا يكون محدّثًا.", systemImage: "wifi.exclamationmark")
+                    .font(JFont.body(13.5, .medium)).foregroundStyle(Color(L.danger))
+            }
             SettingsNote("السيرفر يحفظ نص كل فصل عنده، فتقدر تقرأ حتى لو الموقع وقف. اختر موقع كامل (مثل ملوك الروايات) أو روايات بعينها، وهو يمشي عليها بهدوء، طلب كل ٢-٣ ثواني.")
             HStack(spacing: 8) {
                 Button("أرشفة موقع كامل") { siteSheet = true }
@@ -493,7 +525,14 @@ private struct ArchiveSiteSheet: View {
         estimating = true
         task?.cancel()
         task = Task { @MainActor in
-            do { estimate = try await ServerLink.estimate(s.id) } catch { self.error = error.localizedDescription }
+            let result: Result<[String: Any], Error>
+            do { result = .success(try await ServerLink.estimate(s.id)) } catch { result = .failure(error) }
+            // a cancelled estimate, or one for a site no longer picked, writes nothing (it would overwrite the newer one)
+            guard !Task.isCancelled, picked?.id == s.id else { return }
+            switch result {
+            case .success(let e): estimate = e
+            case .failure(let e): self.error = e.localizedDescription
+            }
             estimating = false
         }
     }

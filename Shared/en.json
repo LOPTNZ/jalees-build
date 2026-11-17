@@ -2167,5 +2167,18 @@
 "انقل «": "Move «",
 "تحرّر ": "Freed ",
 "ما انفحصت بعد": "Not checked yet",
-"مكتمل": "Complete"
+"مكتمل": "Complete",
+"تعذّر حفظ الجلسة على هذا الجهاز.": "Couldn't keep the session on this phone.",
+"أعد المحاولة": "Try again",
+"المحظورون": "Blocked",
+"إلغاء الحظر": "Unblock",
+"كتاب واحد تخفيه من صفحته: «إخفاء عن الأصدقاء». لا يُرسل منه شيء إلى السيرفر.": "Hide one book from its page: \"Hide from friends\". Nothing of it is sent to the server.",
+"لا يُرسل منه شيء إلى السيرفر: لا في ملفك ولا نشاطك ولا قوائمك ولا أرقامك.": "Nothing of it is sent to the server: not your profile, activity, lists or numbers.",
+"تعذّر الوصول إلى السيرفر. ما تراه هنا قد لا يكون محدّثًا.": "Can't reach the server. What you see here may be out of date.",
+"يختفي التظليل من النص ومن دفترك.": "The highlight leaves the text and your notebook.",
+"تنحذف الوقفة.": "The bookmark will be deleted.",
+"تنحذف {} من دفترك، وتقدر تتراجع خلال ثواني.": "{} will be deleted from your notebook; you can undo within seconds.",
+"أول ظهور: {}": "First appears: {}",
+"اضغط مطوّلًا لإضافة {}": "Hold to add: {}",
+"تم حذف {}": "Deleted {}"
 }

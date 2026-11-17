@@ -181,8 +181,10 @@ struct NBDo {
         show(.form(ItemRef(book: e.book, kind: k.rawValue, item: nil, prefill: pre, inReader: reader != nil)))
     }
 
+    /// Over the reader everything asks first (its undo toast would be under the reader); in دفتري it goes at once and
+    /// the toast takes it back.
     func delete(_ e: NBEntry) {
-        if let a = ask, e.kind != .mark, e.kind != .bmark { a(e); return }
+        if let a = ask { a(e); return }
         deleteNow(e)
     }
 
@@ -413,6 +415,7 @@ struct PassageCard: View {
         }
         .buttonStyle(NBPress())
         .contextMenu { NBMenu(e: e, act: act) }
+        .modifier(NBVoiceActions(e: e, act: act))
     }
 
     private var tint: Color {
@@ -517,6 +520,7 @@ struct TodayCard: View {
         Button { act.open(e) } label: { face }
             .buttonStyle(NBPress())
             .contextMenu { NBMenu(e: e, act: act) }
+            .modifier(NBVoiceActions(e: e, act: act))
             // heard as its words and its book (its kind's name first would sound like the + fan's items)
             .accessibilityLabel(Text(verbatim: [e.text, e.note, book?.title ?? "", e.place.tr].filter { !$0.isEmpty }.joined(separator: "، ")))
     }
@@ -541,7 +545,7 @@ struct TodayCard: View {
             if !e.text.isEmpty {
                 Text(verbatim: e.kind == .quote ? "«" + e.text + "»" : e.text)
                     .font(e.kind == .thought ? JFont.body(17, .medium) : JFont.quote(21))
-                    .foregroundStyle(Color.white).lineSpacing(6).lineLimit(6).minimumScaleFactor(0.8)
+                    .foregroundStyle(Color.white).lineSpacing(6).lineLimit(5).minimumScaleFactor(0.7)
             }
             if !e.note.isEmpty && e.kind != .thought {
                 Text(verbatim: e.note).font(JFont.body(13.5)).foregroundStyle(Color.white.opacity(0.8)).lineLimit(2)
@@ -561,7 +565,8 @@ struct TodayCard: View {
             }
         }
         .padding(18)
-        .frame(maxWidth: .infinity, minHeight: 260, maxHeight: 260, alignment: .topLeading)
+        // the owner's text size makes it taller (the words shrink before they are cut)
+        .frame(maxWidth: .infinity, minHeight: 260 * JFont.scale, maxHeight: 260 * JFont.scale, alignment: .topLeading)
         .background(LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
@@ -587,6 +592,7 @@ struct WordTile: View {
         }
         .buttonStyle(NBPress())
         .contextMenu { NBMenu(e: e, act: act) }
+        .modifier(NBVoiceActions(e: e, act: act))
         .accessibilityIdentifier("nb-word-" + e.rawID)
     }
 
@@ -633,7 +639,7 @@ struct CharacterTile: View {
                     .overlay(Circle().strokeBorder(e.role == "main" ? Color(L.primary) : Color.clear, lineWidth: 2.5))
                 Text(verbatim: e.text).font(JFont.body(14, .semibold)).foregroundStyle(Color(L.ink)).lineLimit(1)
                 if !e.sub.isEmpty { Text(verbatim: e.sub).font(JFont.body(12)).foregroundStyle(Color(L.ink2)).lineLimit(1) }
-                if !e.place.isEmpty { Text("أول ظهور: " + e.place).font(JFont.body(11.5, .medium)).foregroundStyle(Color(L.primary)).lineLimit(1) }
+                if !e.place.isEmpty { Text("أول ظهور: \(e.place)").font(JFont.body(11.5, .medium)).foregroundStyle(Color(L.primary)).lineLimit(1) }
                 if showBook, let b = book { Text(verbatim: b.title).font(JFont.body(11.5)).foregroundStyle(Color(L.ink2)).lineLimit(1) }
             }
             .padding(.vertical, 14).padding(.horizontal, 8)
@@ -644,6 +650,7 @@ struct CharacterTile: View {
         }
         .buttonStyle(NBPress())
         .contextMenu { NBMenu(e: e, act: act) }
+        .modifier(NBVoiceActions(e: e, act: act))
     }
 }
 
@@ -679,6 +686,7 @@ struct NBRow: View {
         }
         .buttonStyle(NBPress())
         .contextMenu { NBMenu(e: e, act: act) }
+        .modifier(NBVoiceActions(e: e, act: act))
     }
 
     private var tint: Color {
@@ -826,16 +834,47 @@ struct NBStageBar: View {
 
     var body: some View {
         GeometryReader { g in
+            // the shares of one width, never more than the bar (no minimum widths to add up past it)
             let t = CGFloat(max(1, stats.total))
-            let w = max(0, g.size.width - 4)
-            HStack(spacing: 2) {
-                if stats.known > 0 { Capsule().fill(NBStage.color(2, L)).frame(width: max(6, w * CGFloat(stats.known) / t)) }
-                if stats.learning > 0 { Capsule().fill(NBStage.color(1, L)).frame(width: max(6, w * CGFloat(stats.learning) / t)) }
-                Capsule().fill(Color(L.line)).frame(maxWidth: .infinity)
+            let w = max(0, g.size.width)
+            let known = min(w, w * CGFloat(stats.known) / t)
+            let learning = min(w - known, w * CGFloat(stats.learning) / t)
+            ZStack(alignment: .leading) {
+                Rectangle().fill(Color(L.line))
+                HStack(spacing: 0) {
+                    Rectangle().fill(NBStage.color(2, L)).frame(width: known)
+                    Rectangle().fill(NBStage.color(1, L)).frame(width: max(0, learning))
+                }
             }
+            .clipShape(Capsule())
         }
         .frame(height: 8)
         .accessibilityHidden(true)
+    }
+}
+
+/// What a held card offers, as VoiceOver's actions on it (the menu itself is a long press).
+struct NBVoiceActions: ViewModifier {
+    let e: NBEntry
+    let act: NBDo
+
+    func body(content: Content) -> some View {
+        content
+            .accessibilityAction(named: Text("تعديل")) { act.edit(e) }
+            .accessibilityAction(named: Text("نسخ")) { act.copy(e) }
+            .accessibilityAction(named: Text("وسوم")) { act.tags(e) }
+            .accessibilityAction(named: Text("حذف")) { act.delete(e) }
+    }
+}
+
+/// The floating + while no reading session covers the screen. The session is watched here, so its clock redraws only
+/// this.
+struct NBFabGate<Content: View>: View {
+    @ObservedObject private var session = SessionModel.shared
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if session.timer == nil || !session.showScreen { content() }
     }
 }
 
@@ -1180,7 +1219,7 @@ struct NotebookFab: View {
             .accessibilityElement()
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(open ? "إغلاق القائمة" : "إضافة للدفتر")
-            .accessibilityHint("اضغط مطوّلًا لإضافة " + (NoteKind(rawValue: current)?.name ?? "اقتباس"))
+            .accessibilityHint("اضغط مطوّلًا لإضافة \(NoteKind(rawValue: current)?.name ?? "اقتباس")")
             .accessibilityAction { toggle(!open) }
             .opacity(dim && !open ? 0.38 : 1)
             .scaleEffect(dim && !open ? 0.88 : 1)

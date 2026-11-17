@@ -31,6 +31,14 @@ private enum SocialSheet: Identifiable {
     }
 }
 
+/// Runs a call from a button: its error message goes to the toast. True when it worked.
+@MainActor private func socialTry(_ f: () async throws -> Void) async -> Bool {
+    do { try await f(); return true }
+    catch let e as SocialError { ToastCenter.shared.show(e.message) }
+    catch { ToastCenter.shared.show("تعذّر الطلب.") }
+    return false
+}
+
 private func ago(_ ms: Double) -> String {
     let f = RelativeDateTimeFormatter()
     f.locale = Locale(identifier: Lang.english ? "en" : "ar-u-nu-latn")
@@ -140,6 +148,8 @@ struct FriendsHome: View {
             Text("وصلتك دعوة صداقة من هذا العنوان الكامل:\n\(S.pendingJoin?.server ?? "")\nلا توافق إلا إذا كنت تعرف من أرسلها: ستسجّل عنده بكلمة سرك.")
         }
         .task { await S.refreshAll() }
+        // coming back to the app with this page open
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in Task { await S.refreshAll() } }
     }
 
     @ViewBuilder private func sheetView(_ s: SocialSheet) -> some View {
@@ -218,8 +228,8 @@ struct FriendsHome: View {
                         }
                     }.buttonStyle(.plain)
                     Spacer(minLength: 0)
-                    Button("قبول") { Task { try? await S.act("accept", u.username) } }.buttonStyle(JButtonStyle(look: L, primary: true, small: true))
-                    Button("رفض") { Task { try? await S.act("decline", u.username) } }.buttonStyle(JButtonStyle(look: L, small: true))
+                    Button("قبول") { Task { _ = await socialTry { try await S.act("accept", u.username) } } }.buttonStyle(JButtonStyle(look: L, primary: true, small: true))
+                    Button("رفض") { Task { _ = await socialTry { try await S.act("decline", u.username) } } }.buttonStyle(JButtonStyle(look: L, small: true))
                 }
             }
         }
@@ -228,9 +238,26 @@ struct FriendsHome: View {
     // MARK: the feed
 
     @ViewBuilder private var feed: some View {
-        if S.feed.isEmpty {
+        if S.feed.isEmpty && !S.loaded {
+            // the first read is on its way (or has failed): neither "no friends" nor "no activity" is true yet
+            if S.offline && !S.loading {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(SocialError.offline.message).font(JFont.body(15)).foregroundStyle(Color(L.ink2))
+                    Button("أعد المحاولة") { Task { await S.refreshAll() } }.buttonStyle(JButtonStyle(look: L, small: true))
+                }.padding(.vertical, 20)
+            } else {
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 30)
+            }
+        } else if S.feed.isEmpty {
+            if S.offline {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(SocialError.offline.message).font(JFont.body(15)).foregroundStyle(Color(L.ink2))
+                    Button("أعد المحاولة") { Task { await S.refreshAll() } }.buttonStyle(JButtonStyle(look: L, small: true))
+                }.padding(.vertical, 20)
+            } else {
             Text(S.friends.isEmpty ? "ما عندك أصدقاء بعد. أرسل دعوة لتشوفوا ما تقرؤون." : "ما فيه نشاط بعد. يظهر هنا ما يبدؤونه ويُنهونه ويقيّمونه.")
                 .font(JFont.body(15)).foregroundStyle(Color(L.ink2)).padding(.vertical, 20)
+            }
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(S.feed) { it in
@@ -267,7 +294,7 @@ struct FriendsHome: View {
                         SocialAvatar(user: u, size: 36)
                         Text("@" + u.username).font(JFont.body(15)).foregroundStyle(Color(L.ink))
                         Spacer()
-                        Button("إلغاء") { Task { try? await S.act("cancel", u.username) } }.buttonStyle(JButtonStyle(look: L, small: true))
+                        Button("إلغاء") { Task { _ = await socialTry { try await S.act("cancel", u.username) } } }.buttonStyle(JButtonStyle(look: L, small: true))
                     }
                     .padding(.vertical, 4)
                 }
@@ -348,7 +375,8 @@ private struct SocialSignIn: View {
                 Label("معك دعوة صديق: أنشئ حسابك وتصيرون أصدقاء مباشرة.", systemImage: "person.2").font(JFont.body(14.5, .medium)).foregroundStyle(Color(L.accentInk))
             }
             JSeg(options: [("in", "دخول"), ("up", "حساب جديد")], value: $mode)
-            if SocialServer.defaultURL.isEmpty || server.isEmpty {
+            // while an invite waits, the server is the invite's (shown above, with its clear button), not editable
+            if S.waitingInvite.isEmpty && (SocialServer.defaultURL.isEmpty || server.isEmpty) {
                 SocialField(label: "عنوان سيرفر الأصدقاء", text: $server, placeholder: "https://jalees.example.com", latin: true)
             }
             SocialField(label: "اسم المستخدم", text: $username, placeholder: "abdullah", latin: true)
@@ -370,6 +398,7 @@ private struct SocialSignIn: View {
     private func go() async {
         busy = true; error = ""
         defer { busy = false }
+        let server = S.waitingInvite.isEmpty ? self.server : S.server
         do {
             if mode == "up" { try await S.signUp(server: server, username: username, name: name, password: password, invite: invite, ownerCode: ownerCode) }
             else { try await S.signIn(server: server, username: username, password: password, invite: invite) }
@@ -398,7 +427,7 @@ private struct FriendProfileSheet: View {
         }
         .task { await load() }
         .confirmationDialog("حظر @\(username)؟", isPresented: $askBlock, titleVisibility: .visible) {
-            Button("حظر", role: .destructive) { Task { try? await S.act("block", username); dismiss() } }
+            Button("حظر", role: .destructive) { Task { if await socialTry({ try await S.act("block", username) }) { dismiss() } } }
             Button("إلغاء", role: .cancel) {}
         } message: { Text("لا يرى كلٌّ منكما الآخر، وتنتهي الصداقة.") }
     }
@@ -408,7 +437,7 @@ private struct FriendProfileSheet: View {
         catch let e as SocialError { failed = e.message } catch { failed = "تعذّر التحميل." }
     }
 
-    private func act(_ what: String) { Task { try? await S.act(what, username); await load() } }
+    private func act(_ what: String) { Task { _ = await socialTry { try await S.act(what, username) }; await load() } }
 
     @ViewBuilder private func content(_ p: SocialProfile) -> some View {
         HStack(spacing: 14) {
@@ -644,7 +673,22 @@ private struct SocialSettingsSheet: View {
                        on: Binding(get: { S.shareReading }, set: { S.setShare($0) }))
             JSwitchRow(title: "أرقامي (كتب السنة والسلسلة والدقائق)", on: Binding(get: { S.me?.shareStats ?? true }, set: { S.setShareStats($0) }))
             JSwitchRow(title: "قوائمي", sub: "قوائم المكتبة بدون الكتب الخاصة.", on: Binding(get: { S.shareLists }, set: { S.setShareLists($0) }))
-            SettingsNote("كتاب واحد تخفيه من صفحته: «إخفاء عن الأصدقاء».")
+            SettingsNote("كتاب واحد تخفيه من صفحته: «إخفاء عن الأصدقاء». لا يُرسل منه شيء إلى السيرفر.")
+            if !S.blocked.isEmpty {
+                Divider()
+                JLabel(text: "المحظورون")
+                ForEach(S.blocked) { u in
+                    HStack(spacing: 10) {
+                        SocialAvatar(user: u, size: 34)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(u.name).font(JFont.body(15, .medium)).foregroundStyle(Color(L.ink)).lineLimit(1)
+                            Text("@" + u.username).font(JFont.body(12.5)).foregroundStyle(Color(L.ink2))
+                        }
+                        Spacer(minLength: 0)
+                        Button("إلغاء الحظر") { Task { _ = await socialTry { try await S.unblock(u.username) } } }.buttonStyle(JButtonStyle(look: L, small: true))
+                    }
+                }
+            }
             Divider()
             JLabel(text: "تغيير كلمة السر")
             SocialField(label: "الحالية", text: $old, secure: true, latin: true)
@@ -671,6 +715,7 @@ private struct SocialSettingsSheet: View {
             }
             Button("إلغاء", role: .cancel) { delPass = "" }
         } message: { Text("يُحذف حسابك وكل ما أرسلته ولا يمكن التراجع. كتبك في جليس تبقى.") }
+        .task { await S.refreshBlocks() }
     }
 }
 
@@ -715,7 +760,7 @@ struct SocialBookRow: View {
 
     var body: some View {
         if S.signedIn && S.shareReading {
-            JSwitchRow(title: "إخفاء هذا الكتاب عن الأصدقاء", sub: "لا يظهر في ملفك ولا نشاطك ولا تقييمك له.",
+            JSwitchRow(title: "إخفاء هذا الكتاب عن الأصدقاء", sub: "لا يُرسل منه شيء إلى السيرفر: لا في ملفك ولا نشاطك ولا قوائمك ولا أرقامك.",
                        on: Binding(get: { lib.state.book(bookID)?.raw.bool("socialPrivate") ?? false },
                                    set: { v in Library.shared.changeBook(bookID) { $0.raw.set("socialPrivate", v) } }))
         }
