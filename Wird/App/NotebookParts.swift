@@ -587,6 +587,7 @@ struct WordTile: View {
         }
         .buttonStyle(NBPress())
         .contextMenu { NBMenu(e: e, act: act) }
+        .accessibilityIdentifier("nb-word-" + e.rawID)
     }
 
     private var tile: some View {

@@ -25,6 +25,15 @@ enum SocialServer {
         return c.string ?? ""
     }
 
+    /// Sign-in and sign-up send a password, so they go only over https, or over plain http inside Tailscale (100.64.0.0/10).
+    static func allowsCredentials(_ server: String) -> Bool {
+        guard let c = URLComponents(string: server), let scheme = c.scheme?.lowercased(), let host = c.host?.lowercased() else { return false }
+        if scheme == "https" { return true }
+        guard scheme == "http" else { return false }
+        let p = host.split(separator: ".").compactMap { Int($0) }
+        return p.count == 4 && p.allSatisfy { (0...255).contains($0) } && p[0] == 100 && (64...127).contains(p[1])
+    }
+
     /// localhost, a private or Tailscale address, a `.local` name: the only places plain http is accepted
     static func isLocalHost(_ h: String) -> Bool {
         if h == "localhost" || h.hasSuffix(".local") || h.hasSuffix(".ts.net") { return true }

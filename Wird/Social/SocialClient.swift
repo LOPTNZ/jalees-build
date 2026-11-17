@@ -7,7 +7,7 @@ import Combine
 // only read the state. Nothing here waits for the network on the screen's thread.
 
 enum SocialError: Error {
-    case offline, auth, noServer
+    case offline, auth, noServer, insecure
     case api(String)
     case status(Int)
 
@@ -16,6 +16,7 @@ enum SocialError: Error {
         case .offline: return "تعذّر الوصول إلى السيرفر. تحقق من الاتصال ومن العنوان."
         case .auth: return "انتهت الجلسة. سجّل الدخول من جديد."
         case .noServer: return "اكتب عنوان سيرفر الأصدقاء أولًا."
+        case .insecure: return "كلمة السر لا تُرسل إلا عبر https (أو شبكة Tailscale). غيّر عنوان السيرفر إلى https."
         case .status(let c): return "السيرفر ردّ بخطأ (\(c))."
         case .api(let code):
             return ["bad_login": "اسم المستخدم أو كلمة السر غير صحيحة.", "locked": "محاولات كثيرة خاطئة. جرّب بعد قليل.",
@@ -384,10 +385,13 @@ final class SocialStore: ObservableObject {
         await refreshAll()
     }
 
-    func signUp(server s: String, username u: String, name: String, password: String, invite: String) async throws {
+    func signUp(server s: String, username u: String, name: String, password: String, invite: String, ownerCode: String = "") async throws {
         let sv = SocialServer.normalized(s)
         guard !sv.isEmpty else { throw SocialError.noServer }
-        let r = try await SocialAPI.call("POST", "/register", body: ["username": u, "name": name, "password": password, "invite": invite, "device": UIDevice.current.name], token: nil, server: sv)
+        guard SocialServer.allowsCredentials(sv) else { throw SocialError.insecure }
+        var body: [String: Any] = ["username": u, "name": name, "password": password, "invite": invite, "device": UIDevice.current.name]
+        if !ownerCode.isEmpty { body["signup"] = ownerCode }
+        let r = try await SocialAPI.call("POST", "/register", body: body, token: nil, server: sv)
         DB.shared.set("social.url", sv)
         await began(r, u.lowercased())
     }
@@ -395,6 +399,7 @@ final class SocialStore: ObservableObject {
     func signIn(server s: String, username u: String, password: String, invite: String) async throws {
         let sv = SocialServer.normalized(s)
         guard !sv.isEmpty else { throw SocialError.noServer }
+        guard SocialServer.allowsCredentials(sv) else { throw SocialError.insecure }
         let r = try await SocialAPI.call("POST", "/login", body: ["username": u, "password": password, "device": UIDevice.current.name], token: nil, server: sv)
         DB.shared.set("social.url", sv)
         await began(r, u.lowercased())
@@ -574,6 +579,7 @@ final class SocialStore: ObservableObject {
     /// The owner said yes: the server is set, and the code is used (now when signed in there, else after signing up or in).
     func acceptJoin(_ l: SocialLink) async {
         pendingJoin = nil
+        guard SocialServer.allowsCredentials(l.server) else { ToastCenter.shared.show(SocialError.insecure.message); return }
         if signedIn && server != l.server {
             ToastCenter.shared.show("أنت مسجّل في سيرفر آخر. اخرج منه أولًا")
             return
@@ -592,4 +598,6 @@ final class SocialStore: ObservableObject {
     /// the code waiting for the sign-up form (an invite link opened while signed out)
     var waitingInvite: String { disk.inviteCode }
     func clearWaitingInvite() { disk.inviteCode = ""; persist() }
+    /// drop what an invite link set while signed out: the waiting code and the server address
+    func clearJoin() { disk.inviteCode = ""; persist(); DB.shared.set("social.url", ""); objectWillChange.send() }
 }

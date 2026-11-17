@@ -164,7 +164,8 @@ enum DebugRoute {
     /// a note), quotes and a word taken from the text (each linked to its highlight), a thought, characters with their
     /// first appearance and relations. Once: the sample's book keeps them.
     static func fillNotebook(_ n: Novel, book: String) {
-        guard let b = Library.shared.state.book(book), b.marks.isEmpty, b.chars.isEmpty else { return }
+        // (once: other routes may have left a highlight or a word there already; they stay)
+        guard let b = Library.shared.state.book(book), b.chars.isEmpty, b.quotes.isEmpty, b.thoughts.isEmpty else { return }
         let chs = Array(Novels.shared.chapters(n.id).prefix(6))
         guard chs.count >= 4 else { return }
         let now = Millis.now
@@ -231,13 +232,13 @@ enum DebugRoute {
             person(3, "صاحب الفانوس", "", "secondary", 4, [(1, "خصمه")], "علّق الفانوس النحاسي فوق المدخل.")
         ]
         Library.shared.changeBook(book) { bb in
-            bb.marks = marks
+            bb.marks = bb.marks + marks
             bb.raw.set("quotes", objects: bb.raw.objs("quotes") + quotes)
             bb.raw.set("words", objects: bb.raw.objs("words") + words)
             bb.raw.set("thoughts", objects: bb.raw.objs("thoughts") + thoughts)
             bb.raw.set("chars", objects: chars)
             let bm: JSONObject = ["id": .string(uid()), "ch": .number(Double(chs[2].id)), "chLabel": .string(chs[2].line), "p": .number(6), "o": .number(0), "at": .number(now - DAY)]
-            bb.bmarks = [bm]
+            bb.bmarks = bb.bmarks + [bm]
         }
     }
 

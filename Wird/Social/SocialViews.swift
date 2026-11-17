@@ -137,7 +137,7 @@ struct FriendsHome: View {
             Button("اتصل") { if let l = S.pendingJoin { Task { await S.acceptJoin(l) } } }
             Button("إلغاء", role: .cancel) {}
         } message: {
-            Text("وصلتك دعوة صداقة من السيرفر \(URL(string: S.pendingJoin?.server ?? "")?.host ?? ""). لا توافق إلا إذا كنت تعرف من أرسلها.")
+            Text("وصلتك دعوة صداقة من هذا العنوان الكامل:\n\(S.pendingJoin?.server ?? "")\nلا توافق إلا إذا كنت تعرف من أرسلها: ستسجّل عنده بكلمة سرك.")
         }
         .task { await S.refreshAll() }
     }
@@ -325,6 +325,7 @@ private struct SocialSignIn: View {
     @State private var name = ""
     @State private var password = ""
     @State private var invite = ""
+    @State private var ownerCode = ""
     @State private var busy = false
     @State private var error = ""
 
@@ -332,6 +333,17 @@ private struct SocialSignIn: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("الأصدقاء").font(JFont.display(22, .bold)).foregroundStyle(Color(L.ink))
             SettingsNote("شوف ما يقرأه أصدقاؤك وتقييماتهم، واعرض لهم ما تقرؤه أنت. لا يُرفع أي ملف: فقط عنوان الكتاب والمؤلف وحالته وتقييمك ومراجعتك وما تختار مشاركته، وكل كتاب تقدر تخفيه.")
+            if !S.waitingInvite.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    JLabel(text: "سيرفر الدعوة")
+                    Text(S.server).font(JFont.body(15, .semibold)).foregroundStyle(Color(L.ink)).textSelection(.enabled)
+                        .environment(\.layoutDirection, .leftToRight)
+                    Button("ليس هذا السيرفر؟ امسح الدعوة والعنوان") { server = ""; invite = ""; S.clearJoin() }
+                        .font(JFont.body(14, .medium)).foregroundStyle(Color(L.danger))
+                }
+                .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(L.surface2)))
+            }
             if !invite.isEmpty {
                 Label("معك دعوة صديق: أنشئ حسابك وتصيرون أصدقاء مباشرة.", systemImage: "person.2").font(JFont.body(14.5, .medium)).foregroundStyle(Color(L.accentInk))
             }
@@ -343,6 +355,7 @@ private struct SocialSignIn: View {
             if mode == "up" { SocialField(label: "الاسم الظاهر", text: $name, placeholder: "عبدالله") }
             SocialField(label: "كلمة السر", text: $password, secure: true, latin: true)
             if mode == "up" && invite.isEmpty { SocialField(label: "رمز الدعوة (إن كان عندك)", text: $invite, latin: true) }
+            if mode == "up" && invite.isEmpty { SocialField(label: "رمز المالك (لأول حساب على السيرفر فقط)", text: $ownerCode, secure: true, latin: true) }
             if !error.isEmpty { Text(error).font(JFont.body(14)).foregroundStyle(Color(L.danger)) }
             Button { Task { await go() } } label: { Text(busy ? "لحظة…" : (mode == "up" ? "إنشاء الحساب" : "دخول")).frame(maxWidth: .infinity) }
                 .buttonStyle(JButtonStyle(look: L, primary: true)).disabled(busy || username.isEmpty || password.isEmpty)
@@ -358,7 +371,7 @@ private struct SocialSignIn: View {
         busy = true; error = ""
         defer { busy = false }
         do {
-            if mode == "up" { try await S.signUp(server: server, username: username, name: name, password: password, invite: invite) }
+            if mode == "up" { try await S.signUp(server: server, username: username, name: name, password: password, invite: invite, ownerCode: ownerCode) }
             else { try await S.signIn(server: server, username: username, password: password, invite: invite) }
             S.clearWaitingInvite()
             password = ""

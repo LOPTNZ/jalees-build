@@ -35,9 +35,32 @@ final class FlowTests: XCTestCase {
     @discardableResult
     private func tap(_ e: XCUIElement, _ what: String, timeout: Double = 6) -> Bool {
         guard e.waitForExistence(timeout: timeout) else { XCTFail("not found: \(what)"); return false }
-        if !e.isHittable { sleep(1) }
+        // (isHittable is only asked of an element on screen: off it, in a row that scrolls sideways, it fails the test)
+        if !onScreen(e) || !e.isHittable { sleep(1) }
         e.tap()
         return true
+    }
+
+    /// The whole element inside the screen (its frame, not isHittable, which fails for one off the screen sideways).
+    private func onScreen(_ e: XCUIElement) -> Bool {
+        guard e.exists else { return false }
+        let f = e.frame, w = app.frame
+        return !f.isEmpty && f.minX >= w.minX - 1 && f.maxX <= w.maxX + 1 && f.minY >= w.minY && f.maxY <= w.maxY
+    }
+
+    /// Drags a row that scrolls sideways, at the height of `y` (0…1 of the screen), until `e` is wholly on screen. When
+    /// `e` is not built yet (a lazy row), the row is dragged the way its later items are (right, in Arabic), then back.
+    private func dragRow(until e: XCUIElement, y: CGFloat, tries: Int = 8) {
+        var n = 0
+        while !onScreen(e) && n < tries {
+            // off the left edge: drag the row to the right; off the right edge: to the left
+            let left = e.exists ? e.frame.midX < app.frame.midX : n < tries / 2
+            let yy = max(0.05, min(0.95, e.exists && e.frame.height > 0 ? e.frame.midY / app.frame.height : y))
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.3 : 0.7, dy: yy))
+            from.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.8 : 0.2, dy: yy)))
+            sleep(1)
+            n += 1
+        }
     }
 
     private func button(_ label: String) -> XCUIElement { app.buttons[label].firstMatch }
@@ -73,16 +96,7 @@ final class FlowTests: XCTestCase {
     private func chip(_ label: String) -> XCUIElement {
         let e = buttonStarting(label)
         guard e.waitForExistence(timeout: 4) else { return e }
-        var n = 0
-        while !e.isHittable && n < 6 {
-            let y = max(0.05, min(0.95, e.frame.midY / app.frame.height))
-            // off the left edge: drag the row to the right; off the right edge: to the left
-            let left = e.frame.midX < app.frame.midX
-            let from = app.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.3 : 0.7, dy: y))
-            from.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.8 : 0.2, dy: y)))
-            sleep(1)
-            n += 1
-        }
+        dragRow(until: e, y: e.frame.midY / max(1, app.frame.height), tries: 6)
         return e
     }
 
@@ -742,7 +756,8 @@ final class FlowTests: XCTestCase {
         tab("دفتري")
         tap(chip("كلمات"), "words")
         sleep(1)
-        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "حارس المكتبة")).firstMatch
+        // a word's card (identifier nb-word-…) that names the sample novel (the shelf's cover of it is another button)
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "nb-word-", "حارس المكتبة")).firstMatch
         guard tap(row, "the word from the sample novel") else { return }
         sleep(1)
         let place = buttonStarting("افتح مكانه في القارئ")
@@ -981,15 +996,7 @@ final class FlowTests: XCTestCase {
         reveal(anyCard)
         shot("ui101-notebook-shelf")
         let lotm = app.buttons.matching(NSPredicate(format: "identifier == %@", "nb-book-cc9bfeteov4")).firstMatch
-        var n = 0
-        while !(lotm.exists && lotm.isHittable) && n < 8 && anyCard.exists {
-            let y = max(0.05, min(0.95, anyCard.frame.midY / app.frame.height))
-            let toRight = n < 4
-            app.coordinate(withNormalizedOffset: CGVector(dx: toRight ? 0.2 : 0.8, dy: y))
-                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: toRight ? 0.8 : 0.2, dy: y)))
-            sleep(1)
-            n += 1
-        }
+        dragRow(until: lotm, y: anyCard.frame.midY / max(1, app.frame.height), tries: 10)
         guard tap(lotm, "a book's notebook from the shelf") else { return }
         sleep(2)
         shot("ui102-notebook-book")

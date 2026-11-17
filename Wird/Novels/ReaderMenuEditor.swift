@@ -260,6 +260,8 @@ struct ReaderMenuLayout: Equatable {
 /// the way back here is never lost.
 struct MenuEditorView: View {
     var epub = false
+    /// the open book reads right to left (the chapter arrows in the picture go its way, as the menu's do)
+    var bookRTL = true
     var close: () -> Void
     /// pushed inside the reading settings (back to them), or a sheet of its own over the page
     var embedded = false
@@ -303,7 +305,7 @@ struct MenuEditorView: View {
         MaybeStack(on: !embedded) {
             List {
                 Section {
-                    MenuPreview(layout: layout, epub: epub)
+                    MenuPreview(layout: layout, epub: epub, bookRTL: bookRTL)
                         .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
                         .listRowBackground(Color.clear)
                 } footer: {
@@ -446,6 +448,7 @@ struct MenuEditorView: View {
 struct MenuPreview: View {
     let layout: ReaderMenuLayout
     var epub = false
+    var bookRTL = true
 
     var body: some View {
         let rows = Array(layout.rows.prefix(ReaderMenuLayout.maxRows))
@@ -478,13 +481,15 @@ struct MenuPreview: View {
     @ViewBuilder private func content(_ i: ReaderMenuItem) -> some View {
         switch i {
         case .chapters:
+            // the previous chapter first, in the book's direction: arrows pointing outwards
             HStack {
-                Image(systemName: "chevron.right")
+                Image(systemName: bookRTL ? "chevron.right" : "chevron.left")
                 Spacer()
-                Text("690 من 2334").monospacedDigit()
+                Text("690 من 2334").monospacedDigit().environment(\.layoutDirection, Lang.direction)
                 Spacer()
-                Image(systemName: "chevron.left")
+                Image(systemName: bookRTL ? "chevron.left" : "chevron.right")
             }
+            .environment(\.layoutDirection, bookRTL ? .rightToLeft : .leftToRight)
         case .theme:
             HStack(spacing: 7) {
                 ForEach(ReaderTheme.builtIn) { t in
@@ -531,9 +536,10 @@ struct MenuPreview: View {
         Group {
             if i.width == 2 {
                 HStack(spacing: 12) {
-                    Image(systemName: i == .chapters ? "chevron.right" : "textformat.size.smaller")
-                    Image(systemName: i == .chapters ? "chevron.left" : "textformat.size.larger")
+                    Image(systemName: i == .chapters ? (bookRTL ? "chevron.right" : "chevron.left") : "textformat.size.smaller")
+                    Image(systemName: i == .chapters ? (bookRTL ? "chevron.left" : "chevron.right") : "textformat.size.larger")
                 }
+                .environment(\.layoutDirection, i == .chapters ? (bookRTL ? .rightToLeft : .leftToRight) : Lang.direction)
                 .frame(width: 58, height: 26)
                 .background(Color.white.opacity(0.14), in: Capsule())
             } else {

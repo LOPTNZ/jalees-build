@@ -116,14 +116,20 @@ struct NotebookView: View {
     }
 
     private var chips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Self.tabs, id: \.0) { t in
-                    NBChip(text: t.1, count: t.0 == "home" ? nil : store.ix.n(NBEntry.Kind(rawValue: t.0) ?? .quote),
-                           symbol: t.0 == "home" ? "sparkles" : nil, on: tab == t.0) { pickTab(t.0) }
+        ScrollViewReader { row in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Self.tabs, id: \.0) { t in
+                        NBChip(text: t.1, count: t.0 == "home" ? nil : store.ix.n(NBEntry.Kind(rawValue: t.0) ?? .quote),
+                               symbol: t.0 == "home" ? "sparkles" : nil, on: tab == t.0) { pickTab(t.0) }
+                            .id("kind-" + t.0)
+                    }
                 }
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 16)
+            .accessibilityIdentifier("nb-kinds")
+            // the chosen list's chip comes into view (opened at «كلمات» from elsewhere, it was off the screen)
+            .onChange(of: tab) { t in withAnimation(.easeOut(duration: 0.25)) { row.scrollTo("kind-" + t, anchor: .center) } }
         }
         .padding(.horizontal, -16)
     }

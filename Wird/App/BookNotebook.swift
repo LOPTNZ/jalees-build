@@ -623,7 +623,7 @@ struct NBHero: View {
     private func pill(_ symbol: String, _ title: String, primary: Bool) -> some View {
         HStack(spacing: 6) {
             Image(systemName: symbol).font(.system(size: 14, weight: .semibold))
-            Text(title).font(JFont.body(15, .semibold))
+            Text(title).font(JFont.body(15, .semibold)).lineLimit(1).minimumScaleFactor(0.75)
         }
         .foregroundStyle(primary ? Color(L.onPrimary) : Color.white)
         .padding(.horizontal, 16)

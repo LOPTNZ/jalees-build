@@ -36,6 +36,13 @@ while read -r name wait args; do
   esac
   sleep "$wait"
   xcrun simctl io "$DEV" screenshot --type=jpeg "$OUT/$name.jpg" > /dev/null 2>&1 && echo "shot: $name"
+  # a cold launch that has not drawn its first frame yet leaves the launch screen (about 60 KB whatever the route; every
+  # real picture so far is over 100 KB): the route runs on in the app, so wait as long again and take it once more
+  if [ -f "$OUT/$name.jpg" ] && [ "$(stat -f%z "$OUT/$name.jpg")" -lt 80000 ]; then
+    echo "still on the launch screen: $name"
+    sleep "$wait"
+    xcrun simctl io "$DEV" screenshot --type=jpeg "$OUT/$name.jpg" > /dev/null 2>&1 && echo "shot again: $name"
+  fi
   # a site's list: where the app's threads are (a frozen app shows its main thread busy, not waiting)
   case "$name" in site-*)
     pid=$(pgrep -f "Wird.app/Wird" | head -1)

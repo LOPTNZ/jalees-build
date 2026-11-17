@@ -1424,7 +1424,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
                 }
             })
         case .brightness:
-            let now = Double(brightness)
+            let now = Double(brightness).isFinite ? Double(brightness) : 1
             let levels: [Double] = [1, 0.75, 0.5, 0.3, 0.15, 0.05]
             let near = levels.min { abs($0 - now) < abs($1 - now) } ?? 1
             return UIMenu(title: title, subtitle: "\(Int((now * 100).rounded()))٪".tr, image: image, options: .singleSelection, children: levels.map { l in
@@ -1485,7 +1485,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
     func openMenuEditor() {
         closeOverlays()
         setChrome(false)
-        let editor = MenuEditorView(epub: isEpub, close: { [weak self] in
+        let editor = MenuEditorView(epub: isEpub, bookRTL: bookRTL, close: { [weak self] in
             self?.dismiss(animated: true) {
                 self?.setChrome(true)
                 self?.openMenu()
@@ -1521,7 +1521,7 @@ final class ReaderViewController: UIViewController, WKScriptMessageHandler, UISc
         let digits: [Character: Character] = ["٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
                                               "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9"]
         let s = String(raw.trimmingCharacters(in: .whitespacesAndNewlines).map { digits[$0] ?? $0 })
-        guard !s.isEmpty else { return }
+        guard !s.isEmpty, s.count <= 9 else { return }
         var at = chapters.firstIndex { $0.numbered && $0.num == s }
         if at == nil, let n = Int(s) {
             at = chapters.firstIndex { Int($0.num) == n } ?? (chapters.indices.contains(n - 1) ? n - 1 : nil)

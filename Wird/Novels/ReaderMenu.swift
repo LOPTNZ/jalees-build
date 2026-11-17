@@ -62,9 +62,25 @@ final class GlassButton: UIVisualEffectView {
 
 final class GlassLabel: UIVisualEffectView {
     private let label = UILabel()
+    /// Laid out in the app's direction: «3 من 40» starts with a digit and was drawn left to right, so it read «40 من 3».
     var text: String? {
-        get { label.text }
-        set { label.text = newValue }
+        get { label.attributedText?.string ?? label.text }
+        set {
+            guard let t = newValue else { label.attributedText = nil; return }
+            label.attributedText = NSAttributedString(string: t, attributes: [
+                .font: label.font ?? UIFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: label.textColor ?? UIColor.white,
+                .paragraphStyle: GlassLabel.paragraph(center: true)
+            ])
+        }
+    }
+
+    /// A paragraph in the app's language direction, whatever character the text starts with.
+    static func paragraph(center: Bool) -> NSParagraphStyle {
+        let p = NSMutableParagraphStyle()
+        p.baseWritingDirection = Lang.english ? .leftToRight : .rightToLeft
+        p.alignment = center ? .center : .natural
+        return p
     }
 
     init(size: CGFloat = 13) {
@@ -323,9 +339,12 @@ final class ReaderMenuView: UIView {
         let prev = arrow(rtl ? "chevron.right" : "chevron.left", "الفصل السابق", -1, r.index > 0)
         let next = arrow(rtl ? "chevron.left" : "chevron.right", "الفصل التالي", 1, r.index < r.chapters.count - 1)
         let mid = UIButton(type: .system)
-        mid.setTitle(r.chapterPosition.tr, for: .normal)
-        mid.setTitleColor(.white, for: .normal)
-        mid.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+        // in the app's direction: «3 من 40» starts with a digit and was drawn left to right (it read «40 من 3»)
+        mid.setAttributedTitle(NSAttributedString(string: r.chapterPosition.tr, attributes: [
+            .font: UIFont.monospacedDigitSystemFont(ofSize: 15, weight: .semibold),
+            .foregroundColor: UIColor.white,
+            .paragraphStyle: GlassLabel.paragraph(center: true)
+        ]), for: .normal)
         mid.titleLabel?.adjustsFontSizeToFitWidth = true
         mid.titleLabel?.minimumScaleFactor = 0.7
         mid.accessibilityLabel = "اذهب لفصل".tr + (Lang.english ? ", " : "، ") + r.chapterPosition.tr
@@ -502,8 +521,10 @@ final class ReaderMenuView: UIView {
         var spill: [ReaderMenuItem] = []
         // as many rows as fit between the close button and the menu button (fewer on a phone held sideways); the
         // rest go to the top of «المزيد»
+        // (a button not laid out yet, or any odd size, still gives a whole number: Int() of a non-number would stop the app)
         let room = anchor.frame.minY - 10 - (host.safeAreaInsets.top + 60) - 48
-        let fit = min(ReaderMenuLayout.maxRows, max(1, Int(floor(room / (ReaderMenuView.rowHeight + 8)))))
+        let rowsRoom = room / (ReaderMenuView.rowHeight + 8)
+        let fit = rowsRoom.isFinite ? min(ReaderMenuLayout.maxRows, max(1, Int(max(0, min(99, floor(rowsRoom)))))) : ReaderMenuLayout.maxRows
         if rows.count > fit {
             spill += rows[fit...]
             rows = Array(rows.prefix(fit))
@@ -576,6 +597,7 @@ final class ReaderMenuView: UIView {
     private func index(at p: CGPoint) -> Int {
         guard let r = reader, r.chapters.count > 1 else { return 0 }
         let f = max(0, min(1, (p.y - 16) / max(1, scrub.bounds.height - 32)))
+        guard f.isFinite else { return reader?.index ?? 0 }
         return Int((f * CGFloat(r.chapters.count - 1)).rounded())
     }
 
